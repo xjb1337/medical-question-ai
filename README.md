@@ -87,7 +87,7 @@ app/build/outputs/apk/debug/app-debug.apk
 本次交付的预构建副本位于 `dist/medical-question-ai-debug.apk`，SHA-256：
 
 ```text
-ed8b90eb1f75e5efaf4a1bdd70010ec2da0d653025ad8034ff67bb430e8e09f1
+9da7a2aa7908811af2ced7a01979e4c4058610d6e10b8b445b3493b448a058f3
 ```
 
 安装到已连接设备：

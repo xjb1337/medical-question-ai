@@ -153,18 +153,39 @@ curl -sS https://api.deepseek.com/chat/completions \
 
 若使用不支持视觉输入的模型，带图请求会返回 400/422，应用会提示切换模型或仅使用文字。
 
-## 4. 本机验证记录（2026-10-28）
+## 4. 验证记录
+
+### 4.1 历史记录：初版交付（修复前，保留）
+
+日期：2026-10-28（Asia/Shanghai）
+
+对应版本：初版交付基线 `3024c24`（修复前）
 
 - 环境：Windows、JDK 17.0.10、Gradle 8.9、AGP 8.7.3、Android SDK 35 / Build-Tools 35.0.0。
-- `./gradlew testDebugUnitTest`：通过，14/14 单元测试，0 失败。
+- `./gradlew testDebugUnitTest`：通过，7/7 单元测试，0 失败。
 - `./gradlew lintDebug`：通过，0 errors、18 warnings（均为依赖版本更新提示，无阻断项）。
 - `./gradlew assembleDebug`：通过，生成可安装的 debug APK，约 21 MB。
-- `./gradlew assembleDebugAndroidTest`：通过（测试 APK 编译成功）；由于没有连接设备/模拟器，`connectedDebugAndroidTest` **未执行**，不能把编译成功当作真机功能通过。
+- `aapt2 dump badging`：包名 `com.xjb.medicalquestionai`，versionCode 1、versionName 1.0.0，minSdk 26、targetSdk 35。
+- `apksigner verify`：APK Signature Scheme v2 验证通过（debug 签名）。
+- 产物副本：`dist/medical-question-ai-debug.apk`，SHA-256 `98964be069e33fda39f31c2b649849532796c185f0bf38c243196a09e3a6306a`。
+- 尚未连接真实安卓手机，因此第 2 节的手工验收项需要在设备上继续执行。
+
+> 以上是修复前的历史记录，按要求保留；不要用后续结果覆盖。
+
+### 4.2 修复后验证（2026-10-28，代码提交 `26f843d` + A1–A3 返工 `5b5945d`）
+
+环境：Windows、JDK 17.0.10、Gradle 8.9、AGP 8.7.3、Android SDK 35 / Build-Tools 35.0.0。
+
+- `./gradlew testDebugUnitTest`：通过，15/15 单元测试，0 失败。
+- `./gradlew lintDebug`：通过，0 errors、18 warnings（均为依赖版本更新提示，无阻断项）。
+- `./gradlew assembleDebug`：通过，生成可安装的 debug APK，约 21 MB。
+- `./gradlew assembleDebugAndroidTest`：通过（测试 APK 编译成功）。
+- 设备测试签名复核：验收发现 `ImageImportRegressionTest` 的 `corruptImage...` 与 `unopenableUri...` 两个方法因 `runBlocking` 尾表达式被 Kotlin 推导为 `DraftImage`，JUnit 4 要求 `void`；已改为显式 `runBlocking<Unit>`/块函数体。JDK 17 `javap` 静态校验显示全部 6 个 `@Test` 方法均返回 `void`；本机没有设备/模拟器，`connectedDebugAndroidTest` **未执行**。编译成功不能记为真机功能通过。
 - `node web/test/browser-repair-smoke.mjs`：通过；合成 PNG 导入、裁剪保留原图、解析 Token、追问 Token 与历史落库均验证通过（mock 上游，非真实 DeepSeek）。
 - `aapt2 dump badging`：包名 `com.xjb.medicalquestionai`，versionCode 1、versionName 1.0.0，minSdk 26、targetSdk 35。
 - `apksigner verify`：APK Signature Scheme v2 验证通过（debug 签名）。
-- 产物副本：`dist/medical-question-ai-debug.apk`，SHA-256 `ed8b90eb1f75e5efaf4a1bdd70010ec2da0d653025ad8034ff67bb430e8e09f1`。
-- 尚未连接真实安卓手机，因此第 2 节的手工验收项需要在设备上继续执行。
+- 产物副本：`dist/medical-question-ai-debug.apk`，SHA-256 `9da7a2aa7908811af2ced7a01979e4c4058610d6e10b8b445b3493b448a058f3`。
+- 尚未连接真实安卓手机，因此第 2 节的手工验收项需要在设备上继续执行；真实 DeepSeek 也未调用。
 
 ## 5. 回归重点
 
