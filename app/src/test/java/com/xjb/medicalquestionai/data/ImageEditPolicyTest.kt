@@ -1,8 +1,10 @@
 package com.xjb.medicalquestionai.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ImageEditPolicyTest {
@@ -44,7 +46,21 @@ class ImageEditPolicyTest {
     }
 
     @Test
-    fun missingTarget_returnsNullSoCallerCanCleanUpOrphanFile() {
-        assertNull(ImageEditPolicy.insertAfter(listOf(image("a")), "missing", image("crop")))
+    fun missingTarget_returnsNullWithoutChangingTheInputList() {
+        val images = listOf(image("a"))
+        val before = images.toList()
+
+        assertNull(ImageEditPolicy.insertAfter(images, "missing", image("crop")))
+        assertEquals(before, images)
+    }
+
+    @Test
+    fun cropLimit_rejectsTheTenthImage() {
+        val nine = (1..9).map { image("image-$it") }
+        val eight = nine.dropLast(1)
+
+        assertFalse(ImageEditPolicy.canAddImage(nine, 9))
+        assertTrue(ImageEditPolicy.canAddImage(eight, 9))
+        assertEquals(9, nine.size)
     }
 }

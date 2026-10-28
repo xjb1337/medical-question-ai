@@ -200,7 +200,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun cropImage(id: String, rect: android.graphics.RectF, keepOriginal: Boolean = true) {
         val image = _draft.value.images.firstOrNull { it.id == id } ?: return
-        if (keepOriginal && _draft.value.images.size >= ImageStore.MAX_IMAGES) {
+        if (keepOriginal && !ImageEditPolicy.canAddImage(_draft.value.images, ImageStore.MAX_IMAGES)) {
             _draftNotice.value = "最多添加 ${ImageStore.MAX_IMAGES} 张图片，请先删除一张再裁剪"
             return
         }
@@ -208,7 +208,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 if (keepOriginal) {
                     val cropped = imageStore.cropCopy(image.path, rect)
-                    if (_draft.value.images.size >= ImageStore.MAX_IMAGES) {
+                    if (!ImageEditPolicy.canAddImage(_draft.value.images, ImageStore.MAX_IMAGES)) {
                         imageStore.delete(cropped.path)
                         _draftNotice.value = "最多添加 ${ImageStore.MAX_IMAGES} 张图片，请先删除一张再裁剪"
                         return@launch
@@ -461,14 +461,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val question = repository.getById(id)
             followUpRepository.deleteForQuestion(id)
             repository.delete(id)
-            question?.imagePaths?.forEach(imageStore::delete)
+            question?.imagePaths?.let(imageStore::deleteAll)
         }
     }
 
     fun clearHistory() {
         viewModelScope.launch {
             val all = repository.getAll()
-            all.forEach { question -> question.imagePaths.forEach(imageStore::delete) }
+            all.forEach { question -> imageStore.deleteAll(question.imagePaths) }
             followUpRepository.clearAll()
             repository.clearAll()
             _draftNotice.value = "历史记录已清空"

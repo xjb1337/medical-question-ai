@@ -7,6 +7,13 @@ package com.xjb.medicalquestionai.data
 object ImageEditPolicy {
 
     /**
+     * Whether a draft may accept one more image. Kept here so the composer
+     * and the crop flow share one testable limit rule.
+     */
+    fun canAddImage(images: List<DraftImage>, maxImages: Int = 9): Boolean =
+        images.size < maxImages
+
+    /**
      * Inserts [cropped] immediately after the image with [targetId].
      * Returns null when the target no longer exists so callers can delete the
      * orphaned crop file rather than leaking it.

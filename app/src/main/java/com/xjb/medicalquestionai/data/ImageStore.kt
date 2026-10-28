@@ -206,6 +206,10 @@ class ImageStore(private val context: Context) {
         runCatching { File(path).takeIf { it.exists() && it.parentFile?.canonicalPath == imagesDir.canonicalPath }?.delete() }
     }
 
+    fun deleteAll(paths: Iterable<String>) {
+        paths.forEach(::delete)
+    }
+
     fun createCaptureTarget(): CaptureTarget {
         val dir = File(context.cacheDir, "captures").apply { mkdirs() }
         val file = File.createTempFile("camera_", ".jpg", dir)
