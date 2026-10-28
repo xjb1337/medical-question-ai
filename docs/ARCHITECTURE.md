@@ -89,7 +89,7 @@ MainViewModel
 - 解码时按最长边采样，避免 OOM。
 - 读取 EXIF 方向并旋转，统一转正。
 - 最长边压缩到 1800 px，JPEG 质量 86，保存至 `filesDir/question_images`。
-- 编辑操作（旋转/裁剪）通过临时文件原子替换原文件，路径保持不变，避免数据库引用失效。
+- 旋转默认通过临时文件原子替换原文件，路径保持不变；裁剪可选择替换原图，或保留原图并新增一张局部图（受 9 张上限约束）。
 - 图片仅在分析时读取为 Base64；历史记录保存本地路径，不保存 Base64。
 
 ## 5. 安全与隐私
@@ -97,7 +97,8 @@ MainViewModel
 - API Key：`EncryptedSharedPreferences` + Android Keystore 派生密钥，AES-256-GCM。
 - 不记录请求头、API Key 或完整图片到日志。
 - 分析前必须勾选隐私确认；界面明确提示不要上传患者身份信息。
-- 网络使用 HTTPS；允许自定义 Base URL 以兼容自建代理，但用户需自行确认其可信度。
+- Android 网络仅允许 HTTPS：自定义 Base URL 在设置页和 `DeepSeekClient` 两处校验，HTTP 地址会被拒绝；不配置明文流量例外。
+- 网页版为独立实现，API Key 默认明文存于浏览器 localStorage，请求经本地 Node 代理转发；其边界不在 Android APK 的安全承诺内，详见 `docs/PRIVACY.md`。
 - 导出/分享只包含文字答案，不包含本地图片路径。
 
 ## 6. 错误处理

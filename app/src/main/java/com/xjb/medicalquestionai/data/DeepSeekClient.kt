@@ -83,8 +83,10 @@ class DeepSeekClient {
             put("max_tokens", maxTokens)
             put("stream", false)
         }
+        val endpoint = buildEndpoint(baseUrl, "/chat/completions")
+            ?: throw ApiException("接口地址无效：Android 版仅允许 https:// 开头的完整地址。")
         val request = Request.Builder()
-            .url("${baseUrl.trimEnd('/')}/chat/completions")
+            .url(endpoint)
             .addHeader("Authorization", "Bearer $apiKey")
             .addHeader("Content-Type", "application/json")
             .post(payload.toString().toRequestBody(JSON_TYPE))
@@ -129,8 +131,10 @@ class DeepSeekClient {
 
     suspend fun verifyKey(baseUrl: String, apiKey: String): String? = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) return@withContext "API 密钥为空"
+        val endpoint = buildEndpoint(baseUrl, "/models")
+            ?: return@withContext "接口地址无效：Android 版仅允许 https:// 开头的完整地址。"
         val request = Request.Builder()
-            .url("${baseUrl.trimEnd('/')}/models")
+            .url(endpoint)
             .addHeader("Authorization", "Bearer $apiKey")
             .get()
             .build()
@@ -142,6 +146,15 @@ class DeepSeekClient {
         } catch (e: IOException) {
             "网络连接失败，请检查网络后重试。"
         }
+    }
+
+    private fun buildEndpoint(baseUrl: String, path: String): String? {
+        val base = baseUrl.trim().trimEnd('/')
+        val uri = runCatching { java.net.URI(base) }.getOrNull() ?: return null
+        val scheme = uri.scheme?.lowercase()
+        if (scheme != "https") return null
+        if (uri.host.isNullOrBlank()) return null
+        return base + path
     }
 
     private fun mapHttpError(code: Int, body: String): ApiException {

@@ -348,6 +348,8 @@ a { color: inherit; text-decoration: none; }
 .follow-bubble { max-width: 82%; padding: 10px 13px; border-radius: 5px 12px 12px 12px; background: var(--surface-soft); color: #4d655d; font-size: 11.8px; line-height: 1.72; white-space: pre-wrap; }
 .follow-msg.user .follow-bubble { border-radius: 12px 5px 12px 12px; background: #e5f3ed; color: #244c42; }
 .follow-bubble img { display: block; max-width: 180px; max-height: 150px; margin-top: 6px; border-radius: 7px; object-fit: cover; }
+.follow-usage { display: inline-flex; align-items: center; gap: 4px; margin-top: 7px; padding-top: 6px; border-top: 1px solid rgba(38, 92, 75, .12); color: var(--muted); font-size: 10.2px; white-space: normal; }
+.follow-usage .icon { width: 12px; height: 12px; }
 .follow-input-wrap { display: flex; align-items: flex-end; gap: 8px; margin-top: 16px; padding: 8px 9px 8px 13px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-soft); }
 .follow-input-wrap:focus-within { border-color: #8bc8b6; box-shadow: 0 0 0 3px rgba(15, 118, 110, .07); }
 .follow-input-wrap textarea { flex: 1; min-height: 28px; max-height: 110px; resize: none; padding: 5px 0; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 12px; line-height: 1.55; }

@@ -3,9 +3,18 @@
 ## 数据流
 
 1. 用户拍摄或选择图片后，应用在本地完成方向校正、缩放和 JPEG 重编码。
-2. 点击「开始解析」时，题目文字、选中的图片（Base64）和题型会通过 HTTPS 直接发送到用户配置的 DeepSeek API 地址。
+2. Android 版点击「开始解析」时，题目文字、选中的图片（Base64）和题型会通过 HTTPS 直接发送到用户配置的 DeepSeek API 地址；Android 版只允许 `https://` 的 Base URL。
 3. 模型返回的题干、答案、解析和用量保存在本机 Room 数据库；图片保存在应用私有目录。
-4. 应用没有自建中转服务器，也不包含统计 SDK、广告 SDK 或第三方登录。
+4. Android 版没有自建中转服务器，也不包含统计 SDK、广告 SDK 或第三方登录。
+
+## 网页版与 Android 版的差异
+
+网页版是独立的本地测试版本，不是 Android 应用的一部分：
+
+- 网页默认将 API Key 以**明文**保存在浏览器 `localStorage`；关闭「记住 API Key」后改用当前标签页的 `sessionStorage`。浏览器存储不是加密存储。
+- 网页请求发往本地 Node 代理（默认仅监听 `127.0.0.1`），代理进程能够接触 API Key 和请求内容，再转发到用户配置的解析接口。代理不落盘、不记录请求内容，但不应把端口暴露到公网。
+- 网页默认解析地址 `https://api.deepseek.com` 使用 HTTPS；自定义 `http://` 地址不具备传输加密，仅建议本机测试。
+- 网页历史与图片保存在当前浏览器的 IndexedDB，不进入 Android 的 Room 数据库。
 
 ## 本地保存
 
@@ -15,7 +24,7 @@
 | 题目与解析 | Room `medical_question.db` | 包含题干、答案、模型名、时间、收藏状态 |
 | 追问记录 | Room `follow_ups` 表 | 与题目关联，删除题目时一并删除 |
 | 图片 | `filesDir/question_images/` | 应用私有目录，卸载应用时删除 |
-| 普通设置 | `SharedPreferences`（`app_settings`） | 模型名、接口地址、是否保存历史 |
+| 普通设置 | `SharedPreferences`（`app_settings`） | 模型名、HTTPS 接口地址、是否保存历史 |
 
 ## 用户控制
 

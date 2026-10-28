@@ -105,6 +105,27 @@ function extractContent(payload) {
   throw new ApiError("模型没有返回可读取的内容。", 0);
 }
 
+// Returns null when the upstream omitted usage; do not fabricate zero usage.
+export function usageFromResponse(payload) {
+  const usage = payload?.usage;
+  if (!usage || typeof usage !== "object") return null;
+  const promptTokens = Number(usage.prompt_tokens ?? usage.promptTokens);
+  const completionTokens = Number(usage.completion_tokens ?? usage.completionTokens);
+  const totalTokens = Number(usage.total_tokens ?? usage.totalTokens);
+  if (![promptTokens, completionTokens, totalTokens].every(Number.isFinite)) return null;
+  return { promptTokens, completionTokens, totalTokens };
+}
+
+export function formatUsageLabel(usage) {
+  if (!usage || typeof usage !== "object") return "";
+  const prompt = Number(usage.promptTokens);
+  const completion = Number(usage.completionTokens);
+  const total = Number(usage.totalTokens);
+  if (![prompt, completion, total].every(Number.isFinite)) return "";
+  const prefix = usage.simulated ? "模拟用量" : "Token 用量";
+  return `${prefix}：输入 ${prompt.toLocaleString()} · 输出 ${completion.toLocaleString()} · 合计 ${total.toLocaleString()}`;
+}
+
 function toArray(value) {
   if (Array.isArray(value)) return value;
   if (value === null || value === undefined || value === "") return [];
@@ -257,7 +278,13 @@ function questionContext(question) {
 }
 
 export async function askFollowUp(settings, question, userText, images, history) {
-  if (settings.demoMode) return makeDemoFollowUp(question, userText);
+  if (settings.demoMode) {
+    return {
+      text: makeDemoFollowUp(question, userText),
+      usage: { promptTokens: 320, completionTokens: 180, totalTokens: 500, simulated: true },
+      demo: true
+    };
+  }
   if (!settings.apiKey) throw new ApiError("尚未配置 API Key，请先到设置页填写。", 0);
   const historyText = (history || []).slice(-8).map((item) => `${item.role === "user" ? "学生" : "助手"}：${item.text}`).join("\n");
   const text = [
@@ -279,7 +306,7 @@ export async function askFollowUp(settings, question, userText, images, history)
     max_tokens: 2200
   };
   const response = await proxyRequest("/api/deepseek/chat", payload, settings);
-  return extractContent(response).trim();
+  return { text: extractContent(response).trim(), usage: usageFromResponse(response), demo: false };
 }
 
 export async function testConnection(settings) {

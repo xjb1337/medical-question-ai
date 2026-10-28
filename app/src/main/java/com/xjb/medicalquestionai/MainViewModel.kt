@@ -13,6 +13,7 @@ import com.xjb.medicalquestionai.data.DeepSeekClient
 import com.xjb.medicalquestionai.data.DraftImage
 import com.xjb.medicalquestionai.data.FollowUp
 import com.xjb.medicalquestionai.data.FollowUpRepository
+import com.xjb.medicalquestionai.data.ImageEditPolicy
 import com.xjb.medicalquestionai.data.ImageStore
 import com.xjb.medicalquestionai.data.Question
 import com.xjb.medicalquestionai.data.QuestionAnalyzer
@@ -197,14 +198,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun cropImage(id: String, rect: android.graphics.RectF) {
+    fun cropImage(id: String, rect: android.graphics.RectF, keepOriginal: Boolean = true) {
         val image = _draft.value.images.firstOrNull { it.id == id } ?: return
+        if (keepOriginal && _draft.value.images.size >= ImageStore.MAX_IMAGES) {
+            _draftNotice.value = "最多添加 ${ImageStore.MAX_IMAGES} 张图片，请先删除一张再裁剪"
+            return
+        }
         viewModelScope.launch {
             try {
-                val meta = imageStore.crop(image.path, rect)
-                _draft.value = _draft.value.copy(images = _draft.value.images.map {
-                    if (it.id == id) it.copy(width = meta.width, height = meta.height, sizeBytes = meta.sizeBytes) else it
-                })
+                if (keepOriginal) {
+                    val cropped = imageStore.cropCopy(image.path, rect)
+                    if (_draft.value.images.size >= ImageStore.MAX_IMAGES) {
+                        imageStore.delete(cropped.path)
+                        _draftNotice.value = "最多添加 ${ImageStore.MAX_IMAGES} 张图片，请先删除一张再裁剪"
+                        return@launch
+                    }
+                    val images = ImageEditPolicy.insertAfter(_draft.value.images, id, cropped)
+                    if (images == null) {
+                        imageStore.delete(cropped.path)
+                        return@launch
+                    }
+                    _draft.value = _draft.value.copy(images = images)
+                } else {
+                    val meta = imageStore.cropInPlace(image.path, rect)
+                    _draft.value = _draft.value.copy(images = _draft.value.images.map {
+                        if (it.id == id) it.copy(width = meta.width, height = meta.height, sizeBytes = meta.sizeBytes) else it
+                    })
+                }
             } catch (e: Exception) {
                 _draftNotice.value = "裁剪失败：${e.message ?: "请重试"}"
             }
@@ -513,9 +533,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         settingsRepository.saveModel(model)
     }
 
-    fun saveBaseUrl(url: String) {
-        settingsRepository.saveBaseUrl(url)
-    }
+    fun saveBaseUrl(url: String): Boolean = settingsRepository.saveBaseUrl(url)
 
     fun saveHistoryPreference(enabled: Boolean) {
         settingsRepository.setSaveHistory(enabled)

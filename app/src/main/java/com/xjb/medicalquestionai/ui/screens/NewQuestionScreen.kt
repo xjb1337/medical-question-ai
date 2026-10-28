@@ -410,7 +410,7 @@ fun NewQuestionScreen(
             index = draft.images.indexOfFirst { it.id == editingImage.id } + 1,
             onDismiss = { editingImageId = null },
             onRotate = { degrees -> viewModel.rotateImage(editingImage.id, degrees) },
-            onCrop = { rect -> viewModel.cropImage(editingImage.id, rect) },
+            onCrop = { rect, keepOriginal -> viewModel.cropImage(editingImage.id, rect, keepOriginal) },
             onDelete = {
                 viewModel.removeImage(editingImage.id)
                 editingImageId = null
@@ -507,7 +507,7 @@ private fun ImageEditDialog(
     index: Int,
     onDismiss: () -> Unit,
     onRotate: (Int) -> Unit,
-    onCrop: (android.graphics.RectF) -> Unit,
+    onCrop: (android.graphics.RectF, Boolean) -> Unit,
     onDelete: () -> Unit
 ) {
     var cropMode by remember { mutableStateOf(false) }
@@ -564,7 +564,7 @@ private fun ImageEditDialog(
                 if (cropMode) {
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "拖动四角或框内区域，选择要保留的画面。",
+                        "拖动四角或框内区域，选择要保留的画面。默认保留当前完整图，并在其后新增一张裁剪图。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -576,9 +576,9 @@ private fun ImageEditDialog(
                 Row {
                     TextButton(onClick = { cropRect = Rect(0.04f, 0.04f, 0.96f, 0.96f) }) { Text("重置") }
                     Button(onClick = {
-                        onCrop(android.graphics.RectF(cropRect.left, cropRect.top, cropRect.right, cropRect.bottom))
+                        onCrop(android.graphics.RectF(cropRect.left, cropRect.top, cropRect.right, cropRect.bottom), true)
                         cropMode = false
-                    }) { Text("应用裁剪") }
+                    }) { Text("保留原图并添加") }
                 }
             } else {
                 Button(onClick = onDismiss) { Text("完成") }
@@ -586,7 +586,13 @@ private fun ImageEditDialog(
         },
         dismissButton = {
             if (cropMode) {
-                TextButton(onClick = { cropMode = false }) { Text("取消") }
+                Row {
+                    TextButton(onClick = { cropMode = false }) { Text("取消") }
+                    TextButton(onClick = {
+                        onCrop(android.graphics.RectF(cropRect.left, cropRect.top, cropRect.right, cropRect.bottom), false)
+                        cropMode = false
+                    }) { Text("替换当前图") }
+                }
             } else {
                 Row {
                     TextButton(onClick = {

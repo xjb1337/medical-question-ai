@@ -11,7 +11,7 @@ import {
   maskKey,
   storageStats
 } from "./store.js";
-import { analyzeQuestion, askFollowUp, testConnection, ApiError } from "./api.js";
+import { analyzeQuestion, askFollowUp, testConnection, formatUsageLabel, ApiError } from "./api.js";
 import {
   compressFile,
   rotateDataUrl,
@@ -280,7 +280,7 @@ function shell(route, content) {
         <div class="sidebar-spacer"></div>
         <div class="side-footer">
           <div class="side-footer-title">${icon("shield")}本地优先 · 隐私可控</div>
-          <p><span class="side-foot-dot"></span>图片与历史仅保存在此浏览器；API Key 只随请求发往你配置的接口。</p>
+          <p><span class="side-foot-dot"></span>图片与历史保存在此浏览器；API Key 随请求经本地代理发往你配置的接口。</p>
         </div>
       </aside>
       <main class="main">
@@ -538,11 +538,14 @@ function renderFollowUp(question) {
     <section class="card followup-card">
       <div class="followup-title"><h3>${icon("send")}继续追问</h3><span>围绕这道题继续问</span></div>
       <div class="follow-list">
-        ${messages.length ? messages.map((message) => `
+        ${messages.length ? messages.map((message) => {
+          const usageLabel = message.role === "assistant" ? formatUsageLabel(message.usage) : "";
+          return `
           <div class="follow-msg ${message.role === "user" ? "user" : ""}">
             <span class="follow-avatar">${message.role === "user" ? "我" : "AI"}</span>
-            <div class="follow-bubble">${nl2br(message.text || "")}${(message.images || []).map((image) => `<img src="${escapeAttr(image.dataUrl)}" alt="追问图片">`).join("")}</div>
-          </div>`).join("") : `<div class="follow-empty">还有哪里没看懂？可以问「为什么排除 C」或「这道题的诊断标准是什么」。</div>`}
+            <div class="follow-bubble">${nl2br(message.text || "")}${(message.images || []).map((image) => `<img src="${escapeAttr(image.dataUrl)}" alt="追问图片">`).join("")}${usageLabel ? `<div class="follow-usage">${icon("database")}${escapeHtml(usageLabel)}</div>` : ""}</div>
+          </div>`;
+        }).join("") : `<div class="follow-empty">还有哪里没看懂？可以问「为什么排除 C」或「这道题的诊断标准是什么」。</div>`}
         ${state.followUpBusy ? `<div class="follow-busy"><span class="mini-spinner"></span>正在结合原题思考…</div>` : ""}
       </div>
       ${state.followUpError ? `<div class="error-banner">${icon("alert")}<span>${escapeHtml(state.followUpError)}</span></div>` : ""}
@@ -645,27 +648,27 @@ function renderSettingsPage() {
   const settings = state.settings;
   const connection = state.connection;
   return `
-    ${pageHead({ eyebrow: "PREFERENCES", title: "设置", description: "配置模型接口与本地数据偏好。API Key 不会写入浏览器历史或日志。" })}
+    ${pageHead({ eyebrow: "PREFERENCES", title: "设置", description: "配置模型接口与本地数据偏好。请先了解浏览器存储与本地代理的实际边界。" })}
     <div class="settings-grid">
       <div class="settings-stack">
         <section class="card settings-card">
           <h2>${icon("key")}DeepSeek API</h2>
-          <p>填写你自己的 API Key。Key 默认保存在此浏览器的 localStorage；关闭「记住 Key」后只保留在本次标签页的 sessionStorage。</p>
+          <p>填写你自己的 API Key。默认「记住 Key」开启时，Key 以明文写入此浏览器的 localStorage；关闭后改用 sessionStorage，只保留在当前标签页会话中，刷新通常仍在，关闭标签页后清除。浏览器存储不是加密存储。</p>
           <div class="field">
             <label for="settings-key">API Key <span>sk-…</span></label>
             <div class="input-with-action">
               <input id="settings-key" type="${state.showKey ? "text" : "password"}" value="${escapeAttr(settings.apiKey || "")}" placeholder="sk-…" autocomplete="off" spellcheck="false">
               <button class="btn btn-icon btn-ghost" data-action="toggle-key" title="${state.showKey ? "隐藏" : "显示"}">${icon(state.showKey ? "eyeOff" : "eye")}</button>
             </div>
-            <p class="field-note">浏览器只把 Key 发给你在下面配置的接口地址；若部署在公网，请使用 HTTPS。</p>
+            <p class="field-note">浏览器会把 Key 发到本地 Node 代理（默认监听 127.0.0.1），由代理转发到你配置的接口地址；代理进程能接触 Key 和请求内容。</p>
           </div>
           <div class="field">
             <label for="settings-base-url">接口地址 <span>Base URL</span></label>
             <input id="settings-base-url" value="${escapeAttr(settings.baseUrl || "https://api.deepseek.com")}" placeholder="https://api.deepseek.com" autocomplete="off">
-            <p class="field-note">默认 https://api.deepseek.com，兼容 OpenAI Chat Completions 协议。</p>
+            <p class="field-note">默认 https://api.deepseek.com，兼容 OpenAI Chat Completions 协议。若改为 http://（仅建议本机测试），浏览器到本地代理之外的该段传输不具备加密保护。</p>
           </div>
           <div class="toggle-row">
-            <div class="toggle-copy"><strong>记住 API Key</strong><span>关闭后刷新页面需要重新输入。</span></div>
+            <div class="toggle-copy"><strong>记住 API Key</strong><span>关闭后仅保留在当前标签页会话；刷新通常仍在，关闭标签页后清除。</span></div>
             <label class="switch"><input type="checkbox" data-toggle="rememberKey" ${settings.rememberKey ? "checked" : ""}><span></span></label>
           </div>
           <div class="settings-actions">
@@ -673,7 +676,7 @@ function renderSettingsPage() {
             <button class="btn btn-secondary" data-action="test-connection" ${state.connection === "testing" ? "disabled" : ""}>${state.connection === "testing" ? "正在测试…" : `${icon("sparkle")}测试连接`}</button>
           </div>
           ${connection && connection !== "testing" ? `<div class="security-note">${icon(connection.type === "error" ? "alert" : "checkCircle")}<span>${escapeHtml(connection.text)}</span></div>` : ""}
-          <div class="security-note">${icon("shield")}<span>Key 只保存在本机；解析请求经由本地 Node 服务转发，不会写入服务端日志。</span></div>
+          <div class="security-note">${icon("shield")}<span>浏览器将 Key 发给本地 Node 代理（默认仅监听 127.0.0.1）；代理进程可接触 Key 和请求内容，再转发到上方接口地址。请勿把代理端口暴露到公网。</span></div>
         </section>
 
         <section class="card settings-card">
@@ -707,7 +710,7 @@ function renderSettingsPage() {
 
         <section class="card settings-card">
           <h2>${icon("database")}本地数据</h2>
-          <p>题目与图片保存在此浏览器的 IndexedDB，不会上传到除解析接口以外的服务器。</p>
+          <p>题目与图片保存在此浏览器的 IndexedDB；只有点击解析或追问时，题目文字与所选图片才会经本地代理发往你配置的解析接口。</p>
           <div class="data-stats">
             <div class="data-stat"><strong id="stat-total">${visibleQuestions().length}</strong><span>历史题目</span></div>
             <div class="data-stat"><strong id="stat-size">—</strong><span>存储占用</span></div>
@@ -896,12 +899,20 @@ async function sendFollowUp() {
   const prior = (question.followUps || []).map((message) => ({ role: message.role, text: message.text || "" }));
   const userMessage = { role: "user", text, images, createdAt: Date.now() };
   question.followUps = [...(question.followUps || []), userMessage];
+  const draftOnFailure = text;
+  const imagesOnFailure = images;
   state.followUpDraft = "";
   state.followUpImages = [];
   render();
   try {
     const answer = await askFollowUp(state.settings, question, text, images, prior);
-    question.followUps = [...(question.followUps || []), { role: "assistant", text: answer, createdAt: Date.now() }];
+    question.followUps = [...(question.followUps || []), {
+      role: "assistant",
+      text: answer.text,
+      usage: answer.usage || null,
+      demo: answer.demo === true,
+      createdAt: Date.now()
+    }];
     question.updatedAt = Date.now();
     await saveQuestion(question);
     await refreshQuestions();
@@ -911,6 +922,9 @@ async function sendFollowUp() {
     console.error(error);
     state.followUpBusy = false;
     state.followUpError = error instanceof ApiError ? error.message : (error?.message || "追问失败，请稍后重试。");
+    state.followUpDraft = draftOnFailure;
+    state.followUpImages = imagesOnFailure;
+    question.followUps = (question.followUps || []).filter((message) => message !== userMessage);
     render();
     toast(state.followUpError, "error");
   }
@@ -1012,9 +1026,9 @@ function openCrop(index) {
   if (!image) return;
   openModal(`
     <h2>裁剪图片</h2>
-    <p>在图片上拖动，框选需要保留的区域。裁剪只影响本次解析的副本。</p>
+    <p>在图片上拖动，框选需要保留的区域。默认保留当前完整图，并在其后新增一张裁剪图。</p>
     <div class="crop-stage" id="crop-stage"><img id="crop-image" src="${escapeAttr(image.dataUrl)}" alt="裁剪预览"><div class="crop-box" id="crop-box"></div></div>
-    <div class="crop-tools"><span class="crop-tip">提示：框选区域会自动吸附在图片范围内</span><button class="btn btn-secondary" data-action="close-modal">取消</button><button class="btn btn-primary" data-action="apply-crop" data-index="${index}">${icon("crop")}应用裁剪</button></div>`,
+    <div class="crop-tools"><span class="crop-tip">提示：框选区域会自动吸附在图片范围内</span><button class="btn btn-secondary" data-action="close-modal">取消</button><button class="btn btn-ghost" data-action="apply-crop" data-index="${index}" data-mode="replace">替换当前图</button><button class="btn btn-primary" data-action="apply-crop" data-index="${index}" data-mode="keep">${icon("crop")}保留原图并添加</button></div>`,
   "crop-modal");
   bindCrop(index);
 }
@@ -1080,10 +1094,15 @@ function bindCrop(index) {
   }));
 }
 
-async function applyCrop(index) {
+async function applyCrop(index, mode = "keep") {
   const image = state.draft.images[index];
   const crop = state.crop;
   if (!image || !crop?.imageRect) return;
+  const keepOriginal = mode !== "replace";
+  if (keepOriginal && state.draft.images.length >= MAX_IMAGES) {
+    toast(`最多上传 ${MAX_IMAGES} 张图片，请先删除一张再裁剪。`, "error");
+    return;
+  }
   const rect = crop.imageRect;
   const box = crop.box;
   if (box.width < 8 || box.height < 8) {
@@ -1092,7 +1111,7 @@ async function applyCrop(index) {
   }
   const scaleX = image.width / rect.width;
   const scaleY = image.height / rect.height;
-  showBusy("正在裁剪", "保留你框选的区域。");
+  showBusy("正在裁剪", keepOriginal ? "保留完整图并生成局部图。" : "替换当前图片。");
   try {
     const result = await cropDataUrl(image.dataUrl, {
       x: (box.x - rect.x) * scaleX,
@@ -1100,16 +1119,38 @@ async function applyCrop(index) {
       width: box.width * scaleX,
       height: box.height * scaleY
     });
-    const target = state.draft.images[index];
-    target.dataUrl = result.dataUrl;
-    target.width = result.width;
-    target.height = result.height;
-    target.sizeBytes = result.sizeBytes;
-    target.name = `${target.name || "图片"}（已裁剪）`;
+    if (keepOriginal) {
+      if (state.draft.images.length >= MAX_IMAGES) {
+        hideBusy();
+        toast(`最多上传 ${MAX_IMAGES} 张图片，请先删除一张再裁剪。`, "error");
+        return;
+      }
+      const current = state.draft.images[index];
+      if (!current) {
+        hideBusy();
+        return;
+      }
+      const croppedImage = {
+        id: uid("image"),
+        dataUrl: result.dataUrl,
+        width: result.width,
+        height: result.height,
+        sizeBytes: result.sizeBytes,
+        name: `${current.name || "图片"}（裁剪图）`
+      };
+      state.draft.images.splice(index + 1, 0, croppedImage);
+    } else {
+      const target = state.draft.images[index];
+      target.dataUrl = result.dataUrl;
+      target.width = result.width;
+      target.height = result.height;
+      target.sizeBytes = result.sizeBytes;
+      target.name = `${target.name || "图片"}（已裁剪）`;
+    }
     closeModal();
     hideBusy();
     render();
-    toast("裁剪完成。");
+    toast(keepOriginal ? "已保留原图并添加裁剪图。" : "已替换当前图片。");
   } catch (error) {
     hideBusy();
     toast(error?.message || "裁剪失败，请重试。", "error");
@@ -1248,7 +1289,7 @@ function handleAction(action, element) {
       openCrop(Number(element.dataset.index));
       break;
     case "apply-crop":
-      applyCrop(Number(element.dataset.index));
+      applyCrop(Number(element.dataset.index), element.dataset.mode || "keep");
       break;
     case "start-analysis":
       startAnalysis();
@@ -1304,7 +1345,7 @@ function handleAction(action, element) {
       break;
     case "save-api": {
       saveFormSettings();
-      state.connection = { type: "ok", text: "API Key 已保存在本机。" };
+      state.connection = { type: "ok", text: state.settings.rememberKey ? "API Key 已明文保存在此浏览器 localStorage。" : "API Key 仅保存在当前标签页 sessionStorage。" };
       render();
       toast("设置已保存。");
       break;

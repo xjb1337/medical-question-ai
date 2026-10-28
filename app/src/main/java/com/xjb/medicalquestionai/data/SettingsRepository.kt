@@ -71,8 +71,11 @@ class SettingsRepository(context: Context, private val keyStore: SecureKeyStore)
         prefs.edit().putString(KEY_MODEL, model).apply()
     }
 
-    fun saveBaseUrl(url: String) {
-        prefs.edit().putString(KEY_BASE_URL, url.trim().trimEnd('/')).apply()
+    fun saveBaseUrl(url: String): Boolean {
+        val normalized = normalizeBaseUrl(url)
+        if (validateBaseUrl(normalized) != null) return false
+        prefs.edit().putString(KEY_BASE_URL, normalized).apply()
+        return true
     }
 
     fun setSaveHistory(value: Boolean) {
@@ -96,5 +99,19 @@ class SettingsRepository(context: Context, private val keyStore: SecureKeyStore)
         private const val KEY_MODEL = "model"
         private const val KEY_BASE_URL = "base_url"
         private const val KEY_SAVE_HISTORY = "save_history"
+
+        fun normalizeBaseUrl(url: String): String = url.trim().trimEnd('/')
+
+        /** Returns a user-facing error, or null when the base URL is syntactically usable. */
+        fun validateBaseUrl(url: String): String? {
+            val value = url.trim()
+            if (value.isEmpty()) return "接口地址不能为空"
+            val uri = runCatching { java.net.URI(value) }.getOrNull()
+                ?: return "接口地址格式不正确"
+            val scheme = uri.scheme?.lowercase()
+            if (scheme != "https") return "Android 版仅允许 https:// 接口地址（禁止明文 HTTP）"
+            if (uri.host.isNullOrBlank()) return "接口地址缺少有效主机名"
+            return null
+        }
     }
 }

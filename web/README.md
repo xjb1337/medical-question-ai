@@ -53,12 +53,20 @@ $env:PORT="8080"; node server.mjs
 3. 点击「测试连接」确认 Key 可用。
 4. 关闭演示模式，回到新建解析。
 
-API Key 存在浏览器 `localStorage`（开启「在本机记住密钥」时）或 `sessionStorage`（关闭时），不会写入服务端日志。解析请求经本地 Node 代理转发到 DeepSeek，浏览器端不直接暴露跨域请求。
+API Key 默认以明文存在浏览器 `localStorage`（开启「记住 API Key」时）；关闭后改存当前标签页的 `sessionStorage`，刷新通常仍在，关闭标签页后清除。浏览器存储不是加密存储。解析请求经本地 Node 代理转发，代理进程能够接触 API Key 和请求内容；服务默认只监听 `127.0.0.1`，不会把 Key 写入磁盘或日志。默认接口地址 `https://api.deepseek.com` 使用 HTTPS；如自定义 `http://` 地址，该段传输不具备加密保护，仅建议本机测试。
+
+## 回归测试
+
+```bash
+node test/browser-repair-smoke.mjs
+```
+
+脚本会自行启动本地 mock DeepSeek、Node 静态服务和系统 Chrome/Edge 无头浏览器，验证合成 PNG 导入、裁剪保留原图、解析 Token 展示、追问 Token 用量和历史落库。需要本机安装 Chrome/Edge，或通过 `CHROME_PATH` 指定浏览器。未安装浏览器时脚本会失败并明确提示，不应把静态构建当作功能验收。
 
 ## 功能清单
 
 - 文字题目 + 最多 9 张图片，支持粘贴、拖拽和相机拍照。
-- 图片自动压缩（最长边 1800px、JPEG 质量 86），支持旋转、裁剪、排序、删除。
+- 图片自动压缩（最长边 1800px、JPEG 质量 86），支持旋转、裁剪（保留原图或替换原图）、排序、删除。
 - 自动/单选/多选/填空/简答五种题型。
 - 解析结果：识别题干、图片观察、选项逐项判断、解题思路、关键知识点、易错点、置信度、警告。
 - 追问：保留多轮上下文，可附加图片（演示模式返回本地模拟回答）。
@@ -86,9 +94,9 @@ web/
 ## 本地数据
 
 - 历史题目和图片：IndexedDB 数据库 `medical-question-ai-web`，只保存在当前浏览器。
-- 设置：`localStorage` 键 `medical-question-ai.settings.v1`。
+- 设置：`localStorage` 键 `medical-question-ai.settings.v1`；默认包含明文 API Key。关闭「记住 API Key」时使用的 Key 改存 `sessionStorage`，localStorage 中的副本会被清除。
 - 清除浏览器站点数据会删除全部历史和设置。
-- 页面没有后端数据库，Node 服务只做静态文件和 API 转发。
+- 页面没有后端数据库，Node 服务只做静态文件和 API 转发；代理不落盘、不记录请求内容。
 
 ## 常见问题
 

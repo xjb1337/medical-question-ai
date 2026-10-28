@@ -1,7 +1,9 @@
 # 医学拍题助手
 
-面向医学课程复习的 Android 拍题与 AI 解析应用。支持拍照/相册导入、多图题目、自动识别题型、结构化解析、追问、历史记录和收藏。应用使用 DeepSeek 兼容的 Chat Completions API，所有 API Key 只保存在本机加密存储中。
+面向医学课程复习的 Android 拍题与 AI 解析应用。支持拍照/相册导入、多图题目、自动识别题型、结构化解析、追问、历史记录和收藏。应用使用 DeepSeek 兼容的 Chat Completions API。Android 版 API Key 由 AndroidX Security 加密存储；网页版为便于本地测试，默认将 Key 明文保存在浏览器 localStorage，具体边界见 [web/README.md](web/README.md)。
 
+> 项目状态：首版代码已实现，正在修复与验收（2026-10-28）。Android 自动检查已通过；设备端流程与真实模型验收仍待完成。
+>
 > 本项目仅用于个人学习与题目理解，不替代教材、临床指南或专业医疗建议。
 
 ## 网页版（快速测试）
@@ -19,7 +21,7 @@ npm start
 ## 功能
 
 - **多图拍题**：CameraX 应用内拍照，或从相册选择最多 9 张图片。
-- **图片整理**：排序、旋转、裁剪、删除；导入时自动校正 EXIF 方向并压缩。
+- **图片整理**：排序、旋转、裁剪（可保留原图并新增裁剪结果，或替换原图）、删除；导入时自动校正 EXIF 方向并压缩。
 - **题型选择**：自动识别 / 单选题 / 多选题 / 填空题 / 简答题，可手动覆盖。
 - **结构化解析**：
   - 识别后的题干
@@ -31,7 +33,7 @@ npm start
 - **追问**：围绕当前题目继续提问，可附加图片；多轮上下文保存在本地。
 - **编辑重答**：修改题干或图片后重新分析。
 - **历史与收藏**：搜索、收藏、删除、清空；可配置是否保存历史。
-- **隐私控制**：分析前需确认无患者身份信息；API Key 使用 AndroidX Security 加密。
+- **隐私控制**：分析前需确认无患者身份信息；Android 版 API Key 使用 AndroidX Security + Android Keystore 加密，网页版存储边界见网页版说明。
 - **深浅色主题**：Material 3 界面，适配手机竖屏。
 
 ## 技术栈
@@ -85,7 +87,7 @@ app/build/outputs/apk/debug/app-debug.apk
 本次交付的预构建副本位于 `dist/medical-question-ai-debug.apk`，SHA-256：
 
 ```text
-98964be069e33fda39f31c2b649849532796c185f0bf38c243196a09e3a6306a
+ed8b90eb1f75e5efaf4a1bdd70010ec2da0d653025ad8034ff67bb430e8e09f1
 ```
 
 安装到已连接设备：

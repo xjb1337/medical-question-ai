@@ -313,16 +313,26 @@ fun SettingsScreen(
                         placeholder = { Text("https://api.deepseek.com") },
                         shape = MaterialTheme.shapes.medium
                     )
+                    if (baseUrlInput.trim().startsWith("http://", ignoreCase = true)) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "警告：Android 版仅允许 HTTPS，HTTP 地址不会保存，也无法用于解析。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
                             onClick = {
-                                val url = baseUrlInput.trim().trimEnd('/')
-                                if (!url.startsWith("http://") && !url.startsWith("https://")) {
-                                    localError = "接口地址需要以 http:// 或 https:// 开头"
-                                } else {
-                                    viewModel.saveBaseUrl(url)
+                                val validation = SettingsRepository.validateBaseUrl(baseUrlInput)
+                                if (validation != null) {
+                                    localError = validation
+                                } else if (viewModel.saveBaseUrl(SettingsRepository.normalizeBaseUrl(baseUrlInput))) {
+                                    localError = null
                                     scope.launch { snackbarHostState.showSnackbar("接口地址已保存") }
+                                } else {
+                                    localError = "接口地址保存失败，请检查格式"
                                 }
                             },
                             enabled = !isTesting
@@ -334,7 +344,7 @@ fun SettingsScreen(
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "仅在使用兼容 OpenAI 协议的中转服务时修改。地址会用于后续请求和密钥验证。",
+                        "仅在使用兼容 OpenAI 协议的中转服务时修改。Android 版只接受 HTTPS 地址，HTTP 地址会被拒绝保存。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
