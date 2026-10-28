@@ -1,0 +1,30 @@
+# Android / Gradle
+.gradle/
+build/
+app/build/
+local.properties
+captures/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Signing and secrets
+*.jks
+*.keystore
+keystore.properties
+secrets.properties
+.env
+
+# Generated
+.externalNativeBuild/
+.cxx/
+app/release/
+web/node_modules/

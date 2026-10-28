@@ -1,0 +1,242 @@
+package com.xjb.medicalquestionai.data
+
+import androidx.room.ColumnInfo
+import androidx.room.Dao
+import androidx.room.Database
+import androidx.room.Entity
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.PrimaryKey
+import androidx.room.Query
+import androidx.room.Room
+import androidx.room.RoomDatabase
+import androidx.room.Update
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+import android.content.Context
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+
+@Entity(tableName = "questions")
+data class QuestionEntity(
+    @PrimaryKey val id: String,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val questionType: String,
+    val source: String,
+    val questionText: String,
+    val imagePaths: String,
+    val status: String,
+    val answerJson: String?,
+    val model: String,
+    val errorMessage: String?,
+    val isFavorite: Boolean,
+    @ColumnInfo(defaultValue = "0") val isEphemeral: Boolean = false
+)
+
+@Entity(tableName = "follow_ups")
+data class FollowUpEntity(
+    @PrimaryKey val id: String,
+    val questionId: String,
+    val role: String,
+    val content: String,
+    val createdAt: Long,
+    val promptTokens: Int,
+    val completionTokens: Int,
+    val totalTokens: Int,
+    val failed: Boolean
+)
+
+@Dao
+interface QuestionDao {
+    @Query("SELECT * FROM questions WHERE isEphemeral = 0 ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<QuestionEntity>>
+
+    @Query("SELECT * FROM questions WHERE id = :id")
+    fun observeById(id: String): Flow<QuestionEntity?>
+
+    @Query("SELECT * FROM questions WHERE id = :id")
+    suspend fun getById(id: String): QuestionEntity?
+
+    @Query("SELECT * FROM questions ORDER BY createdAt DESC")
+    suspend fun getAll(): List<QuestionEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(entity: QuestionEntity)
+
+    @Update
+    suspend fun update(entity: QuestionEntity)
+
+    @Query("DELETE FROM questions WHERE id = :id")
+    suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM questions")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface FollowUpDao {
+    @Query("SELECT * FROM follow_ups WHERE questionId = :questionId ORDER BY createdAt ASC")
+    fun observeForQuestion(questionId: String): Flow<List<FollowUpEntity>>
+
+    @Query("SELECT * FROM follow_ups WHERE questionId = :questionId ORDER BY createdAt ASC")
+    suspend fun getForQuestion(questionId: String): List<FollowUpEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(entity: FollowUpEntity)
+
+    @Query("DELETE FROM follow_ups WHERE questionId = :questionId")
+    suspend fun deleteForQuestion(questionId: String)
+
+    @Query("DELETE FROM follow_ups")
+    suspend fun deleteAll()
+}
+
+@Database(
+    entities = [QuestionEntity::class, FollowUpEntity::class],
+    version = 3,
+    exportSchema = false
+)
+abstract class AppDatabase : RoomDatabase() {
+    abstract fun questionDao(): QuestionDao
+    abstract fun followUpDao(): FollowUpDao
+
+    companion object {
+        @Volatile
+        private var instance: AppDatabase? = null
+
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `follow_ups` (
+                        `id` TEXT NOT NULL,
+                        `questionId` TEXT NOT NULL,
+                        `role` TEXT NOT NULL,
+                        `content` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `promptTokens` INTEGER NOT NULL,
+                        `completionTokens` INTEGER NOT NULL,
+                        `totalTokens` INTEGER NOT NULL,
+                        `failed` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `questions` ADD COLUMN `isEphemeral` INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        fun get(context: Context): AppDatabase = instance ?: synchronized(this) {
+            instance ?: Room.databaseBuilder(
+                context.applicationContext,
+                AppDatabase::class.java,
+                "medical_question.db"
+            )
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .build()
+                .also { instance = it }
+        }
+    }
+}
+
+class QuestionRepository(private val dao: QuestionDao) {
+    fun observeAll(): Flow<List<Question>> = dao.observeAll().mapEntities()
+
+    fun observeById(id: String): Flow<Question?> = dao.observeById(id).mapEntity()
+
+    suspend fun getById(id: String): Question? = dao.getById(id)?.toDomain()
+
+    suspend fun getAll(): List<Question> = dao.getAll().map { it.toDomain() }
+
+    suspend fun insert(question: Question) = dao.insert(question.toEntity())
+
+    suspend fun update(question: Question) = dao.update(question.toEntity())
+
+    suspend fun delete(id: String) = dao.deleteById(id)
+
+    suspend fun clearAll() = dao.deleteAll()
+
+    private fun Flow<List<QuestionEntity>>.mapEntities(): Flow<List<Question>> =
+        map { list -> list.map { it.toDomain() } }
+
+    private fun Flow<QuestionEntity?>.mapEntity(): Flow<Question?> =
+        map { it?.toDomain() }
+}
+
+class FollowUpRepository(private val dao: FollowUpDao) {
+    fun observeForQuestion(questionId: String): Flow<List<FollowUp>> =
+        dao.observeForQuestion(questionId).map { list -> list.map { it.toDomain() } }
+
+    suspend fun getForQuestion(questionId: String): List<FollowUp> =
+        dao.getForQuestion(questionId).map { it.toDomain() }
+
+    suspend fun insert(followUp: FollowUp) = dao.insert(followUp.toEntity())
+
+    suspend fun deleteForQuestion(questionId: String) = dao.deleteForQuestion(questionId)
+
+    suspend fun clearAll() = dao.deleteAll()
+}
+
+fun FollowUpEntity.toDomain(): FollowUp = FollowUp(
+    id = id,
+    questionId = questionId,
+    role = role,
+    content = content,
+    createdAt = createdAt,
+    usage = Usage(promptTokens, completionTokens, totalTokens),
+    failed = failed
+)
+
+fun FollowUp.toEntity(): FollowUpEntity = FollowUpEntity(
+    id = id,
+    questionId = questionId,
+    role = role,
+    content = content,
+    createdAt = createdAt,
+    promptTokens = usage.promptTokens,
+    completionTokens = usage.completionTokens,
+    totalTokens = usage.totalTokens,
+    failed = failed
+)
+
+fun QuestionEntity.toDomain(): Question = Question(
+    id = id,
+    createdAt = createdAt,
+    questionType = questionType,
+    source = source,
+    questionText = questionText,
+    imagePaths = runCatching {
+        val array = org.json.JSONArray(imagePaths)
+        (0 until array.length()).map { array.getString(it) }
+    }.getOrDefault(emptyList()),
+    status = status,
+    result = answerJson?.let { AnalysisResult.fromJson(it) },
+    model = model,
+    errorMessage = errorMessage,
+    isFavorite = isFavorite,
+    isEphemeral = isEphemeral
+)
+
+fun Question.toEntity(): QuestionEntity = QuestionEntity(
+    id = id,
+    createdAt = createdAt,
+    updatedAt = System.currentTimeMillis(),
+    questionType = questionType,
+    source = source,
+    questionText = questionText,
+    imagePaths = org.json.JSONArray(imagePaths).toString(),
+    status = status,
+    answerJson = result?.toJson(),
+    model = model,
+    errorMessage = errorMessage,
+    isFavorite = isFavorite,
+    isEphemeral = isEphemeral
+)

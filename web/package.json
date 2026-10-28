@@ -1,0 +1,11 @@
+{
+  "name": "medical-question-ai-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "医学拍题助手网页版：本地可测试的医学题目 AI 解析工作台",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs"
+  }
+}
