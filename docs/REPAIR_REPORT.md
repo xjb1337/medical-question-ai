@@ -64,7 +64,7 @@
 - `importsGeneratedPngAndCropCopyPreservesOriginal`：先记录导入图的 SHA-256、实际宽高；裁剪后再次校验原图哈希和宽高完全不变；校验新图 ID、规范化路径不同；读取新图实际尺寸并验证 600×450；用红/绿/蓝/黄四象限合成图验证左上裁剪区域包含红色标记。
 - `deletingOneCopyDoesNotAffectTheOther`：删除裁剪图后原图和原图哈希仍在；重新裁剪后删除原图，裁剪图和裁剪哈希仍在。
 - `deletingQuestionImageSetRemovesBothFiles`：通过 `ImageStore.deleteAll()` 验证题目删除/清空使用的图片集合清理路径；`MainViewModel.deleteQuestion()` 和 `clearHistory()` 已统一调用该方法。
-- `ImageEditPolicy.canAddImage()` + `ImageEditPolicyTest.cropLimit_rejectsTheTenthImage`：覆盖 9 张上限；`missingTarget_returnsNullWithoutChangingTheInputList` 覆盖取消/失败时列表不变。
+- `ImageEditPolicy.canAddImage()` + `ImageEditPolicyTest.cropLimit_rejectsTheTenthImage`：覆盖 9 张上限；`missingTarget_returnsNullWithoutChangingTheInputList` 覆盖目标不存在时列表不变。用户取消裁剪及实际图片读写失败仍待设备/交互验证。
 - 本项仍缺设备运行证据；以上断言目前只完成编译验证，不能替代设备功能验收。
 
 ### A3：历史验证记录已恢复
