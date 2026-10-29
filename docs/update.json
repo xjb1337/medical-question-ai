@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "applicationId": "com.xjb.medicalquestionai",
+  "versionCode": 4,
+  "versionName": "1.2.1-test.1",
+  "minSdk": 26,
+  "apkAssetName": "medical-question-ai.apk",
+  "apkSizeBytes": 21458738,
+  "apkSha256": "c7baddfebcfc4bcc337d78622f772ed4f29dda4c8184955d3c2297b41b836f33",
+  "signingCertSha256": "77c3ca8d1a7cf0aca4718b328705bb21833976bc701dad89c11881c83ca1c861",
+  "commitSha": "95a8963adbf727765f69c8f8c78e5e59317be262",
+  "publishedAt": "2026-10-29T15:08:00Z",
+  "releaseNotes": "应用内更新本地候选包：设置页更新入口、启动静默检查、SHA-256/包名/版本/签名校验链。"
+}
