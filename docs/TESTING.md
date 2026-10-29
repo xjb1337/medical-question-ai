@@ -8,16 +8,12 @@
 ./gradlew testDebugUnitTest
 ```
 
-覆盖内容：
+当前共 52 个 JVM 单元测试（4 个测试类，全部通过）：
 
-- `AnalysisResult` 的 JSON 序列化/反序列化往返
-- 旧版字段别名兼容（`type`、`question`、`input_tokens` 等）
-- 空答案的待确认状态
-- 填空题 `answer_text` 不误判为缺失答案
-- 题型存储值与中文标签
-- 纯图片题目的历史列表兜底文案
-- `ImageEditPolicy` 裁剪「保留原图」时插在原图之后，原图对象与路径不变
-- HTTPS Base URL 校验与首尾空白/斜杠规范化
+- `DeviceFeedbackCoreTest`（37）：设置迁移幂等、自定义代理不误迁移、模型能力保护、三档 `thinking`/`max_tokens` 请求参数、SSE UTF-8/CRLF/注释/多行/`[DONE]` 边界、无效 `[DONE]` 前置事件、预览 JSON 完整字段/截断/转义、选择题答案校验、`finish_reason` 严格结束校验、错误分类、追问历史整轮裁剪预算、答案输入版本过期判定、F1–F8 严格预览/最终答案语义与题型冲突用例。
+- `ModelsTest`（7）：`AnalysisResult` 的 JSON 序列化/反序列化往返、旧版字段别名兼容（`type`、`question`、`input_tokens` 等）、空答案的待确认状态、填空题 `answer_text` 不误判为缺失答案、题型存储值与中文标签、纯图片题目的历史列表兜底文案。
+- `SettingsValidationTest`（4）：HTTPS Base URL 校验、首尾空白/斜杠规范化、拒绝 HTTP、拒绝伪造主机名。
+- `ImageEditPolicyTest`（4）：裁剪「保留原图」时插在原图之后，原图对象与路径不变。
 
 图片导入的真机回归测试位于 `app/src/androidTest/java/com/xjb/medicalquestionai/data/ImageImportRegressionTest.kt`，覆盖合成 PNG 导入、裁剪保留原图和损坏图片抛出 `ImageImportException`。该测试需要连接设备/模拟器执行 `./gradlew connectedDebugAndroidTest`；本次没有可用设备，只能完成 `assembleDebugAndroidTest` 编译验证，不能记为功能测试通过。
 
@@ -42,17 +38,17 @@ app/build/reports/lint-results-debug.html
 ### 构建验证
 
 ```bash
-./gradlew assembleDebug
+./gradlew assembleDebug assembleDebugAndroidTest
 ```
 
 ### 浏览器回归（网页版）
 
 ```bash
-# 先构建/启动网页版或让测试自行启动 4191 端口
-node web/test/browser-repair-smoke.mjs
+npm --prefix web test
+# 等价于 node --test web/test/unit.test.mjs && node web/test/browser-repair-smoke.mjs
 ```
 
-该脚本自行启动本地 mock DeepSeek、网页服务器和无头 Chrome，验证：合成 PNG 导入、裁剪保留原图、解析 Token 展示、追问 Token 用量、历史落库。它不调用真实 DeepSeek API，也不能替代真实浏览器手工验收。
+单元测试覆盖 Web 设置 v2 迁移、模型能力、三档请求参数、SSE 分片/UTF-8/CRLF/`[DONE]`、预览 JSON 和取消状态；浏览器 smoke 自行启动本地 mock DeepSeek、网页服务器和无头 Chrome，验证合成 PNG 导入、裁剪保留原图、解析 Token 展示、追问 Token 用量、历史落库。它不调用真实 DeepSeek API，也不能替代真实浏览器手工验收。
 
 ## 2. 手工验收清单
 
@@ -129,11 +125,13 @@ curl -sS https://api.deepseek.com/chat/completions \
   -H "Authorization: Bearer $DEEPSEEK_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "deepseek-chat",
+    "model": "deepseek-flash",
     "messages": [
       {"role": "user", "content": "用一句话解释什么是心肌梗死"}
     ],
-    "temperature": 0.15
+    "thinking": {"type": "disabled"},
+    "max_tokens": 3072,
+    "stream": true
   }'
 ```
 
@@ -187,11 +185,24 @@ curl -sS https://api.deepseek.com/chat/completions \
 - 产物副本：`dist/medical-question-ai-debug.apk`，SHA-256 `9da7a2aa7908811af2ced7a01979e4c4058610d6e10b8b445b3493b448a058f3`。
 - 尚未连接真实安卓手机，因此第 2 节的手工验收项需要在设备上继续执行；真实 DeepSeek 也未调用。
 
+### 4.3 真机反馈改造验证（2026-10-29）
+
+环境：Windows、JDK 17.0.10、Gradle 8.9、AGP 8.7.3、Android SDK 35 / Build-Tools 35.0.0、Node.js 25.8.1。
+
+- `./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest`：BUILD SUCCESSFUL；52/52 单元测试通过（单元测试重跑日志 `docs/evidence/2026-10-29-android-final.log`）。
+- Lint：0 errors、22 warnings（18 个 `GradleDependency` 依赖版本提示 + 4 个 `ApplySharedPref`）。
+- 设备：`adb devices` 无设备；`connectedDebugAndroidTest` 未执行，不能记为真机功能通过。
+- `npm --prefix web test`：19/19 单元测试通过；浏览器 smoke 通过（`ok: true`）。
+- `aapt2 dump badging`：包名 `com.xjb.medicalquestionai`，versionCode 2、versionName 1.1.0，minSdk 26、targetSdk 35。
+- `apksigner verify`：APK Signature Scheme v2 验证通过；新旧 APK 使用同一 debug 证书 SHA-256 `77c3ca8d1a7cf0aca4718b328705bb21833976bc701dad89c11881c83ca1c861`。
+- 产物：`dist/medical-question-ai-debug.apk`，SHA-256 `bd029d5f2fa51064b86a1aef425cadbcff1582043efc26564d5260b15b3a632c`。
+- 未执行：真实 DeepSeek Key 联调、40 题质量对照、15 题×3 次速度对照、真机 UI/相机/覆盖安装。详见 `docs/DEVICE_FEEDBACK_IMPLEMENTATION_REPORT.md`。
+
 ## 5. 回归重点
 
 1. 图片导入：先 `inJustDecodeBounds` 读取尺寸，再按采样率解码；空流、损坏图片、超大图片都应转成 `ImageImportException`，不能拖垮整个导入流程。
 2. 裁剪保留原图：新增裁剪图应插在原图之后，原图 id/path 不变；替换裁剪才更新原路径的宽高与文件大小。相关纯逻辑在 `ImageEditPolicy`，必须保留单元测试。
-3. Room 版本升级：当前数据库版本为 3，包含 `MIGRATION_1_2`（追问表）和 `MIGRATION_2_3`（`questions.isEphemeral` 列）；升级时必须提供 Migration，禁止直接 `fallbackToDestructiveMigration()` 上线。
+3. Room 版本升级：当前数据库版本为 6，包含 `MIGRATION_1_2`（追问表）、`MIGRATION_2_3`（`questions.isEphemeral`）、`MIGRATION_3_4`（`mode`/`durationMs`/`promptVersion`）、`MIGRATION_4_5`（`baseUrl` 快照）和 `MIGRATION_5_6`（答案输入版本 `inputRevision`/`answerInputRevision`，默认 0）；升级时必须提供 Migration，禁止直接 `fallbackToDestructiveMigration()` 上线。
 4. 图片文件生命周期：删除题目、重答替换图片、清空历史时都要删除对应文件，避免私有目录膨胀。
 5. JSON 契约变化：新增字段必须保持可选；旧记录反序列化不能崩溃。
 6. 大图内存：低端机连续导入 9 张 4000px 图片时不应 OOM。

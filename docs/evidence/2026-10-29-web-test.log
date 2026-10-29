@@ -1,0 +1,32 @@
+
+> medical-question-ai-web@1.0.0 test
+> node --test test/unit.test.mjs && node test/browser-repair-smoke.mjs
+
+✔ parseSseChunk 能跨任意 JSON 分片拼接出完整 data (0.7597ms)
+✔ createSseParser 支持任意 chunk 边界、CRLF 和逐字节 UTF-8 汉字 (0.6797ms)
+✔ 多行 data 按 SSE 规则以换行拼接，keep-alive 注释被忽略 (0.5816ms)
+✔ [DONE] 只触发一次，之后的数据不再派发 (0.0975ms)
+✔ parseSseChunk 保留未闭合尾部，不把半个 JSON 当事件 (0.141ms)
+✔ 三个模式的请求参数符合上限、思考开关与 include_usage (0.2331ms)
+✔ Pro 模型遇到图片会在发请求前被拦截 (0.4534ms)
+✔ 官方 base 的旧模型迁移到新预设，自定义代理保持原模型 (0.3068ms)
+✔ 迁移幂等且默认标准模式；官方判定拒绝仿冒域名 (0.1545ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 87.4239
+{
+  "ok": true,
+  "imported": 1,
+  "afterCrop": 2,
+  "resultRendered": true,
+  "followUsage": "Token 用量：输入 234 · 输出 56 · 合计 290",
+  "noUsageLabelHidden": true,
+  "oldRecordUsageHidden": true,
+  "failureRestored": true,
+  "historyCount": 1
+}

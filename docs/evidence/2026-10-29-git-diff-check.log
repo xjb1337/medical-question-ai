@@ -1,0 +1,16 @@
+warning: in the working copy of 'app/build.gradle.kts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/src/main/java/com/xjb/medicalquestionai/MainViewModel.kt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/src/main/java/com/xjb/medicalquestionai/data/Models.kt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/src/main/java/com/xjb/medicalquestionai/data/QuestionDatabase.kt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/src/main/java/com/xjb/medicalquestionai/data/SettingsRepository.kt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/src/main/java/com/xjb/medicalquestionai/ui/components/AnalysisResultView.kt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/src/main/java/com/xjb/medicalquestionai/ui/components/Common.kt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/src/main/java/com/xjb/medicalquestionai/ui/screens/HistoryScreen.kt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/src/main/java/com/xjb/medicalquestionai/ui/screens/NewQuestionScreen.kt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/src/main/java/com/xjb/medicalquestionai/ui/screens/ResultScreen.kt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/src/main/java/com/xjb/medicalquestionai/ui/screens/SettingsScreen.kt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'web/assets/styles.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'web/index.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'web/package.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'web/server.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'web/test/browser-repair-smoke.mjs', LF will be replaced by CRLF the next time Git touches it

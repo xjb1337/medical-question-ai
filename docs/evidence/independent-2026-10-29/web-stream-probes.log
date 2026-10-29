@@ -1,0 +1,3 @@
+{"case":"analysis_stop_without_DONE","accepted":true,"status":"answered","finishReason":"stop"}
+{"case":"followup_stop_without_DONE","accepted":true,"finishReason":"stop"}
+{"case":"DONE_without_HTTP_EOF","accepted":false,"code":"no_progress","ms":45009.448800000006}

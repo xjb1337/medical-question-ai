@@ -1,0 +1,44 @@
+
+> medical-question-ai-web@1.0.0 test
+> node --test test/unit.test.mjs && node test/browser-repair-smoke.mjs
+
+✔ parseSseChunk 能跨任意 JSON 分片拼接出完整 data (1.5368ms)
+✔ createSseParser 支持任意 chunk 边界、CRLF 和逐字节 UTF-8 汉字 (0.8743ms)
+✔ 多行 data 按 SSE 规则以换行拼接，keep-alive 注释被忽略 (0.6916ms)
+✔ [DONE] 只触发一次，之后的数据不再派发 (0.1191ms)
+✔ parseSseChunk 保留未闭合尾部，不把半个 JSON 当事件 (0.2428ms)
+✔ 三个模式的请求参数符合上限、思考开关与 include_usage (0.5135ms)
+✔ Pro 模型遇到图片会在发请求前被拦截 (0.602ms)
+✔ 官方 base 的旧模型迁移到新预设，自定义代理保持原模型 (0.2905ms)
+✔ 迁移幂等且默认标准模式；官方判定拒绝仿冒域名 (0.2598ms)
+✔ 预览必须等 warnings 等完整字段且答案通过校验 (1.5082ms)
+✔ parseAnalysis 兼容置信度字符串并按题型做严格校验 (0.8959ms)
+✔ 自定义接口默认不假设图片/思考/JSON 能力 (0.1445ms)
+✔ 流式响应缺少 finish_reason 时拒绝并保留错误码 (20.4819ms)
+✔ 流式响应 finish_reason=length 或内容为空时明确失败 (1.074ms)
+✔ SSE 缺少 [DONE] 时即使 finish_reason=stop 也必须失败 (1.1383ms)
+✔ 收到 [DONE] 后即使 HTTP 仍保持连接也立即完成 (0.9919ms)
+✔ 非流式 JSON 响应仍可直接兼容 (0.6327ms)
+✔ 预览在 answer 已完成但 warnings 尚未到达时必须保持 null (0.1621ms)
+✔ parseAnalysis 按题型要求答案格式，题型不一致时降级 (0.3206ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 19
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 142.8609
+{
+  "ok": true,
+  "imported": 1,
+  "afterCrop": 2,
+  "resultRendered": true,
+  "followUsage": "Token 用量：输入 234 · 输出 56 · 合计 290",
+  "noUsageLabelHidden": true,
+  "oldRecordUsageHidden": true,
+  "failureRestored": true,
+  "dbFailureRestored": true,
+  "reanalysisPreserved": true,
+  "historyCount": 1
+}

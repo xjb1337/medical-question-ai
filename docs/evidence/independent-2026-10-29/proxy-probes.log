@@ -1,0 +1,2 @@
+{"case":"proxy_forwards_before_end","passed":true,"firstMs":19.310599999999994,"totalMs":629.2671}
+{"case":"browser_cancel_aborts_upstream","passed":true,"closeMs":4.683899999999994}

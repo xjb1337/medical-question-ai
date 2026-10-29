@@ -1,0 +1,7 @@
+single_with_two_answers: ACCEPTED status=answered type=single answer=[A, B] warnings=[]
+invalid_status: ACCEPTED status=banana type=single answer=[A] warnings=[]
+missing_type: ACCEPTED status=answered type=unknown answer=[A] warnings=[]
+warnings_wrong_type: ACCEPTED status=answered type=single answer=[A] warnings=[]
+selected_single_model_multiple: status=answered answer=[A, B] answerText= warningsCount=2
+short_without_answer_text: status=answered answer=[A] answerText= warningsCount=0
+unknown_gateway_payload: {"max_tokens":3072,"stream":true,"temperature":0.1,"messages":[{"role":"user","content":"test"}],"model":"my-model","thinking":{"type":"disabled"}}

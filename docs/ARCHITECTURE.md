@@ -43,18 +43,25 @@ MainViewModel
 
 ### Question / FollowUp
 
-`QuestionEntity` 保存题目主记录；`FollowUpEntity` 通过 `questionId` 关联追问，按 `createdAt` 升序读取。删除题目时会先删除其追问与本地图片，再删除主记录。数据库当前为 version 3：`MIGRATION_1_2` 创建追问表，`MIGRATION_2_3` 增加 `isEphemeral` 列（`0` 表示进入历史，`1` 表示关闭历史保存后的临时结果）；不使用破坏性迁移，后续版本升级需继续提供显式迁移。
+`QuestionEntity` 保存题目主记录；`FollowUpEntity` 通过 `questionId` 关联追问，按 `createdAt` 升序读取。删除题目时会先删除其追问与本地图片，再删除主记录。数据库当前为 version 6：`MIGRATION_1_2` 创建追问表，`MIGRATION_2_3` 增加 `isEphemeral` 列，`MIGRATION_3_4` 增加 `mode`、`durationMs`、`promptVersion`，`MIGRATION_4_5` 增加实际请求使用的 `baseUrl` 快照，`MIGRATION_5_6` 增加答案输入版本 `inputRevision`/`answerInputRevision`；不使用破坏性迁移，后续版本升级需继续提供显式迁移。
 
 ## 3. 一次解析的完整流程
 
-1. `NewQuestionScreen` 收集题型、文字、图片、隐私确认。
-2. `MainViewModel.startAnalysis()` 校验：至少一张图或一段文字、最多 9 张图、必须确认隐私。
-3. 先插入状态为 `analyzing` 的 `Question`；默认进入历史，关闭「保存解析历史」时标记为临时记录，仍可在结果页查看但不进入历史列表。
-4. `QuestionAnalyzer` 生成系统提示词与用户提示词。
-5. `ImageStore.readBase64()` 读取压缩后的 JPEG，控制总大小不超过 18 MB。
-6. `DeepSeekClient.chatConversation()` 调用 `POST {baseUrl}/chat/completions`。
-7. `QuestionAnalyzer.parseResult()` 解析 JSON、规范化题型、补充警告。
-8. 更新记录为 `completed`，清空草稿并导航到 `result/{id}`；失败则记录 `failed` 与错误信息，保留草稿供重试。
+1. `NewQuestionScreen` 收集题型、文字、图片、隐私确认和做题模式。
+2. `MainViewModel.startAnalysis()` 校验：至少一张图或一段文字、最多 9 张图、必须确认隐私、带图时必须使用支持图片的模型。
+3. 先插入状态为 `analyzing` 的 `Question`，同时固定 `model`、`baseUrl`、`mode`、`promptVersion` 请求快照；默认进入历史，关闭「保存解析历史」时标记为临时记录。
+4. `QuestionAnalyzer.analyzeStream()` 生成按模式裁剪的系统提示词与用户提示词，并把 `thinking` / `reasoning_effort` / `max_tokens` 显式写入请求。
+5. `ImageStore.readBase64()` 读取压缩后的 JPEG，控制单次请求总大小不超过 18 MB。
+6. `DeepSeekClient.stream()` 通过 OkHttp 异步调用 `POST {baseUrl}/chat/completions`（`stream: true`），`SseParser` 增量处理 UTF-8 分片、CRLF、注释、`[DONE]`；`PreviewJsonParser` 从增量 JSON 中提取答案预览。
+7. 取消通过 `call.cancel()` 中断连接；`MainViewModel` 用请求 ID 隔离事件，取消/失败只更新当前任务，不覆盖已有完成结果。
+8. `QuestionAnalyzer.parseResult()` 解析 JSON、规范化题型、补充警告；完成后在同一事务快照上写回 `completed`、实际模型、模式、耗时、prompt 版本并更新结果页状态。
+
+### 模型、模式与设置迁移
+
+- 官方模型表：`deepseek-flash`（文字+图片）、`deepseek-v4-pro`（仅文字）。官方地址判定按主机 `api.deepseek.com` 与根路径/`/v1` 精确匹配，自定义代理不触发生效。
+- 三档模式：快速 `thinking.type=disabled`、3072 tokens、120s；标准 `thinking.type=enabled` + `reasoning_effort=low`、8192 tokens、180s；详细 `reasoning_effort=high`、16384 tokens、240s。默认标准，快速是否设为默认取决于 40 题质量门槛。
+- `SettingsMigrations` 对旧 `deepseek-chat` → flash/快速、`deepseek-reasoner` → flash/详细、旧 v4 别名 → flash 做幂等迁移；仅官方 Base URL 自动迁移，自定义网关保留用户模型名。
+- `AnalysisTaskState` 保存本次请求的阶段、预览、思考摘要和状态；`MainViewModel` 只在请求 ID 与当前任务匹配时更新，避免旧请求回写。
 
 ### 模型输出契约
 
