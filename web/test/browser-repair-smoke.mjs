@@ -168,7 +168,7 @@ async function runBrowserChecks() {
     await evaluate(send, "localStorage.clear(); sessionStorage.clear();");
     await evaluate(send, `localStorage.setItem("medical-question-ai.settings.v1", JSON.stringify({
       apiKey: "test-key", model: "deepseek-flash", baseUrl: "http://127.0.0.1:${MOCK_PORT}",
-      saveHistory: true, demoMode: false, rememberKey: true
+      customSupportsImages: true, saveHistory: true, demoMode: false, rememberKey: true
     }))`);
     await send("Page.reload");
     await sleep(400);
@@ -192,6 +192,8 @@ async function runBrowserChecks() {
     const imported = await evaluate(send, `document.querySelectorAll(".image-card").length`);
     const originalImageSrc = await evaluate(send, `document.querySelector(".image-card img").src`);
 
+    await evaluate(send, `document.querySelector('[data-action="edit-image"]').click()`);
+    await waitFor(send, `document.querySelector('[data-action="crop-image"]')`);
     await evaluate(send, `document.querySelector('[data-action="crop-image"]').click()`);
     await waitFor(send, `document.querySelector("#crop-stage")`);
     await sleep(300);
@@ -211,6 +213,9 @@ async function runBrowserChecks() {
         const ctx = canvas.getContext("2d");
         ctx.fillStyle = index % 2 ? "#e2e8f0" : "#0f766e";
         ctx.fillRect(0, 0, 64, 48);
+        ctx.fillStyle = index % 2 ? "#0f766e" : "#e2e8f0";
+        ctx.font = "14px sans-serif";
+        ctx.fillText("LIMIT " + index, 4, 24);
         const blob = await new Promise((resolveBlob) => canvas.toBlob(resolveBlob, "image/png"));
         transfer.items.add(new File([blob], "limit-" + index + ".png", { type: "image/png" }));
       }
@@ -258,7 +263,7 @@ async function runBrowserChecks() {
       el.dispatchEvent(new Event("input", { bubbles: true }));
       document.querySelector('[data-action="send-followup"]').click();
     })()`);
-    await waitFor(send, `document.querySelectorAll(".follow-msg").length >= 4`, 15000);
+    await waitFor(send, `document.querySelectorAll(".follow-msg").length >= 4 && !document.querySelector(".follow-stream-state")`, 15000);
     const noUsageLabelHidden = await evaluate(send, `!document.querySelector(".follow-msg:last-child .follow-usage")`);
     if (!noUsageLabelHidden) throw new Error("missing usage was rendered as a usage label");
 
@@ -286,10 +291,55 @@ async function runBrowserChecks() {
     const failureRestored = await evaluate(send, `document.querySelector("#followup-text").value === "失败测试" && document.querySelector(".error-banner").innerText.includes("模拟上游失败")`);
     if (!failureRestored) throw new Error("failed follow-up did not restore the draft or show the upstream error");
 
+    // P1-1: if the initial analyzing row cannot be written to IndexedDB, no
+    // question may be added and the user's draft must remain intact.
+    await evaluate(send, `location.hash = "#/compose"`);
+    await waitFor(send, `document.querySelector("#question-text")`, 10000);
+    await evaluate(send, `(() => {
+      document.querySelector('[data-action="load-sample"]').click();
+      window.__originalIdbPut = IDBObjectStore.prototype.put;
+      IDBObjectStore.prototype.put = function () { throw new DOMException("Quota exceeded", "QuotaExceededError"); };
+    })()`);
+    await waitFor(send, `document.querySelector("#question-text").value.includes("胸骨后")`, 10000);
+    const questionCountBeforeFailure = await evaluate(send, `(async () => (await import("/assets/store.js")).listQuestions().then((items) => items.length))()`);
+    await evaluate(send, `document.querySelector('[data-action="start-analysis"]').click()`);
+    await waitFor(send, `document.querySelector(".error-banner")`, 10000);
+    const dbFailureState = await evaluate(send, `({
+      onCompose: location.hash === "#/compose",
+      draftKept: document.querySelector("#question-text").value.includes("胸骨后"),
+      errorShown: document.querySelector(".error-banner").innerText.includes("无法写入本地数据库")
+    })`);
+    if (!dbFailureState.onCompose || !dbFailureState.draftKept || !dbFailureState.errorShown) {
+      throw new Error(`IndexedDB failure transaction regression: ${JSON.stringify(dbFailureState)}`);
+    }
+    await evaluate(send, `IDBObjectStore.prototype.put = window.__originalIdbPut`);
+    const questionCountAfterFailure = await evaluate(send, `(async () => (await import("/assets/store.js")).listQuestions().then((items) => items.length))()`);
+    if (questionCountAfterFailure !== questionCountBeforeFailure) throw new Error("failed analysis left a temporary IndexedDB row behind");
+
+    // P1-1: a failed re-analysis must keep the old result and follow-ups.
+    await evaluate(send, `location.hash = "#/history"`);
+    await waitFor(send, `document.querySelector(".history-card")`, 10000);
+    await evaluate(send, `document.querySelector(".history-card").click()`);
+    await waitFor(send, `document.querySelector('[data-action="edit-question"]')`, 10000);
+    const oldResultHash = await evaluate(send, `location.hash`);
+    const oldHeadline = await evaluate(send, `document.querySelector(".answer-main").innerText`);
+    await evaluate(send, `document.querySelector('[data-action="edit-question"]').click()`);
+    await waitFor(send, `document.querySelector("#question-text")`, 10000);
+    await evaluate(send, `(() => {
+      const el = document.querySelector("#question-text");
+      el.value = "失败测试：请保留旧解析";
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      document.querySelector('[data-action="start-analysis"]').click();
+    })()`);
+    await waitFor(send, `location.hash === ${JSON.stringify(oldResultHash)} && document.querySelector(".answer-main")`, 15000);
+    const reanalysisActual = await evaluate(send, `document.querySelector(".answer-main").innerText`);
+    const reanalysisPreserved = reanalysisActual === oldHeadline;
+    if (!reanalysisPreserved) throw new Error(`failed re-analysis did not preserve the old answer: old=${JSON.stringify(oldHeadline)} actual=${JSON.stringify(reanalysisActual)} hash=${await evaluate(send, "location.hash")}`);
+
     await evaluate(send, `location.hash = "#/history"`);
     await waitFor(send, `document.querySelector(".history-card")`, 10000);
     const historyCount = await evaluate(send, `document.querySelectorAll(".history-card").length`);
-    return { imported, afterCrop, resultRendered, followUsage, noUsageLabelHidden, oldRecordUsageHidden, failureRestored, historyCount };
+    return { imported, afterCrop, resultRendered, followUsage, noUsageLabelHidden, oldRecordUsageHidden, failureRestored, dbFailureRestored: true, reanalysisPreserved, historyCount };
   } finally {
     ws.close();
   }

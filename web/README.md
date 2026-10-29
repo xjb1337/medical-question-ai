@@ -49,19 +49,20 @@ $env:PORT="8080"; node server.mjs
 ### 真实 DeepSeek 解析
 
 1. 在「设置」填写 API Key。默认 Base URL 为 `https://api.deepseek.com`。
-2. 模型默认 `deepseek-flash`，可改成账号可用的其他模型。
-3. 点击「测试连接」确认 Key 可用。
-4. 关闭演示模式，回到新建解析。
+2. 模型默认 `deepseek-flash`（支持文字和图片）；`deepseek-v4-pro` 仅支持文字，带图会被前端拦截。自定义 Base URL 可填写代理端模型名。
+3. 选择快速 / 标准 / 详细模式；旧 `deepseek-chat` 设置自动迁移为快速，旧 `deepseek-reasoner` 迁移为详细，自定义 Base URL 下保留原模型名。
+4. 点击「测试连接」确认 Key 可用。
+5. 关闭演示模式，回到新建解析。
 
 API Key 默认以明文存在浏览器 `localStorage`（开启「记住 API Key」时）；关闭后改存当前标签页的 `sessionStorage`，刷新通常仍在，关闭标签页后清除。浏览器存储不是加密存储。解析请求经本地 Node 代理转发，代理进程能够接触 API Key 和请求内容；服务默认只监听 `127.0.0.1`，不会把 Key 写入磁盘或日志。默认接口地址 `https://api.deepseek.com` 使用 HTTPS；如自定义 `http://` 地址，该段传输不具备加密保护，仅建议本机测试。
 
 ## 回归测试
 
 ```bash
-node test/browser-repair-smoke.mjs
+npm test
 ```
 
-脚本会自行启动本地 mock DeepSeek、Node 静态服务和系统 Chrome/Edge 无头浏览器，验证合成 PNG 导入、裁剪保留原图、解析 Token 展示、追问 Token 用量和历史落库。需要本机安装 Chrome/Edge，或通过 `CHROME_PATH` 指定浏览器。未安装浏览器时脚本会失败并明确提示，不应把静态构建当作功能验收。
+`node --test test/unit.test.mjs` 共 19 个单元测试，覆盖设置迁移、模型能力、预览字段完整性、`finish_reason`、解析边界与追问历史；`node test/browser-repair-smoke.mjs` 会自行启动本地 mock DeepSeek、Node 静态服务和系统 Chrome/Edge 无头浏览器，验证合成 PNG 导入、裁剪保留原图、解析 Token 展示、追问 Token 用量、失败恢复和历史落库。需要本机安装 Chrome/Edge，或通过 `CHROME_PATH` 指定浏览器。未安装浏览器时脚本会失败并明确提示，不应把静态构建当作功能验收。
 
 ## 功能清单
 
