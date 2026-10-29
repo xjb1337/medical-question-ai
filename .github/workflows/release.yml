@@ -105,7 +105,8 @@ jobs:
           APK=app/build/outputs/apk/release/app-release.apk
           APKSIGNER=$(command -v apksigner || find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
           test -n "$APKSIGNER" || { echo "apksigner 未找到"; exit 1; }
-          SIGNER=$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr 'A-F' 'a-f')
+          CERT_OUTPUT=$("$APKSIGNER" verify --print-certs-pem "$APK")
+          SIGNER=$(printf '%s\n' "$CERT_OUTPUT" | python3 scripts/release/certificate-sha256.py)
           test -n "$SIGNER" || { echo "无法读取 APK 签名证书"; exit 1; }
           test "$SIGNER" = "$(echo "$EXPECTED_CERT" | tr 'A-F' 'a-f')" || { echo "APK 签名证书与固定证书不一致"; exit 1; }
       - name: Check release is newer than latest

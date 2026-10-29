@@ -49,7 +49,10 @@ APK_PACKAGE="$(printf '%s\n' "$PACKAGE_LINE" | sed -n "s/.*package: name='\([^']
 APK_VERSION_CODE="$(printf '%s\n' "$PACKAGE_LINE" | sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p")"
 APK_VERSION_NAME="$(printf '%s\n' "$PACKAGE_LINE" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")"
 APK_MIN_SDK="$(printf '%s\n' "$BADGING" | sed -n "s/.*sdkVersion:'\([0-9]*\)'.*/\1/p" | head -1)"
-APK_CERT="$("$APKSIGNER" verify --print-certs "$APK_PATH" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr 'A-F' 'a-f')"
+PYTHON=python
+command -v "$PYTHON" >/dev/null 2>&1 || PYTHON=python3
+CERT_OUTPUT="$("$APKSIGNER" verify --print-certs-pem "$APK_PATH")"
+APK_CERT="$(printf '%s\n' "$CERT_OUTPUT" | "$PYTHON" "$(dirname "$0")/certificate-sha256.py")"
 
 test -n "$APK_PACKAGE" || { echo "无法读取 APK 包名"; exit 1; }
 test -n "$APK_VERSION_CODE" || { echo "无法读取 APK versionCode"; exit 1; }
@@ -66,8 +69,6 @@ test -n "$APK_CERT" || { echo "无法读取 APK 签名证书"; exit 1; }
 APK_SIZE=$(wc -c < "$APK_PATH" | tr -d ' ')
 APK_SHA=$(sha256sum "$APK_PATH" | awk '{print tolower($1)}')
 CERT_SHA="$APK_CERT"
-PYTHON=python
-command -v "$PYTHON" >/dev/null 2>&1 || PYTHON=python3
 
 "$PYTHON" - "$OUT_PATH" "$APK_PACKAGE" "$APK_VERSION_CODE" "$APK_VERSION_NAME" "$APK_MIN_SDK" "$APK_SIZE" "$APK_SHA" "$CERT_SHA" "$COMMIT_SHA" "$PUBLISHED_AT" "$RELEASE_NOTES" <<'PY'
 import json
