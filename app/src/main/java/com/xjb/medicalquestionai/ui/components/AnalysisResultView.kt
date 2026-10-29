@@ -1,6 +1,5 @@
 package com.xjb.medicalquestionai.ui.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,7 +18,6 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lightbulb
-import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -37,15 +35,141 @@ import com.xjb.medicalquestionai.data.AnalysisResult
 import com.xjb.medicalquestionai.ui.theme.Amber700
 import com.xjb.medicalquestionai.ui.theme.Green700
 
+/**
+ * 结果内容。非 compact 时按“答案 → 关键警示 → 详细解析”的顺序展示；
+ * compact 用于解析过程中的答案预览，只渲染答案卡片。
+ */
 @Composable
 fun AnalysisResultView(
     result: AnalysisResult,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    compact: Boolean = false
 ) {
+    if (compact) {
+        AnalysisAnswerCard(result = result, modifier = modifier, compact = true)
+        return
+    }
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        AnswerCard(result)
+        AnalysisAnswerCard(result)
         if (result.warnings.isNotEmpty()) {
-            WarningCard(result.warnings)
+            AnalysisWarningCard(result.warnings)
+        }
+        AnalysisDetails(result)
+    }
+}
+
+/**
+ * 参考答案卡片。单选题/多选题的答案字母放大；填空与简答使用正常正文层级，便于长文本阅读。
+ */
+@Composable
+fun AnalysisAnswerCard(
+    result: AnalysisResult,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false
+) {
+    val isOutOfScope = result.status == "out_of_scope"
+    val needsConfirmation = result.needsConfirmation
+    val container = when {
+        isOutOfScope -> MaterialTheme.colorScheme.surfaceVariant
+        needsConfirmation -> MaterialTheme.colorScheme.tertiaryContainer
+        else -> MaterialTheme.colorScheme.primaryContainer
+    }
+    val onContainer = when {
+        isOutOfScope -> MaterialTheme.colorScheme.onSurfaceVariant
+        needsConfirmation -> MaterialTheme.colorScheme.onTertiaryContainer
+        else -> MaterialTheme.colorScheme.onPrimaryContainer
+    }
+    val isChoice = result.questionType == "single" || result.questionType == "multiple"
+    val answerStyle = when {
+        compact -> MaterialTheme.typography.titleLarge
+        isChoice -> MaterialTheme.typography.displaySmall
+        else -> MaterialTheme.typography.bodyLarge
+    }
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(containerColor = container)
+    ) {
+        Column(Modifier.padding(if (compact) 16.dp else 20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    when {
+                        isOutOfScope -> Icons.Outlined.Info
+                        needsConfirmation -> Icons.Outlined.ErrorOutline
+                        else -> Icons.Outlined.CheckCircle
+                    },
+                    contentDescription = null,
+                    tint = onContainer
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    when {
+                        isOutOfScope -> "非医学题目"
+                        needsConfirmation -> "需要核对"
+                        else -> "参考答案"
+                    },
+                    style = MaterialTheme.typography.titleSmall,
+                    color = onContainer,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.weight(1f))
+                if (compact) {
+                    Tag("生成中", onContainer)
+                } else if (!isOutOfScope) {
+                    StatusChip(result.confidenceLabel)
+                }
+            }
+            Spacer(Modifier.height(if (compact) 8.dp else 12.dp))
+            SelectionContainer {
+                Text(
+                    when {
+                        isOutOfScope -> result.answerText.ifBlank { "本题不属于医学学习范围。" }
+                        needsConfirmation && result.answerDisplay == "未能确定答案" -> "信息不足，暂无法确定答案"
+                        else -> result.answerDisplay
+                    },
+                    style = answerStyle,
+                    fontWeight = FontWeight.Bold,
+                    color = onContainer
+                )
+            }
+            if (result.answerText.isNotBlank() && result.answerText != result.answerDisplay) {
+                Spacer(Modifier.height(8.dp))
+                SelectionContainer {
+                    Text(
+                        result.answerText,
+                        style = if (compact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
+                        color = onContainer
+                    )
+                }
+            }
+            if (!compact) {
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Tag(result.typeLabel(), onContainer)
+                    if (result.status == "needs_confirmation") Tag("待确认", onContainer)
+                    if (isOutOfScope) Tag("范围外", onContainer)
+                }
+            }
+        }
+    }
+}
+
+/** 详细解析：识别题干、图片观察、选项分析、解题思路、知识点、易错点与调用信息。 */
+@Composable
+fun AnalysisDetails(result: AnalysisResult, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        if (result.warnings.isNotEmpty()) {
+            SectionCard(title = "警示与提醒") {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    result.warnings.forEach { warning ->
+                        Text(
+                            "· $warning",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
         }
         if (result.recognizedQuestion.isNotBlank()) {
             SectionCard(title = "识别到的题目") {
@@ -183,6 +307,22 @@ fun AnalysisResultView(
                 items = result.pitfalls
             )
         }
+        SectionCard(title = "使用建议") {
+            Text(
+                "建议先遮住答案独立作答，再对照“详细解析”核对思路；如出现警示或“需要核对”，请优先复核题干识别、选项与关键数值。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (result.usage.isAvailable) {
+            SectionCard(title = "调用信息") {
+                Text(
+                    result.usage.shortLabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
         Text(
             "以上为学习辅助解析，请结合教材、课程讲义和老师意见核对。",
             style = MaterialTheme.typography.bodySmall,
@@ -193,77 +333,22 @@ fun AnalysisResultView(
 }
 
 @Composable
-private fun AnswerCard(result: AnalysisResult) {
-    val isOutOfScope = result.status == "out_of_scope"
-    val needsConfirmation = result.needsConfirmation
-    val container = when {
-        isOutOfScope -> MaterialTheme.colorScheme.surfaceVariant
-        needsConfirmation -> MaterialTheme.colorScheme.tertiaryContainer
-        else -> MaterialTheme.colorScheme.primaryContainer
-    }
-    val onContainer = when {
-        isOutOfScope -> MaterialTheme.colorScheme.onSurfaceVariant
-        needsConfirmation -> MaterialTheme.colorScheme.onTertiaryContainer
-        else -> MaterialTheme.colorScheme.onPrimaryContainer
-    }
-    Card(
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = container)
+fun AnalysisWarningCard(warnings: List<String>, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.tertiaryContainer
     ) {
-        Column(Modifier.padding(20.dp)) {
+        Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    when {
-                        isOutOfScope -> Icons.Outlined.Info
-                        needsConfirmation -> Icons.Outlined.ErrorOutline
-                        else -> Icons.Outlined.CheckCircle
-                    },
-                    contentDescription = null,
-                    tint = onContainer
-                )
+                Icon(Icons.Outlined.WarningAmber, contentDescription = null, tint = Amber700)
                 Spacer(Modifier.width(8.dp))
-                Text(
-                    when {
-                        isOutOfScope -> "非医学题目"
-                        needsConfirmation -> "需要核对"
-                        else -> "参考答案"
-                    },
-                    style = MaterialTheme.typography.titleSmall,
-                    color = onContainer,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(Modifier.weight(1f))
-                if (!isOutOfScope) StatusChip(result.confidenceLabel)
+                Text("请留意", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             }
-            Spacer(Modifier.height(12.dp))
-            SelectionContainer {
-                Text(
-                    when {
-                        isOutOfScope -> result.answerText.ifBlank { "本题不属于医学学习范围。" }
-                        needsConfirmation && result.answerDisplay == "未能确定答案" -> "信息不足，暂无法确定答案"
-                        else -> result.answerDisplay
-                    },
-                    style = if (isOutOfScope) MaterialTheme.typography.titleLarge
-                    else MaterialTheme.typography.displaySmall,
-                    fontWeight = FontWeight.Bold,
-                    color = onContainer
-                )
-            }
-            if (result.answerText.isNotBlank() && result.answerText != result.answerDisplay) {
-                Spacer(Modifier.height(8.dp))
-                SelectionContainer {
-                    Text(
-                        result.answerText,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = onContainer
-                    )
-                }
-            }
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Tag(result.typeLabel(), onContainer)
-                if (result.status == "needs_confirmation") Tag("待确认", onContainer)
-                if (isOutOfScope) Tag("范围外", onContainer)
+            Spacer(Modifier.height(8.dp))
+            warnings.forEach {
+                Text("· $it", style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(3.dp))
             }
         }
     }
@@ -304,27 +389,6 @@ private fun Tag(text: String, contentColor: Color) {
             color = contentColor,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
         )
-    }
-}
-
-@Composable
-private fun WarningCard(warnings: List<String>) {
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.tertiaryContainer
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.WarningAmber, contentDescription = null, tint = Amber700)
-                Spacer(Modifier.width(8.dp))
-                Text("请留意", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            }
-            Spacer(Modifier.height(8.dp))
-            warnings.forEach {
-                Text("· $it", style = MaterialTheme.typography.bodySmall)
-                Spacer(Modifier.height(3.dp))
-            }
-        }
     }
 }
 

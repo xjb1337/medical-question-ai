@@ -31,7 +31,13 @@ data class QuestionEntity(
     val model: String,
     val errorMessage: String?,
     val isFavorite: Boolean,
-    @ColumnInfo(defaultValue = "0") val isEphemeral: Boolean = false
+    @ColumnInfo(defaultValue = "0") val isEphemeral: Boolean = false,
+    @ColumnInfo(defaultValue = "'standard'") val mode: String = "standard",
+    @ColumnInfo(defaultValue = "0") val durationMs: Long = 0,
+    @ColumnInfo(defaultValue = "''") val promptVersion: String = "",
+    @ColumnInfo(defaultValue = "''") val baseUrl: String = "",
+    @ColumnInfo(defaultValue = "0") val inputRevision: Long = 0,
+    @ColumnInfo(defaultValue = "0") val answerInputRevision: Long = 0
 )
 
 @Entity(tableName = "follow_ups")
@@ -70,6 +76,9 @@ interface QuestionDao {
     @Query("DELETE FROM questions WHERE id = :id")
     suspend fun deleteById(id: String)
 
+    @Query("UPDATE questions SET status = 'interrupted', errorMessage = '应用在解析过程中被关闭，请重新解析' WHERE status IN ('analyzing', 'receiving', 'validating')")
+    suspend fun markInterrupted()
+
     @Query("DELETE FROM questions")
     suspend fun deleteAll()
 }
@@ -94,7 +103,7 @@ interface FollowUpDao {
 
 @Database(
     entities = [QuestionEntity::class, FollowUpEntity::class],
-    version = 3,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -134,13 +143,34 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `questions` ADD COLUMN `mode` TEXT NOT NULL DEFAULT 'standard'")
+                db.execSQL("ALTER TABLE `questions` ADD COLUMN `durationMs` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `questions` ADD COLUMN `promptVersion` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `questions` ADD COLUMN `baseUrl` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `questions` ADD COLUMN `inputRevision` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `questions` ADD COLUMN `answerInputRevision` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun get(context: Context): AppDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 AppDatabase::class.java,
                 "medical_question.db"
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .build()
                 .also { instance = it }
         }
@@ -155,6 +185,8 @@ class QuestionRepository(private val dao: QuestionDao) {
     suspend fun getById(id: String): Question? = dao.getById(id)?.toDomain()
 
     suspend fun getAll(): List<Question> = dao.getAll().map { it.toDomain() }
+
+    suspend fun markInterrupted() = dao.markInterrupted()
 
     suspend fun insert(question: Question) = dao.insert(question.toEntity())
 
@@ -222,7 +254,13 @@ fun QuestionEntity.toDomain(): Question = Question(
     model = model,
     errorMessage = errorMessage,
     isFavorite = isFavorite,
-    isEphemeral = isEphemeral
+    isEphemeral = isEphemeral,
+    mode = mode,
+    durationMs = durationMs,
+    promptVersion = promptVersion,
+    baseUrl = baseUrl,
+    inputRevision = inputRevision,
+    answerInputRevision = answerInputRevision
 )
 
 fun Question.toEntity(): QuestionEntity = QuestionEntity(
@@ -234,9 +272,20 @@ fun Question.toEntity(): QuestionEntity = QuestionEntity(
     questionText = questionText,
     imagePaths = org.json.JSONArray(imagePaths).toString(),
     status = status,
-    answerJson = result?.toJson(),
+    // 旧记录必须保留原始 answerJson，避免用当前模型反序列化后再序列化导致字段丢失/变空；
+    // 新解析结果带 metrics 时必须写入完整结构（含保存状态/传输信息），否则指标会随 rawJson 丢失。
+    answerJson = result?.let { parsed ->
+        if (parsed.metrics != null) parsed.toJson()
+        else parsed.rawJson.takeIf { it.isNotBlank() } ?: parsed.toJson()
+    },
     model = model,
     errorMessage = errorMessage,
     isFavorite = isFavorite,
-    isEphemeral = isEphemeral
+    isEphemeral = isEphemeral,
+    mode = mode,
+    durationMs = durationMs,
+    promptVersion = promptVersion,
+    baseUrl = baseUrl,
+    inputRevision = inputRevision,
+    answerInputRevision = answerInputRevision
 )

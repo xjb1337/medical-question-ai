@@ -1,6 +1,8 @@
 package com.xjb.medicalquestionai.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -17,8 +19,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Cancel
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -31,10 +41,16 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -42,6 +58,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
+import com.xjb.medicalquestionai.data.AnswerMode
 import com.xjb.medicalquestionai.data.QuestionType
 import java.io.File
 import java.util.Locale
@@ -173,7 +190,7 @@ fun ErrorBanner(
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
             if (onDismiss != null) {
-                IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Outlined.Close, contentDescription = "关闭", modifier = Modifier.size(16.dp))
                 }
             }
@@ -203,6 +220,145 @@ fun QuestionTypeChips(
                     selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun AnswerModeSelector(
+    selected: AnswerMode,
+    onSelected: (AnswerMode) -> Unit,
+    enabled: Boolean = true,
+    showDescription: Boolean = true
+) {
+    Column {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            AnswerMode.entries.forEach { mode ->
+                FilterChip(
+                    selected = selected == mode,
+                    onClick = { onSelected(mode) },
+                    enabled = enabled,
+                    label = { Text(mode.label) },
+                    leadingIcon = if (selected == mode) {
+                        { Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                    } else null,
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                )
+            }
+        }
+        if (showDescription) {
+            Spacer(Modifier.height(8.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                AnswerMode.entries.forEach { mode ->
+                    Text(
+                        "${mode.label}：${mode.description}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (selected == mode) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (selected == mode) FontWeight.Medium else FontWeight.Normal
+                    )
+                }
+            }
+        }
+    }
+}
+
+private data class StatusVisual(
+    val label: String,
+    val icon: ImageVector,
+    val container: Color,
+    val content: Color
+)
+
+@Composable
+fun HistoryStatusChip(status: String, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val visual = when (status.lowercase()) {
+        "completed", "answered" -> StatusVisual("已完成", Icons.Outlined.CheckCircle, scheme.primaryContainer, scheme.onPrimaryContainer)
+        "analyzing", "receiving", "validating", "preparing", "uploading" ->
+            StatusVisual("解析中", Icons.Outlined.Schedule, scheme.secondaryContainer, scheme.onSecondaryContainer)
+        "failed" -> StatusVisual("失败", Icons.Outlined.ErrorOutline, scheme.errorContainer, scheme.onErrorContainer)
+        "cancelled" -> StatusVisual("已取消", Icons.Outlined.Cancel, scheme.surfaceVariant, scheme.onSurface)
+        "interrupted" -> StatusVisual("已中断", Icons.Outlined.WarningAmber, scheme.tertiaryContainer, scheme.onTertiaryContainer)
+        else -> StatusVisual("未知", Icons.Outlined.Info, scheme.surfaceVariant, scheme.onSurface)
+    }
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(50),
+        color = visual.container
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(visual.icon, contentDescription = null, tint = visual.content, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(
+                visual.label,
+                style = MaterialTheme.typography.labelSmall,
+                color = visual.content,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
+@Composable
+fun CollapsibleSection(
+    title: String,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    initiallyExpanded: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    var expanded by rememberSaveable(title) { mutableStateOf(initiallyExpanded) }
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (subtitle != null) {
+                        Text(
+                            subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Icon(
+                    if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    contentDescription = if (expanded) "收起" else "展开",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                    content = content
+                )
+            }
         }
     }
 }
@@ -245,7 +401,10 @@ fun EmptyState(
         )
         if (actionLabel != null && onAction != null) {
             Spacer(Modifier.height(18.dp))
-            androidx.compose.material3.Button(onClick = onAction) { Text(actionLabel) }
+            androidx.compose.material3.Button(
+                onClick = onAction,
+                modifier = Modifier.height(48.dp)
+            ) { Text(actionLabel) }
         }
     }
 }

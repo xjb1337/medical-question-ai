@@ -68,7 +68,18 @@ class SettingsRepository(context: Context, private val keyStore: SecureKeyStore)
     }
 
     fun saveModel(model: String) {
-        prefs.edit().putString(KEY_MODEL, model).apply()
+        // 用户主动保存模型就是一次明确选择；标记迁移版本已到最新，避免下次启动把旧模型名再次迁移。
+        prefs.edit()
+            .putString(KEY_MODEL, model.trim())
+            .putInt(KEY_SETTINGS_VERSION, SettingsMigrations.CURRENT_VERSION)
+            .commit()
+    }
+
+    fun saveAnswerMode(mode: AnswerMode) {
+        prefs.edit()
+            .putString(KEY_ANSWER_MODE, mode.storageValue)
+            .putInt(KEY_SETTINGS_VERSION, SettingsMigrations.CURRENT_VERSION)
+            .commit()
     }
 
     fun saveBaseUrl(url: String): Boolean {
@@ -82,14 +93,45 @@ class SettingsRepository(context: Context, private val keyStore: SecureKeyStore)
         prefs.edit().putBoolean(KEY_SAVE_HISTORY, value).apply()
     }
 
+    fun saveCustomModelCapabilities(supportsImages: Boolean, streaming: Boolean) {
+        prefs.edit()
+            .putBoolean(KEY_CUSTOM_MODEL_IMAGES, supportsImages)
+            .putBoolean(KEY_CUSTOM_MODEL_STREAMING, streaming)
+            .commit()
+    }
+
+    fun dismissModelMigrationNote() {
+        prefs.edit().remove(KEY_MIGRATION_NOTE).apply()
+        refresh()
+    }
+
     private fun load(): AppSettings {
         val key = keyStore.getApiKey()
+        val storedModel = prefs.getString(KEY_MODEL, null)
+        val baseUrl = prefs.getString(KEY_BASE_URL, DEFAULT_BASE_URL) ?: DEFAULT_BASE_URL
+        val storedMode = prefs.getString(KEY_ANSWER_MODE, null)
+        val storedVersion = prefs.getInt(KEY_SETTINGS_VERSION, 0)
+        val migration = SettingsMigrations.migrate(storedModel, baseUrl, storedMode, storedVersion)
+        if (migration.changed) {
+            val editor = prefs.edit()
+                .putString(KEY_MODEL, migration.model)
+                .putString(KEY_ANSWER_MODE, migration.answerMode.storageValue)
+                .putInt(KEY_SETTINGS_VERSION, migration.version)
+            if (migration.note.isNotBlank()) editor.putString(KEY_MIGRATION_NOTE, migration.note)
+            // 迁移是低频一次性写入，用 commit 保证内存状态与磁盘版本号一致，避免重复迁移。
+            editor.commit()
+        }
         return AppSettings(
             apiKeyConfigured = !key.isNullOrBlank(),
             apiKeyHint = key?.takeLast(4)?.let { "末尾 $it" }.orEmpty(),
-            model = prefs.getString(KEY_MODEL, DEFAULT_MODEL) ?: DEFAULT_MODEL,
-            baseUrl = prefs.getString(KEY_BASE_URL, DEFAULT_BASE_URL) ?: DEFAULT_BASE_URL,
-            saveHistory = prefs.getBoolean(KEY_SAVE_HISTORY, true)
+            model = migration.model,
+            baseUrl = baseUrl,
+            saveHistory = prefs.getBoolean(KEY_SAVE_HISTORY, true),
+            answerMode = migration.answerMode,
+            settingsVersion = migration.version,
+            modelMigrationNote = prefs.getString(KEY_MIGRATION_NOTE, "").orEmpty(),
+            customModelSupportsImages = prefs.getBoolean(KEY_CUSTOM_MODEL_IMAGES, false),
+            customModelStreaming = prefs.getBoolean(KEY_CUSTOM_MODEL_STREAMING, false)
         )
     }
 
@@ -99,6 +141,11 @@ class SettingsRepository(context: Context, private val keyStore: SecureKeyStore)
         private const val KEY_MODEL = "model"
         private const val KEY_BASE_URL = "base_url"
         private const val KEY_SAVE_HISTORY = "save_history"
+        private const val KEY_ANSWER_MODE = "answer_mode"
+        private const val KEY_SETTINGS_VERSION = "settings_version"
+        private const val KEY_MIGRATION_NOTE = "model_migration_note"
+        private const val KEY_CUSTOM_MODEL_IMAGES = "custom_model_images"
+        private const val KEY_CUSTOM_MODEL_STREAMING = "custom_model_streaming"
 
         fun normalizeBaseUrl(url: String): String = url.trim().trimEnd('/')
 

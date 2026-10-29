@@ -1,6 +1,5 @@
 package com.xjb.medicalquestionai.ui.screens
 
-import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -12,13 +11,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,6 +30,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
+import androidx.compose.material.icons.automirrored.outlined.RotateRight
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Crop
 import androidx.compose.material.icons.outlined.DeleteOutline
@@ -39,7 +39,6 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.PhotoLibrary
-import androidx.compose.material.icons.automirrored.outlined.RotateRight
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -66,6 +65,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -87,14 +87,14 @@ import com.xjb.medicalquestionai.MainViewModel
 import com.xjb.medicalquestionai.data.DraftImage
 import com.xjb.medicalquestionai.data.ImageStore
 import com.xjb.medicalquestionai.data.QuestionType
+import com.xjb.medicalquestionai.ui.components.AnswerModeSelector
 import com.xjb.medicalquestionai.ui.components.AppTopBar
 import com.xjb.medicalquestionai.ui.components.ErrorBanner
-import com.xjb.medicalquestionai.ui.components.InfoBanner
 import com.xjb.medicalquestionai.ui.components.QuestionTypeChips
 import com.xjb.medicalquestionai.ui.components.SectionCard
+import com.xjb.medicalquestionai.ui.components.formatBytes
 import com.xjb.medicalquestionai.ui.components.rememberFileImageRequest
 import com.xjb.medicalquestionai.ui.theme.Amber700
-import kotlinx.coroutines.flow.collectLatest
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -104,12 +104,14 @@ fun NewQuestionScreen(
 ) {
     val draft by viewModel.draft.collectAsState()
     val settings by viewModel.settings.collectAsState()
-    val isAnalyzing by viewModel.isAnalyzing.collectAsState()
+    val analyzing by viewModel.isAnalyzing.collectAsState()
     val isImporting by viewModel.isImporting.collectAsState()
-    val error by viewModel.analysisError.collectAsState()
+    val analysisError by viewModel.analysisError.collectAsState()
     val notice by viewModel.draftNotice.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var editingImageId by remember { mutableStateOf<String?>(null) }
+    var textExpanded by rememberSaveable { mutableStateOf(false) }
+    var privacyDetailExpanded by rememberSaveable { mutableStateOf(false) }
     val editingImage = editingImageId?.let { id -> draft.images.firstOrNull { it.id == id } }
 
     val picker = rememberLauncherForActivityResult(
@@ -125,12 +127,80 @@ fun NewQuestionScreen(
         }
     }
 
+    val imageUnsupported = draft.images.isNotEmpty() && !settings.modelSupportsImages
+    val submitBlockedReason = when {
+        isImporting -> "正在导入图片…"
+        draft.text.isBlank() && draft.images.isEmpty() -> "未添加图片或文字"
+        !draft.privacyConfirmed -> "请先确认隐私"
+        !settings.apiKeyConfigured -> "未配置密钥"
+        imageUnsupported -> "当前模型不支持图片，请切换到 DeepSeek Flash"
+        analyzing -> "正在解析…"
+        else -> null
+    }
+
     Scaffold(
         topBar = {
             AppTopBar(
                 title = "医学拍题助手",
-                subtitle = "拍下题目，把思路一步步讲清楚"
+                subtitle = "拍下题目，先把答案讲清楚"
             )
+        },
+        bottomBar = {
+            Surface(
+                tonalElevation = 3.dp,
+                shadowElevation = 8.dp,
+                color = MaterialTheme.colorScheme.surface
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .imePadding()
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                ) {
+                    if (submitBlockedReason != null && !analyzing) {
+                        Text(
+                            submitBlockedReason,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(6.dp))
+                    }
+                    Button(
+                        onClick = {
+                            viewModel.startAnalysis { questionId ->
+                                // 清理本地预览状态，确保返回首页时不会短暂看到上一题的图片或文字。
+                                editingImageId = null
+                                textExpanded = false
+                                navController.navigate("result/$questionId")
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
+                        enabled = submitBlockedReason == null,
+                        shape = MaterialTheme.shapes.large
+                    ) {
+                        if (analyzing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text("正在解析…")
+                        } else {
+                            Text("开始解析", style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "解析由 AI 生成，请结合教材与课程讲义核对",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    )
+                }
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background
@@ -139,164 +209,71 @@ fun NewQuestionScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                start = 18.dp, end = 18.dp, top = 8.dp, bottom = 28.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            if (!settings.apiKeyConfigured) {
+            item {
+                CameraHeroCard(
+                    enabled = draft.images.size < ImageStore.MAX_IMAGES && !analyzing && !isImporting,
+                    onClick = { navController.navigate("camera") }
+                )
+            }
+
+            if (analysisError != null) {
                 item {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer
-                        ),
-                        shape = MaterialTheme.shapes.large
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                    ErrorBanner(analysisError!!, onDismiss = viewModel::consumeAnalysisError)
+                }
+            }
+
+            item {
+                SectionCard(title = "从相册添加图片（可选）") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(
+                            onClick = {
+                                picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            },
+                            enabled = draft.images.size < ImageStore.MAX_IMAGES && !analyzing && !isImporting
                         ) {
-                            Icon(Icons.Outlined.Key, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.width(12.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text("先配置 DeepSeek API 密钥", fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    "密钥只保存在本机，使用 Android Keystore 加密。",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            TextButton(onClick = { navController.navigate("settings") }) { Text("去设置") }
+                            Icon(Icons.Outlined.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("从相册选择")
                         }
-                    }
-                }
-            }
-
-            item {
-                SectionCard(title = "题型") {
-                    QuestionTypeChips(
-                        selected = draft.questionType,
-                        onSelected = viewModel::updateQuestionType,
-                        enabled = !isAnalyzing
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "选择“自动判断”时，模型会尝试识别单选或多选；若无法确定，会在结果中提醒核对。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            item {
-                SectionCard(title = "题干或文字补充") {
-                    OutlinedTextField(
-                        value = draft.text,
-                        onValueChange = viewModel::updateDraftText,
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 4,
-                        maxLines = 12,
-                        enabled = !isAnalyzing,
-                        placeholder = { Text("例如：题干、选项、患者表现、化验值，或希望重点关注的知识点……") },
-                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                        shape = MaterialTheme.shapes.medium
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "只输入文字也可以解析；题干中的否定词、数值、单位和选项请尽量完整保留。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            item {
-                SectionCard(
-                    title = "题目图片",
-                    trailing = {
+                        Spacer(Modifier.weight(1f))
                         Text(
-                            "${draft.images.size}/${ImageStore.MAX_IMAGES}",
+                            "${draft.images.size}/${ImageStore.MAX_IMAGES} 张",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedButton(
-                            onClick = { navController.navigate("camera") },
-                            enabled = draft.images.size < ImageStore.MAX_IMAGES && !isAnalyzing && !isImporting,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Outlined.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("拍照")
-                        }
-                        FilledTonalButton(
-                            onClick = {
-                                picker.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                )
-                            },
-                            enabled = draft.images.size < ImageStore.MAX_IMAGES && !isAnalyzing && !isImporting,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Outlined.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("从相册选")
-                        }
-                    }
-
                     if (draft.images.isEmpty()) {
-                        Spacer(Modifier.height(14.dp))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(118.dp)
-                                .background(
-                                    MaterialTheme.colorScheme.surfaceVariant,
-                                    RoundedCornerShape(14.dp)
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(
-                                    Icons.Outlined.Image,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(Modifier.height(6.dp))
-                                Text(
-                                    "可添加多张：完整图、心电图、局部放大图",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    } else {
-                        Spacer(Modifier.height(14.dp))
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            items(draft.images, key = { it.id }) { image ->
-                                DraftImageCard(
-                                    image = image,
-                                    index = draft.images.indexOf(image),
-                                    total = draft.images.size,
-                                    onOpen = { editingImageId = image.id },
-                                    onMoveLeft = { viewModel.moveImage(image.id, -1) },
-                                    onMoveRight = { viewModel.moveImage(image.id, 1) },
-                                    onRotate = { viewModel.rotateImage(image.id, 90) },
-                                    onCrop = { editingImageId = image.id },
-                                    onDelete = { viewModel.removeImage(image.id) }
-                                )
-                            }
-                        }
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "点按图片可旋转、裁剪；用左右箭头调整顺序。建议保留完整画面，再另加局部图。",
+                            "还没有题目图片。拍照或从相册选择；只输入文字也可以解析。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Spacer(Modifier.height(10.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            items(draft.images, key = { it.id }) { image ->
+                                DraftImagePreview(
+                                    image = image,
+                                    index = draft.images.indexOfFirst { it.id == image.id } + 1,
+                                    enabled = !analyzing,
+                                    onOpen = { editingImageId = image.id }
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "共 ${draft.images.size} 张 · 约 ${formatBytes(draft.images.sumOf { it.sizeBytes })}"
+                        )
+                        Text(
+                            "点按图片可旋转、裁剪、排序或删除；建议保留完整画面，再另加局部图。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-
                     if (isImporting) {
                         Spacer(Modifier.height(10.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -308,20 +285,110 @@ fun NewQuestionScreen(
                 }
             }
 
+            if (imageUnsupported) {
+                item {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(Modifier.padding(14.dp)) {
+                            Row(verticalAlignment = Alignment.Top) {
+                                Icon(
+                                    Icons.Outlined.WarningAmber,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "当前模型 ${settings.modelLabel} 不支持图片输入，已选择 ${draft.images.size} 张图片。请切换到 DeepSeek Flash 后再解析，图片不会被悄悄丢弃。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                            TextButton(onClick = { navController.navigate("settings") }) { Text("去切换模型") }
+                        }
+                    }
+                }
+            }
+
+            item {
+                SectionCard(
+                    title = "补充文字（可选）",
+                    trailing = {
+                        TextButton(onClick = { textExpanded = !textExpanded }) {
+                            Text(if (textExpanded) "收起" else "展开")
+                        }
+                    }
+                ) {
+                    if (textExpanded) {
+                        OutlinedTextField(
+                            value = draft.text,
+                            onValueChange = viewModel::updateDraftText,
+                            modifier = Modifier.fillMaxWidth(),
+                            minLines = 3,
+                            maxLines = 10,
+                            enabled = !analyzing,
+                            placeholder = { Text("例如：题干、选项、患者表现、化验值，或希望重点关注的知识点……") },
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                            shape = MaterialTheme.shapes.medium
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "只输入文字也可以解析；题干中的否定词、数值、单位和选项请尽量完整保留。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            draft.text.ifBlank { "题干太长、图片看不清，或需要补充符号时，可在这里输入。" },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (draft.text.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant
+                            else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+
+            item {
+                SectionCard(title = "题型与做题模式") {
+                    QuestionTypeChips(
+                        selected = draft.questionType,
+                        onSelected = viewModel::updateQuestionType,
+                        enabled = !analyzing
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    AnswerModeSelector(
+                        selected = settings.answerMode,
+                        onSelected = viewModel::saveAnswerMode,
+                        enabled = !analyzing
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "当前模型：${settings.modelLabel}" + if (settings.modelSupportsImages) " · 支持图片" else " · 仅文字",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     shape = MaterialTheme.shapes.large
                 ) {
-                    Column(Modifier.padding(16.dp)) {
+                    Column(Modifier.padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(
                                 checked = draft.privacyConfirmed,
                                 onCheckedChange = viewModel::setPrivacyConfirmed,
-                                enabled = !isAnalyzing
+                                enabled = !analyzing
                             )
                             Text(
-                                "我已确认图片不含可识别的患者身份信息",
+                                "我已确认题目内容不含可识别的患者身份信息",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -331,52 +398,62 @@ fun NewQuestionScreen(
                                 Icons.Outlined.Lock,
                                 contentDescription = null,
                                 modifier = Modifier
-                                    .padding(start = 12.dp, top = 2.dp)
-                                    .size(16.dp),
+                                    .padding(start = 10.dp, top = 2.dp)
+                                    .size(15.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                "上传前请遮挡姓名、住院号、联系方式等。应用会重新编码图片以移除文件元数据，但图片中可见的信息仍需你人工确认。图片和文字会发送给 DeepSeek。",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "图片和文字会发送给 DeepSeek；请先遮挡姓名、住院号、联系方式等。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                TextButton(
+                                    onClick = { privacyDetailExpanded = !privacyDetailExpanded },
+                                    contentPadding = PaddingValues(0.dp)
+                                ) {
+                                    Text(if (privacyDetailExpanded) "收起说明" else "隐私说明")
+                                }
+                                if (privacyDetailExpanded) {
+                                    Text(
+                                        "应用会重新编码图片以移除文件元数据，但图片中可见的文字仍需你人工确认。解析记录默认保存在本机；关闭“保存解析历史”后仅当前解析可用。",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            if (error != null) {
+            if (!settings.apiKeyConfigured) {
                 item {
-                    ErrorBanner(error!!, onDismiss = viewModel::consumeAnalysisError)
-                }
-            }
-
-            item {
-                Button(
-                    onClick = {
-                        viewModel.startAnalysis { questionId ->
-                            navController.navigate("result/$questionId")
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                        shape = MaterialTheme.shapes.large
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Outlined.Key,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("先配置 DeepSeek API 密钥", fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "密钥只保存在本机，使用 Android Keystore 加密。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            TextButton(onClick = { navController.navigate("settings") }) { Text("去设置") }
                         }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp),
-                    enabled = !isAnalyzing && !isImporting &&
-                        (draft.text.isNotBlank() || draft.images.isNotEmpty()) &&
-                        draft.privacyConfirmed,
-                    shape = MaterialTheme.shapes.large
-                ) {
-                    if (isAnalyzing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        Text("正在识别与解答…")
-                    } else {
-                        Text("开始解析", style = MaterialTheme.typography.titleMedium)
                     }
                 }
             }
@@ -408,7 +485,11 @@ fun NewQuestionScreen(
         ImageEditDialog(
             image = editingImage,
             index = draft.images.indexOfFirst { it.id == editingImage.id } + 1,
+            enableMoveLeft = draft.images.indexOfFirst { it.id == editingImage.id } > 0,
+            enableMoveRight = draft.images.indexOfFirst { it.id == editingImage.id } < draft.images.lastIndex,
             onDismiss = { editingImageId = null },
+            onMoveLeft = { viewModel.moveImage(editingImage.id, -1) },
+            onMoveRight = { viewModel.moveImage(editingImage.id, 1) },
             onRotate = { degrees -> viewModel.rotateImage(editingImage.id, degrees) },
             onCrop = { rect, keepOriginal -> viewModel.cropImage(editingImage.id, rect, keepOriginal) },
             onDelete = {
@@ -420,19 +501,45 @@ fun NewQuestionScreen(
 }
 
 @Composable
-private fun DraftImageCard(
+private fun CameraHeroCard(enabled: Boolean, onClick: () -> Unit) {
+    Card(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 34.dp, horizontal = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(Icons.Outlined.CameraAlt, contentDescription = null, modifier = Modifier.size(56.dp))
+            Spacer(Modifier.height(12.dp))
+            Text("拍照搜题", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "对准题目拍摄，支持多张、旋转与裁剪",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun DraftImagePreview(
     image: DraftImage,
     index: Int,
-    total: Int,
-    onOpen: () -> Unit,
-    onMoveLeft: () -> Unit,
-    onMoveRight: () -> Unit,
-    onRotate: () -> Unit,
-    onCrop: () -> Unit,
-    onDelete: () -> Unit
+    enabled: Boolean,
+    onOpen: () -> Unit
 ) {
     Card(
-        modifier = Modifier.width(164.dp),
+        modifier = Modifier.width(142.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         shape = MaterialTheme.shapes.medium
     ) {
@@ -440,12 +547,12 @@ private fun DraftImageCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(112.dp)
-                    .clickable(onClick = onOpen)
+                    .height(98.dp)
+                    .clickable(enabled = enabled, onClick = onOpen)
             ) {
                 AsyncImage(
                     model = rememberFileImageRequest(image.path),
-                    contentDescription = "题目图片 ${index + 1}",
+                    contentDescription = "题目图片 $index",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -454,11 +561,11 @@ private fun DraftImageCard(
                     contentColor = Color.White,
                     shape = CircleShape,
                     modifier = Modifier
-                        .padding(7.dp)
+                        .padding(6.dp)
                         .size(24.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Text("${index + 1}", style = MaterialTheme.typography.labelLarge)
+                        Text("$index", style = MaterialTheme.typography.labelLarge)
                     }
                 }
                 if (image.warnings.isNotEmpty()) {
@@ -474,28 +581,24 @@ private fun DraftImageCard(
                 }
             }
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                SmallImageAction(Icons.AutoMirrored.Outlined.ArrowBack, "前移", enabled = index > 0, onClick = onMoveLeft)
-                SmallImageAction(Icons.AutoMirrored.Outlined.ArrowForward, "后移", enabled = index < total - 1, onClick = onMoveRight)
-                SmallImageAction(Icons.AutoMirrored.Outlined.RotateRight, "旋转", onClick = onRotate)
-                SmallImageAction(Icons.Outlined.Crop, "裁剪", onClick = onCrop)
-                SmallImageAction(Icons.Outlined.DeleteOutline, "删除", onClick = onDelete)
+                Text(
+                    "第 $index 张",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    formatBytes(image.sizeBytes),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
-    }
-}
-
-@Composable
-private fun SmallImageAction(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    description: String,
-    enabled: Boolean = true,
-    onClick: () -> Unit
-) {
-    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(30.dp)) {
-        Icon(icon, contentDescription = description, modifier = Modifier.size(17.dp))
     }
 }
 
@@ -505,7 +608,11 @@ private enum class CropHandle { NONE, MOVE, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BO
 private fun ImageEditDialog(
     image: DraftImage,
     index: Int,
+    enableMoveLeft: Boolean,
+    enableMoveRight: Boolean,
     onDismiss: () -> Unit,
+    onMoveLeft: () -> Unit,
+    onMoveRight: () -> Unit,
     onRotate: (Int) -> Unit,
     onCrop: (android.graphics.RectF, Boolean) -> Unit,
     onDelete: () -> Unit
@@ -522,7 +629,7 @@ private fun ImageEditDialog(
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(390.dp),
+                        .height(380.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     val imageAspect = if (image.height > 0) image.width.toFloat() / image.height else 1f
@@ -557,7 +664,7 @@ private fun ImageEditDialog(
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "原图 ${image.width} × ${image.height} · ${com.xjb.medicalquestionai.ui.components.formatBytes(image.sizeBytes)}",
+                    "原图 ${image.width} × ${image.height} · ${formatBytes(image.sizeBytes)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -594,21 +701,27 @@ private fun ImageEditDialog(
                     }) { Text("替换当前图") }
                 }
             } else {
-                Row {
-                    TextButton(onClick = {
-                        onRotate(-90)
-                        cropMode = false
-                    }) { Text("左转") }
-                    TextButton(onClick = {
-                        onRotate(90)
-                        cropMode = false
-                    }) { Text("右转") }
-                    TextButton(onClick = {
-                        cropRect = Rect(0.04f, 0.04f, 0.96f, 0.96f)
-                        cropMode = true
-                    }) { Text("裁剪") }
-                    TextButton(onClick = { confirmDelete = true }) {
-                        Text("删除", color = MaterialTheme.colorScheme.error)
+                Column(horizontalAlignment = Alignment.End) {
+                    Row {
+                        TextButton(onClick = onMoveLeft, enabled = enableMoveLeft) { Text("前移") }
+                        TextButton(onClick = onMoveRight, enabled = enableMoveRight) { Text("后移") }
+                    }
+                    Row {
+                        TextButton(onClick = {
+                            onRotate(-90)
+                            cropMode = false
+                        }) { Text("左转") }
+                        TextButton(onClick = {
+                            onRotate(90)
+                            cropMode = false
+                        }) { Text("右转") }
+                        TextButton(onClick = {
+                            cropRect = Rect(0.04f, 0.04f, 0.96f, 0.96f)
+                            cropMode = true
+                        }) { Text("裁剪") }
+                        TextButton(onClick = { confirmDelete = true }) {
+                            Text("删除", color = MaterialTheme.colorScheme.error)
+                        }
                     }
                 }
             }

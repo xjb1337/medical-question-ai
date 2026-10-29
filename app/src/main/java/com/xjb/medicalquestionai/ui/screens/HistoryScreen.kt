@@ -55,6 +55,7 @@ import com.xjb.medicalquestionai.MainViewModel
 import com.xjb.medicalquestionai.data.Question
 import com.xjb.medicalquestionai.ui.components.AppTopBar
 import com.xjb.medicalquestionai.ui.components.EmptyState
+import com.xjb.medicalquestionai.ui.components.HistoryStatusChip
 import com.xjb.medicalquestionai.ui.components.rememberFileImageRequest
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -204,23 +205,29 @@ private fun HistoryCard(
             }
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    HistoryStatusChip(question.status)
+                    if (question.isAnswerStale) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "答案待更新",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Spacer(Modifier.width(6.dp))
                     Text(
-                        question.typeLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        " · ${question.sourceLabel} · $date",
+                        "${question.typeLabel} · ${question.sourceLabel} · $date",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
                     )
-                    Spacer(Modifier.weight(1f))
                     Box {
                         IconButton(
                             onClick = { menuExpanded = true },
-                            modifier = Modifier.size(30.dp)
+                            modifier = Modifier.size(48.dp)
                         ) {
                             Icon(Icons.Outlined.MoreVert, contentDescription = "更多", modifier = Modifier.size(18.dp))
                         }
@@ -264,16 +271,21 @@ private fun HistoryCard(
                     fontWeight = FontWeight.Medium
                 )
                 Spacer(Modifier.height(5.dp))
-                val preview = when {
-                    question.status == "failed" -> question.errorMessage ?: "解析失败"
-                    question.status == "analyzing" -> "正在解析…"
-                    else -> question.result?.answerDisplay ?: "已保存"
+                val preview = when (question.status) {
+                    "failed" -> question.errorMessage ?: "解析失败，可点击重试"
+                    "cancelled" -> "已取消本次解析，可重新解析"
+                    "interrupted" -> "上次解析被中断，可重新解析"
+                    "analyzing", "receiving", "validating", "preparing", "uploading" -> "正在解析…"
+                    else -> question.result?.answerDisplay ?: "等待解析结果"
                 }
                 Text(
                     preview,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (question.status == "failed") MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = when (question.status) {
+                        "failed" -> MaterialTheme.colorScheme.error
+                        "analyzing", "receiving", "validating", "preparing", "uploading" -> MaterialTheme.colorScheme.primary
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )

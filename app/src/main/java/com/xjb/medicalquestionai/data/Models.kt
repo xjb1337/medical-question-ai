@@ -74,6 +74,18 @@ data class FollowUp(
     val failed: Boolean = false
 )
 
+data class AnalysisMetrics(
+    val requestModel: String = "",
+    val responseModel: String = "",
+    val thinkingEnabled: Boolean = false,
+    val streamed: Boolean = false,
+    val finishReason: String = "",
+    val transportClosed: Boolean = false,
+    val saveStatus: String = "",
+    val totalMs: Long = 0,
+    val answerMode: String = ""
+)
+
 data class AnalysisResult(
     val status: String = "answered",
     val questionType: String = "unknown",
@@ -88,7 +100,8 @@ data class AnalysisResult(
     val confidence: String = "medium",
     val warnings: List<String> = emptyList(),
     val rawJson: String = "",
-    val usage: Usage = Usage()
+    val usage: Usage = Usage(),
+    val metrics: AnalysisMetrics? = null
 ) {
     val needsConfirmation: Boolean
         get() = status != "out_of_scope" &&
@@ -149,6 +162,19 @@ data class AnalysisResult(
             put("completion_tokens", usage.completionTokens)
             put("total_tokens", usage.totalTokens)
         })
+        metrics?.let { m ->
+            put("metrics", JSONObject().apply {
+                put("request_model", m.requestModel)
+                put("response_model", m.responseModel)
+                put("thinking_enabled", m.thinkingEnabled)
+                put("streamed", m.streamed)
+                put("finish_reason", m.finishReason)
+                put("transport_closed", m.transportClosed)
+                put("save_status", m.saveStatus)
+                put("total_ms", m.totalMs)
+                put("answer_mode", m.answerMode)
+            })
+        }
     }.toString()
 
     companion object {
@@ -242,7 +268,20 @@ data class AnalysisResult(
                         completionTokens = usage.optInt("completion_tokens", usage.optInt("output_tokens", 0)),
                         totalTokens = usage.optInt("total_tokens", 0)
                     )
-                } ?: Usage()
+                } ?: Usage(),
+                metrics = obj.optJSONObject("metrics")?.let { m ->
+                    AnalysisMetrics(
+                        requestModel = m.optString("request_model"),
+                        responseModel = m.optString("response_model"),
+                        thinkingEnabled = m.optBoolean("thinking_enabled", false),
+                        streamed = m.optBoolean("streamed", false),
+                        finishReason = m.optString("finish_reason"),
+                        transportClosed = m.optBoolean("transport_closed", false),
+                        saveStatus = m.optString("save_status"),
+                        totalMs = m.optLong("total_ms", 0),
+                        answerMode = m.optString("answer_mode")
+                    )
+                }
             )
         }
     }
@@ -260,8 +299,25 @@ data class Question(
     val model: String,
     val errorMessage: String?,
     val isFavorite: Boolean,
-    val isEphemeral: Boolean = false
+    val isEphemeral: Boolean = false,
+    val mode: String = AnswerMode.STANDARD.storageValue,
+    val durationMs: Long = 0,
+    val promptVersion: String = "",
+    val baseUrl: String = "",
+    /** 题目输入版本：题干或图片每次修改都递增。 */
+    val inputRevision: Long = 0,
+    /** 当前展示答案对应的输入版本；旧记录均为 0，与 inputRevision 相同。 */
+    val answerInputRevision: Long = 0
 ) {
+    val isAnswerStale: Boolean
+        get() = result != null && answerInputRevision != inputRevision
+
+    val modeLabel: String
+        get() = AnswerMode.fromStorage(mode).label
+
+    val modelLabel: String
+        get() = ModelCatalog.displayName(model)
+
     val typeLabel: String
         get() = when (questionType) {
             "single" -> "单选"
@@ -289,7 +345,17 @@ data class Question(
 data class AppSettings(
     val apiKeyConfigured: Boolean = false,
     val apiKeyHint: String = "",
-    val model: String = "deepseek-flash",
+    val model: String = ModelCatalog.FLASH.id,
     val baseUrl: String = "https://api.deepseek.com",
-    val saveHistory: Boolean = true
-)
+    val saveHistory: Boolean = true,
+    val answerMode: AnswerMode = AnswerMode.STANDARD,
+    val settingsVersion: Int = SettingsMigrations.CURRENT_VERSION,
+    val modelMigrationNote: String = "",
+    /** 未知/自定义模型的能力声明；官方模型仍以官方能力表为准。 */
+    val customModelSupportsImages: Boolean = false,
+    val customModelStreaming: Boolean = false
+) {
+    val modelSupportsImages: Boolean
+        get() = ModelCatalog.supportsImages(model, customModelSupportsImages)
+    val modelLabel: String get() = ModelCatalog.displayName(model)
+}
