@@ -12,6 +12,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Update
 import androidx.room.migration.Migration
+import com.xjb.medicalquestionai.hasRepeatedJsonNullPrefix
 import com.xjb.medicalquestionai.isJsonNullLiteral
 import androidx.sqlite.db.SupportSQLiteDatabase
 import android.content.Context
@@ -216,12 +217,13 @@ class QuestionRepository(private val dao: QuestionDao) {
 class FollowUpRepository(private val dao: FollowUpDao) {
     fun observeForQuestion(questionId: String, answerRevision: Long): Flow<List<FollowUp>> =
         dao.observeForQuestion(questionId, answerRevision).map { list ->
-            list.map { it.toDomain() }.filterNot { it.content.isJsonNullLiteral() }
+            list.map { it.toDomain() }
+                .filterNot { it.content.isJsonNullLiteral() || it.content.hasRepeatedJsonNullPrefix() }
         }
 
     suspend fun getForQuestion(questionId: String, answerRevision: Long): List<FollowUp> =
         dao.getForQuestion(questionId, answerRevision).map { it.toDomain() }
-            .filterNot { it.content.isJsonNullLiteral() }
+            .filterNot { it.content.isJsonNullLiteral() || it.content.hasRepeatedJsonNullPrefix() }
 
     suspend fun insert(followUp: FollowUp) = dao.insert(followUp.toEntity())
 

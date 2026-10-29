@@ -18,7 +18,9 @@ data class AnalysisPreview(
     val warningsFieldValid: Boolean = true,
     val rootClosed: Boolean = false,
     val semanticIssue: String? = null,
-    val selectedType: QuestionType = QuestionType.AUTO
+    val selectedType: QuestionType = QuestionType.AUTO,
+    /** 已经确定语义非法（题型/答案/选项冲突）；此类预览不能展示为确定答案。 */
+    val answerInvalid: Boolean = false
 ) {
     val hasUsefulContent: Boolean
         get() = recognizedQuestion.isNotBlank() || answer.any(String::isNotBlank) || answerText.isNotBlank()
@@ -40,13 +42,19 @@ data class AnalysisPreview(
             (answer.any(String::isNotBlank) || answerText.isNotBlank())
 
     fun toResult(): AnalysisResult = AnalysisResult(
-        status = status,
+        // 已知非法（题型/单选多答案/选项冲突等）时不能进入确定答案卡；
+        // 保留题干用于核对，但状态降级为待确认并隐藏无效答案。
+        status = if (answerInvalid) "needs_confirmation" else status,
         questionType = questionType,
         recognizedQuestion = recognizedQuestion,
-        answer = answer,
-        answerText = answerText,
+        answer = if (answerInvalid) emptyList() else answer,
+        answerText = if (answerInvalid) "" else answerText,
         confidence = confidence.ifBlank { "medium" },
-        warnings = warnings
+        warnings = if (answerInvalid && semanticIssue != null && semanticIssue !in warnings) {
+            warnings + semanticIssue
+        } else {
+            warnings
+        }
     )
 }
 
@@ -99,7 +107,8 @@ class PreviewJsonParser {
             warningsFieldValid = warningsFieldValid,
             rootClosed = rootClosed,
             semanticIssue = evaluation.previewIssue,
-            selectedType = selectedType
+            selectedType = selectedType,
+            answerInvalid = evaluation.isAnswerInvalid
         )
         // 运行中先展示“预览”，完整性与语义问题由 isComplete/semanticIssue 标记；
         // 不能等到根对象闭合才显示答案，否则答案卡会永远停在占位状态。

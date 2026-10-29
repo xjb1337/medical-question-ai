@@ -1,0 +1,5 @@
+date: 2026-10-29T19:43:44+08:00
+build: a14450b30a71a93ffc45e93e03caac1eb05ad9ca6502b33fdf0f56e48555b7cf *app/build/outputs/apk/debug/app-debug.apk
+dist:  a14450b30a71a93ffc45e93e03caac1eb05ad9ca6502b33fdf0f56e48555b7cf *dist/medical-question-ai-debug.apk
+sizes: 21827839 21827839
+cmp: identical

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" tests="44" skipped="0" failures="0" errors="0" timestamp="2026-10-29T11:43:02" hostname="DESKTOP-1234" time="0.086">
+  <properties/>
+  <testcase name="payloadSendsThinkingTiersAndJsonMode" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.026"/>
+  <testcase name="imageQuestionWithoutObservationsAddsWarning" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.017"/>
+  <testcase name="parserRequiresExplicitWarningsArray" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="answerModeParametersMatchProductTiers" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.001"/>
+  <testcase name="streamOptionsOnlyForOfficialBaseUrl" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="migratesLegacyOfficialModelsToCurrentNames" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.006"/>
+  <testcase name="previewRejectsMissingModelTypeEvenWithManualSelection" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.002"/>
+  <testcase name="customGatewayKeepsUserModelName" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="parserDowngradesInvalidChoiceAnswers" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.004"/>
+  <testcase name="parserAcceptsFenceAndSurroundingExplanation" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.001"/>
+  <testcase name="previewParsesWarningsArray" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.001"/>
+  <testcase name="followUpHistoryKeepsNewestCompleteTurnsOnly" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.01"/>
+  <testcase name="blankSettingsFallBackToFlashAndStandard" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.002"/>
+  <testcase name="followUpHistoryExcludesFailedAndStoppedMessages" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.001"/>
+  <testcase name="missingModelTypeCannotBeMaskedByManualSelection" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="illegalPreviewIsDowngradedBeforeAnswerCard" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.001"/>
+  <testcase name="previewRejectsOptionAnalysisMismatch" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="trimQuestionContextRespectsCharacterBudget" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="customModelDoesNotGainImageCapabilityByDefault" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.001"/>
+  <testcase name="outOfScopeIsPreserved" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="nullFollowUpContentDoesNotEnterHistory" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.001"/>
+  <testcase name="previewShowsPartialContentButOnlyCompletesWithAllFields" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="truncatedJsonFailsWithFriendlyMessage" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="imagesOnlyAttachToLastUserMessage" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="officialBaseUrlCheckIsStrict" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.001"/>
+  <testcase name="questionToEntityKeepsOriginalRawJson" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.002"/>
+  <testcase name="connectionCheckResultCanReportUnavailableModelList" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="sseParserFlushesUnterminatedLineOnFinish" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.001"/>
+  <testcase name="staleAnswerTracksInputRevision" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="sseParserSupportsCommentsMultilineDataAndFinish" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.001"/>
+  <testcase name="previewIgnoresBracesInsideStringsAndNestedObjects" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="parserHandlesBracesInStringsAndWrapperObject" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="pollutedNullPrefixHistoryIsIsolatedButNormalNullWordIsKept" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="previewShowsAnswerAsSoonAsFieldsComplete" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="singleChoiceWithMultipleAnswersAddsWarning" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="singleAnswerStringContainingTwoOptionsIsRejected" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="settingsMigrationDoesNotReapplyAfterCurrentVersion" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="emptyAnswerGetsNeedsConfirmationAndWarnings" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="catalogUsesCurrentOfficialModelsAndImageCapability" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="previewKeepsRootOpenContentButDoesNotComplete" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.001"/>
+  <testcase name="metricsRoundTripThroughAnalysisResultJson" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.002"/>
+  <testcase name="sseParserHandlesUtf8SplitAcrossPackets" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <testcase name="finishReasonMustBeExplicitStopOrNormal" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.002"/>
+  <testcase name="followUpHistoryNeverKeepsHalfTurn" classname="com.xjb.medicalquestionai.data.DeviceFeedbackCoreTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

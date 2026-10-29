@@ -457,6 +457,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     "image_count=${current.imagePaths.size}",
                     "image_ready_ms=${metrics?.clickToImageReadyMs?.toString().orEmpty()}",
                     "request_ready_ms=${metrics?.clickToRequestReadyMs?.toString().orEmpty()}",
+                    "request_body_sent_ms=${metrics?.clickToRequestBodySentMs?.toString().orEmpty()}",
                     "headers_ms=${metrics?.clickToHeadersMs?.toString().orEmpty()}",
                     "first_event_ms=${metrics?.clickToFirstEventMs?.toString().orEmpty()}",
                     "first_content_ms=${metrics?.clickToFirstContentMs?.toString().orEmpty()}",
@@ -537,7 +538,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val resultForSave = event.result.copy(
                             metrics = event.result.metrics?.copy(
                                 saveStatus = "saving",
-                                totalMs = duration
+                                // 保存完成前不写总耗时，避免把“分析完成”冒充“点击到落库完成”。
+                                totalMs = 0
                             )
                         )
                         val base = previous ?: current
@@ -553,23 +555,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             answerInputRevision = current.inputRevision,
                             answerRevision = maxOf(base.answerRevision, current.answerRevision) + 1
                         )
-                        var savedQuestion = completed
-                        val saveFailure = try {
-                            val saveStart = SystemClock.elapsedRealtime()
-                            repository.update(completed)
-                            val saveEnd = SystemClock.elapsedRealtime()
-                            savedQuestion = completed.copy(
-                                durationMs = saveEnd - clickedAt,
-                                result = completed.result?.copy(
-                                    metrics = completed.result.metrics?.copy(
-                                        saveStatus = "saved",
-                                        totalMs = saveEnd - clickedAt,
-                                        saveMs = saveEnd - saveStart
-                                    )
+                        val saveStart = SystemClock.elapsedRealtime()
+                        val provisional = completed.copy(
+                            durationMs = saveStart - clickedAt,
+                            result = completed.result?.copy(
+                                metrics = completed.result.metrics?.copy(
+                                    // 第一阶段只落“保存中”，最终指标在第二次写入成功后才标记 saved。
+                                    saveStatus = "saving",
+                                    totalMs = saveStart - clickedAt,
+                                    saveMs = null
                                 )
                             )
-                            // 答案已经由上一笔写入落盘；这里只补保存耗时，失败不应把已完成结果误报为保存失败。
-                            runCatching { repository.update(savedQuestion) }
+                        )
+                        val saveFailure = try {
+                            repository.update(provisional)
                             null
                         } catch (e: Exception) {
                             e
@@ -597,14 +596,94 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             activeRequestId = null
                             activeQuestionId = null
                         } else {
+                            val firstSaveEnd = SystemClock.elapsedRealtime()
+                            val baseMetrics = provisional.result?.metrics
+                            val finalQuestion = provisional.copy(
+                                durationMs = firstSaveEnd - clickedAt,
+                                result = provisional.result?.copy(
+                                    metrics = baseMetrics?.copy(
+                                        saveStatus = "saved",
+                                        saveMs = firstSaveEnd - saveStart,
+                                        totalMs = firstSaveEnd - clickedAt
+                                    )
+                                )
+                            )
+                            val finalSaveFailure = try {
+                                repository.update(finalQuestion)
+                                null
+                            } catch (e: Exception) {
+                                e
+                            }
+                            val savedQuestion = if (finalSaveFailure == null) {
+                                // 第二笔写入完成后再落一次最终指标，使 totalMs 覆盖完整保存阶段。
+                                val finalSaveEnd = SystemClock.elapsedRealtime()
+                                val settled = finalQuestion.copy(
+                                    durationMs = finalSaveEnd - clickedAt,
+                                    result = finalQuestion.result?.copy(
+                                        metrics = baseMetrics?.copy(
+                                            saveStatus = "saved",
+                                            saveMs = finalSaveEnd - saveStart,
+                                            totalMs = finalSaveEnd - clickedAt
+                                        )
+                                    )
+                                )
+                                val settledFailure = try {
+                                    repository.update(settled)
+                                    null
+                                } catch (e: Exception) {
+                                    e
+                                }
+                                if (settledFailure == null) {
+                                    settled
+                                } else {
+                                    val failed = settled.copy(
+                                        result = settled.result?.copy(
+                                            metrics = baseMetrics?.copy(
+                                                saveStatus = "failed",
+                                                saveMs = finalSaveEnd - saveStart,
+                                                totalMs = finalSaveEnd - clickedAt
+                                            )
+                                        )
+                                    )
+                                    runCatching { repository.update(failed) }
+                                    _analysisError.value =
+                                        "答案已生成，但最终指标保存失败：${settledFailure.message ?: "本地存储不可用"}。请检查存储空间后重试。"
+                                    logMetrics("save_failed", finalSaveEnd - clickedAt, failed.result?.metrics)
+                                    failed
+                                }
+                            } else {
+                                val failed = finalQuestion.copy(
+                                    result = finalQuestion.result?.copy(
+                                        metrics = baseMetrics?.copy(
+                                            saveStatus = "failed",
+                                            saveMs = firstSaveEnd - saveStart,
+                                            totalMs = firstSaveEnd - clickedAt
+                                        )
+                                    )
+                                )
+                                runCatching { repository.update(failed) }
+                                _analysisError.value =
+                                    "答案已生成，但最终保存失败：${finalSaveFailure.message ?: "本地存储不可用"}。请检查存储空间后重试。"
+                                logMetrics("save_failed", firstSaveEnd - clickedAt, failed.result?.metrics)
+                                failed
+                            }
                             current = savedQuestion
                             // 新答案不再对应旧的追问上下文，避免追问引用修改前的答案。
                             if (previous != null) {
                                 runCatching { followUpRepository.deleteForQuestion(current.id) }
                             }
                             _analysisElapsedMs.value = current.durationMs
-                            logMetrics("completed", current.durationMs)
-                            updateTaskStatus(AnalysisTaskStatus.COMPLETED, titles = titles, allDone = true, preview = null)
+                            if (savedQuestion.result?.metrics?.saveStatus == "failed") {
+                                updateTaskStatus(
+                                    AnalysisTaskStatus.FAILED,
+                                    titles = titles,
+                                    error = _analysisError.value ?: "答案保存失败，请重试",
+                                    failedIndex = currentStageIndex()
+                                )
+                            } else {
+                                logMetrics("completed", current.durationMs)
+                                updateTaskStatus(AnalysisTaskStatus.COMPLETED, titles = titles, allDone = true, preview = null)
+                            }
                             stopElapsedTicker()
                             _isAnalyzing.value = false
                             activeRequestId = null
@@ -945,7 +1024,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         is ChatStreamEvent.Finished -> finishReason =
                             event.finishReason?.trim()?.lowercase()?.takeIf { it.isNotBlank() }
                         is ChatStreamEvent.StreamDone -> sawDone = true
-                        is ChatStreamEvent.ResponseStarted, is ChatStreamEvent.ResponseModel -> Unit
+                        is ChatStreamEvent.RequestBodySent,
+                        is ChatStreamEvent.ResponseStarted,
+                        is ChatStreamEvent.ResponseModel -> Unit
                     }
                 }
                 val answer = content.toString().trim()

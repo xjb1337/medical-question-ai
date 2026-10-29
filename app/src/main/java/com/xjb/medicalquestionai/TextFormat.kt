@@ -6,6 +6,20 @@ package com.xjb.medicalquestionai
  */
 fun String.isJsonNullLiteral(): Boolean = trim().equals("null", ignoreCase = true)
 
+/**
+ * 旧版本曾把显式 JSON null 当正文，形成 `nullnullnull…正常回答`。
+ * 只识别开头连续两个以上的 null 前缀，避免误伤正文里正常出现的 “null hypothesis” 等文本。
+ */
+private val repeatedJsonNullPrefix = Regex("^(?:\\s*null\\s*){2,}", RegexOption.IGNORE_CASE)
+
+fun String.hasRepeatedJsonNullPrefix(): Boolean =
+    repeatedJsonNullPrefix.containsMatchIn(this)
+
+fun String.stripRepeatedJsonNullPrefix(): String {
+    val match = repeatedJsonNullPrefix.find(this) ?: return this
+    return substring(match.range.last + 1).trimStart()
+}
+
 fun String.toReadablePlainText(): String {
     if (isBlank()) return this
     return this

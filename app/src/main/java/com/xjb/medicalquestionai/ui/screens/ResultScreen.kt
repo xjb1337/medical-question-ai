@@ -2,7 +2,9 @@ package com.xjb.medicalquestionai.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import com.xjb.medicalquestionai.hasRepeatedJsonNullPrefix
 import com.xjb.medicalquestionai.isJsonNullLiteral
+import com.xjb.medicalquestionai.stripRepeatedJsonNullPrefix
 import com.xjb.medicalquestionai.toReadablePlainText
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -1086,9 +1088,14 @@ private fun FollowUpBubble(item: FollowUp) {
             modifier = Modifier.widthIn(max = 320.dp)
         ) {
             Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
+                val pollutedHistory = !isUser && item.content.hasRepeatedJsonNullPrefix()
                 Text(
-                    if (item.content.isJsonNullLiteral()) "（本次回答为空，请重试）"
-                    else item.content.toReadablePlainText(),
+                    when {
+                        item.content.isJsonNullLiteral() -> "（本次回答为空，请重试）"
+                        pollutedHistory -> "（这条旧回答含异常 null 前缀，已从追问上下文隔离）\n" +
+                            item.content.stripRepeatedJsonNullPrefix().toReadablePlainText()
+                        else -> item.content.toReadablePlainText()
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                 )

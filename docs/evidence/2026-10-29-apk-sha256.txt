@@ -1,1 +1,1 @@
-44a4448da332a40812611b9bf1c4a518882bb033d9871f3c5cc77ed8d207cc1b *dist/medical-question-ai-debug.apk
+a14450b30a71a93ffc45e93e03caac1eb05ad9ca6502b33fdf0f56e48555b7cf *dist/medical-question-ai-debug.apk

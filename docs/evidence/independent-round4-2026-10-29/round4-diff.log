@@ -1,0 +1,12 @@
+warning: in the working copy of 'README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/src/main/java/com/xjb/medicalquestionai/MainViewModel.kt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/src/main/java/com/xjb/medicalquestionai/TextFormat.kt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/src/main/java/com/xjb/medicalquestionai/data/Models.kt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/src/main/java/com/xjb/medicalquestionai/data/PreviewJsonParser.kt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/src/main/java/com/xjb/medicalquestionai/data/QuestionDatabase.kt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/src/main/java/com/xjb/medicalquestionai/ui/screens/ResultScreen.kt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/DEVICE_FEEDBACK_IMPLEMENTATION_REPORT.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/TESTING.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/evidence/2026-10-29-apk-sha256.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/evidence/2026-10-29-git-diff-check.log', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/evidence/2026-10-29-web-final.log', LF will be replaced by CRLF the next time Git touches it

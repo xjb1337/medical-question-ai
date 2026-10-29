@@ -1,6 +1,7 @@
 package com.xjb.medicalquestionai.data
 
 import android.os.SystemClock
+import com.xjb.medicalquestionai.hasRepeatedJsonNullPrefix
 import com.xjb.medicalquestionai.isJsonNullLiteral
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -40,10 +41,10 @@ class QuestionAnalyzer(
         clickedAtElapsedRealtime: Long = SystemClock.elapsedRealtime()
     ): Flow<AnalysisEvent> = flow {
         val totalStages = 4
-        val requestStartedAt = System.currentTimeMillis()
         val clickAt = clickedAtElapsedRealtime
         var imageReadyAt: Long? = null
         var requestReadyAt: Long? = null
+        var requestBodySentAt: Long? = null
         var headersAt: Long? = null
         var firstEventAt: Long? = null
         var firstContentAt: Long? = null
@@ -117,8 +118,14 @@ class QuestionAnalyzer(
             } else {
                 client.stream(request).collect { event ->
                     val now = SystemClock.elapsedRealtime()
-                    if (firstEventAt == null) firstEventAt = now
+                    if (event !is ChatStreamEvent.ResponseStarted &&
+                        event !is ChatStreamEvent.RequestBodySent &&
+                        firstEventAt == null
+                    ) {
+                        firstEventAt = now
+                    }
                     when (event) {
+                        is ChatStreamEvent.RequestBodySent -> requestBodySentAt = now
                         is ChatStreamEvent.ResponseStarted -> {
                             headersAt = now
                             emit(AnalysisEvent.WaitingForModel)
@@ -141,7 +148,9 @@ class QuestionAnalyzer(
                             if (content.length - lastPreviewLength >= 48) {
                                 lastPreviewLength = content.length
                                 previewParser.feed(content.toString(), draft.questionType)?.let {
-                                    if (firstAnswerAt == null && (it.answer.isNotEmpty() || it.answerText.isNotBlank())) {
+                                    if (firstAnswerAt == null && !it.answerInvalid &&
+                                        (it.answer.isNotEmpty() || it.answerText.isNotBlank())
+                                    ) {
                                         firstAnswerAt = now
                                     }
                                     emit(AnalysisEvent.Preview(it))
@@ -159,14 +168,19 @@ class QuestionAnalyzer(
                 throw ApiException("连接提前中断，未收到完整结束标记，请重试。")
             }
             previewParser.feed(content.toString(), draft.questionType)?.let {
-                if (firstAnswerAt == null && (it.answer.isNotEmpty() || it.answerText.isNotBlank())) {
+                if (firstAnswerAt == null && !it.answerInvalid &&
+                    (it.answer.isNotEmpty() || it.answerText.isNotBlank())
+                ) {
                     firstAnswerAt = SystemClock.elapsedRealtime()
                 }
                 emit(AnalysisEvent.Preview(it))
             }
             emit(AnalysisEvent.Stage(totalStages - 1, totalStages, "正在核对答案"))
-            val validationAt = SystemClock.elapsedRealtime()
-            val result = parseResult(content.toString(), draft).copy(
+            // 只测 parseResult 本身；等待后续正文/结束标记的时间不能算进验证耗时。
+            val validationStartAt = SystemClock.elapsedRealtime()
+            val parsedResult = parseResult(content.toString(), draft)
+            val validationEndAt = SystemClock.elapsedRealtime()
+            val result = parsedResult.copy(
                 usage = usage,
                 metrics = AnalysisMetrics(
                     requestModel = model,
@@ -176,17 +190,17 @@ class QuestionAnalyzer(
                     finishReason = normalizedFinishReason,
                     transportClosed = sawDone,
                     saveStatus = "pending",
-                    totalMs = System.currentTimeMillis() - requestStartedAt,
+                    // 总耗时由 MainViewModel 在最终持久化结束后填写；分析器不猜保存时间。
+                    totalMs = 0,
                     answerMode = mode.storageValue,
                     clickToImageReadyMs = imageReadyAt?.minus(clickAt),
                     clickToRequestReadyMs = requestReadyAt?.minus(clickAt),
+                    clickToRequestBodySentMs = requestBodySentAt?.minus(clickAt),
                     clickToHeadersMs = headersAt?.minus(clickAt),
                     clickToFirstEventMs = firstEventAt?.minus(clickAt),
                     clickToFirstContentMs = firstContentAt?.minus(clickAt),
                     clickToFirstAnswerMs = firstAnswerAt?.minus(clickAt),
-                    validationMs = (validationAt -
-                        (firstAnswerAt ?: firstContentAt ?: firstEventAt ?: requestReadyAt ?: clickAt))
-                        .coerceAtLeast(0)
+                    validationMs = (validationEndAt - validationStartAt).coerceAtLeast(0)
                 )
             )
             emit(AnalysisEvent.Completed(result))
@@ -427,6 +441,7 @@ class QuestionAnalyzer(
             !failed &&
                 content.isNotBlank() &&
                 !content.isJsonNullLiteral() &&
+                !content.hasRepeatedJsonNullPrefix() &&
                 !content.contains("已停止生成") &&
                 !content.startsWith("（追问失败：")
 

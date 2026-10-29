@@ -89,6 +89,8 @@ data class AnalysisMetrics(
     val answerMode: String = "",
     val clickToImageReadyMs: Long? = null,
     val clickToRequestReadyMs: Long? = null,
+    /** 请求体真正发送结束（OkHttp requestBodyEnd）；未知时为空。 */
+    val clickToRequestBodySentMs: Long? = null,
     val clickToHeadersMs: Long? = null,
     val clickToFirstEventMs: Long? = null,
     val clickToFirstContentMs: Long? = null,
@@ -190,6 +192,7 @@ data class AnalysisResult(
                 put("answer_mode", m.answerMode)
                 putNullable("click_to_image_ready_ms", m.clickToImageReadyMs)
                 putNullable("click_to_request_ready_ms", m.clickToRequestReadyMs)
+                putNullable("click_to_request_body_sent_ms", m.clickToRequestBodySentMs)
                 putNullable("click_to_headers_ms", m.clickToHeadersMs)
                 putNullable("click_to_first_event_ms", m.clickToFirstEventMs)
                 putNullable("click_to_first_content_ms", m.clickToFirstContentMs)
@@ -313,6 +316,7 @@ data class AnalysisResult(
                         answerMode = text(m, "answer_mode"),
                         clickToImageReadyMs = longOrNull(m, "click_to_image_ready_ms"),
                         clickToRequestReadyMs = longOrNull(m, "click_to_request_ready_ms"),
+                        clickToRequestBodySentMs = longOrNull(m, "click_to_request_body_sent_ms"),
                         clickToHeadersMs = longOrNull(m, "click_to_headers_ms"),
                         clickToFirstEventMs = longOrNull(m, "click_to_first_event_ms"),
                         clickToFirstContentMs = longOrNull(m, "click_to_first_content_ms"),

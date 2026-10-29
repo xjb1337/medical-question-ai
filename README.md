@@ -91,7 +91,7 @@ app/build/outputs/apk/debug/app-debug.apk
 本次交付的预构建副本位于 `dist/medical-question-ai-debug.apk`（versionCode 2 / versionName 1.1.0），SHA-256：
 
 ```text
-44a4448da332a40812611b9bf1c4a518882bb033d9871f3c5cc77ed8d207cc1b
+a14450b30a71a93ffc45e93e03caac1eb05ad9ca6502b33fdf0f56e48555b7cf
 ```
 
 旧版 APK 保留在 `dist/archive/medical-question-ai-debug-v1.0.0-20261028.apk`，用于升级对照。

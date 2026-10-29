@@ -1,0 +1,5 @@
+preview=answered answer=[A, B] complete=false issue=单选题应只有一个答案，当前答案数量异常，请核对。 final=needs_confirmation
+preview=answered answer=[A] complete=false issue=题型字段缺失或无效 final=needs_confirmation
+preview=answered answer=[A] complete=false issue=答案选项与逐项分析不一致，请核对选项。 final=needs_confirmation
+100_null_frames_fake_deltas=0
+polluted_history_kept=2

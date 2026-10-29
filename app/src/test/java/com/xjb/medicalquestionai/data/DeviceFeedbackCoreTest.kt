@@ -567,6 +567,7 @@ class DeviceFeedbackCoreTest {
             answerMode = "fast",
             clickToImageReadyMs = 120L,
             clickToRequestReadyMs = 180L,
+            clickToRequestBodySentMs = 260L,
             clickToHeadersMs = 420L,
             clickToFirstEventMs = 430L,
             clickToFirstContentMs = 520L,
@@ -602,6 +603,36 @@ class DeviceFeedbackCoreTest {
             FollowUp("a1", "q", "assistant", "null", 2L),
             FollowUp("u2", "q", "user", "再解释", 3L),
             FollowUp("a2", "q", "assistant", "有效回答", 4L)
+        )
+        val trimmed = QuestionAnalyzer.trimFollowUpHistory(previous)
+        assertEquals(listOf("u2", "a2"), trimmed.map { it.id })
+    }
+
+    @Test
+    fun illegalPreviewIsDowngradedBeforeAnswerCard() {
+        val cases = listOf(
+            """{"status":"answered","question_type":"single","answer":["A、B"],"warnings":[]}""",
+            """{"status":"answered","question_type":"banana","answer":["A"],"warnings":[]}""",
+            """{"status":"answered","question_type":"single","answer":["A"],"warnings":[],"option_analysis":[{"option":"B","verdict":"正确","reason":"不符"}]}"""
+        )
+        cases.forEach { raw ->
+            val preview = PreviewJsonParser().feed(raw, QuestionType.SINGLE)
+            assertNotNull(raw, preview)
+            assertTrue(raw, preview!!.answerInvalid)
+            val result = preview.toResult()
+            assertEquals(raw, "needs_confirmation", result.status)
+            assertTrue(raw, result.answer.isEmpty())
+            assertTrue(raw, result.answerText.isBlank())
+        }
+    }
+
+    @Test
+    fun pollutedNullPrefixHistoryIsIsolatedButNormalNullWordIsKept() {
+        val previous = listOf(
+            FollowUp("u1", "q", "user", "第一问", 1L),
+            FollowUp("a1", "q", "assistant", "nullnullnullfixture answer", 2L),
+            FollowUp("u2", "q", "user", "第二问", 3L),
+            FollowUp("a2", "q", "assistant", "null hypothesis 是正常英文术语", 4L)
         )
         val trimmed = QuestionAnalyzer.trimFollowUpHistory(previous)
         assertEquals(listOf("u2", "a2"), trimmed.map { it.id })

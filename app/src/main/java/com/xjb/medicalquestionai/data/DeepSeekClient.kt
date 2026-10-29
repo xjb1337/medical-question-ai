@@ -18,6 +18,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.EventListener
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -65,6 +66,8 @@ data class ChatRequest(
 )
 
 sealed interface ChatStreamEvent {
+    /** OkHttp 已把请求体完整写入网络；用于区分“请求已构造”和“已发送完成”。 */
+    data object RequestBodySent : ChatStreamEvent
     data object ResponseStarted : ChatStreamEvent
     data class ResponseModel(val model: String) : ChatStreamEvent
     data class ReasoningDelta(val text: String) : ChatStreamEvent
@@ -149,7 +152,14 @@ class DeepSeekClient {
      */
     fun stream(request: ChatRequest): Flow<ChatStreamEvent> = callbackFlow {
         val httpRequest = buildHttpRequest(request, stream = true)
-        val call = client.newCall(httpRequest)
+        val timingClient = client.newBuilder()
+            .eventListener(object : EventListener() {
+                override fun requestBodyEnd(call: Call, byteCount: Long) {
+                    trySend(ChatStreamEvent.RequestBodySent)
+                }
+            })
+            .build()
+        val call = timingClient.newCall(httpRequest)
         val closed = AtomicBoolean(false)
         val startedAt = System.currentTimeMillis()
         val firstEventAt = AtomicLong(0L)
