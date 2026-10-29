@@ -1,0 +1,10 @@
+PASS empty snapshot protects new analysis analysisCancelled=false followUpCancelled=false ignored=true
+PASS empty snapshot protects new follow-up analysisCancelled=false followUpCancelled=false ignored=true
+PASS old analysis id protects new follow-up analysisCancelled=false followUpCancelled=false ignored=true
+PASS old analysis id protects new analysis analysisCancelled=false followUpCancelled=false ignored=true
+PASS old follow-up id protects new follow-up analysisCancelled=false followUpCancelled=false ignored=true
+PASS current analysis stops analysisCancelled=true followUpCancelled=false ignored=false
+PASS current follow-up stops analysisCancelled=false followUpCancelled=true ignored=false
+PASS independent task ownership analysisCancelled=false followUpCancelled=true ignored=false
+PASS no work is idempotent analysisCancelled=false followUpCancelled=false ignored=false
+PASS other question remains active
