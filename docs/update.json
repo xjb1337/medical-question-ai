@@ -8,7 +8,7 @@
   "apkSizeBytes": 21475122,
   "apkSha256": "0b4ff605ce8ab94ce952157ab4108669b954306100f94ac0f1c0bfbc63c9878f",
   "signingCertSha256": "77c3ca8d1a7cf0aca4718b328705bb21833976bc701dad89c11881c83ca1c861",
-  "commitSha": "cef2b30878361f5e4ac3eb02a99fe2ea15a25ee9",
+  "commitSha": "8cecfae091497dc1b3845cb1b516f17d21e92866",
   "publishedAt": "2026-10-29T15:41:47Z",
   "releaseNotes": "版本 1.2.1-test.1（build 4）"
 }
