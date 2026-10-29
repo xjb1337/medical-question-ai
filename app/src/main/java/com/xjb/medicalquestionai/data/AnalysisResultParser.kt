@@ -26,11 +26,12 @@ object AnalysisResultParser {
             answerText = parsed.answerText,
             warningsFieldPresent = warningsFieldPresent,
             warningsFieldValid = warningsFieldValid,
-            selectedType = draft.questionType
+            selectedType = draft.questionType,
+            optionAnalysisOptions = parsed.optionAnalyses.map { it.option }
         )
         val normalizedType = evaluation.normalizedType
-        val statusFieldValid = source.optString("status").isNotBlank() &&
-            evaluation.statusValid
+        val statusValue = source.opt("status") as? String
+        val statusFieldValid = !statusValue.isNullOrBlank() && evaluation.statusValid
         var answerInvalid = evaluation.isAnswerInvalid
 
         if (!statusFieldValid) {
@@ -53,14 +54,6 @@ object AnalysisResultParser {
         }
         if (parsed.status == "answered" && parsed.answer.isEmpty() && parsed.answerText.isBlank()) {
             warnings += "没有提取到明确答案。"
-        }
-        if (normalizedType in setOf("single", "multiple") && parsed.optionAnalyses.isNotEmpty()) {
-            val letters = parsed.answer.mapNotNull(::optionLetter)
-            val analyzedLetters = parsed.optionAnalyses.mapNotNull { optionLetter(it.option) }.toSet()
-            if (letters.isNotEmpty() && !analyzedLetters.containsAll(letters)) {
-                warnings += "答案选项与逐项分析不一致，请核对选项。"
-                answerInvalid = true
-            }
         }
         if (parsed.confidence.equals("low", ignoreCase = true)) {
             warnings += "模型自评把握较低，建议查阅教材或请老师确认。"
@@ -91,16 +84,11 @@ object AnalysisResultParser {
         return parsed.copy(
             status = status,
             questionType = normalizedType,
-            answer = if (conflict) emptyList() else parsed.answer,
+            answer = if (conflict) emptyList() else evaluation.normalizedAnswer,
             answerText = if (conflict) "" else parsed.answerText,
             warnings = (warnings + if (conflict) listOf("模型答案因题型与用户选择冲突未采用，请核对题型后重试。") else emptyList()).distinct(),
             rawJson = raw
         )
-    }
-
-    private fun optionLetter(value: String): String? {
-        val match = Regex("^([A-Za-z])(?:[.、:：)）\\s].*)?$").matchEntire(value.trim()) ?: return null
-        return match.groupValues[1].uppercase()
     }
 
     /** 找到第一个完整的 JSON 对象；字符串内的花括号不会干扰配对。 */

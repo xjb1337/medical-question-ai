@@ -3,6 +3,7 @@ package com.xjb.medicalquestionai.data
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -365,20 +366,23 @@ class DeviceFeedbackCoreTest {
     }
 
     @Test
-    fun previewRequiresStatusAnswerAndWarningsFields() {
+    fun previewShowsPartialContentButOnlyCompletesWithAllFields() {
         val parser = PreviewJsonParser()
-        // 有答案但没有 status / warnings，不能提前当作最终预览。
-        assertNull(parser.feed("{\"answer\":[\"B\"],\"answer_text\":\"心电图\"}"))
-        assertNull(
-            parser.feed(
-                "{\"status\":\"answered\",\"answer\":[\"B\"],\"answer_text\":\"心电图\"}"
-            )
+        // 有答案但缺 status / warnings 时可以先展示部分内容，但绝不能标记为完整预览。
+        val partial = parser.feed("{\"answer\":[\"B\"],\"answer_text\":\"心电图\"}")
+        assertNotNull(partial)
+        assertFalse(partial!!.isComplete)
+        val missingWarnings = parser.feed(
+            "{\"status\":\"answered\",\"answer\":[\"B\"],\"answer_text\":\"心电图\"}"
         )
+        assertNotNull(missingWarnings)
+        assertFalse(missingWarnings!!.isComplete)
         val complete = parser.feed(
             "{\"status\":\"answered\",\"question_type\":\"single\",\"answer\":[\"B\"],\"answer_text\":\"心电图\",\"warnings\":[]}"
         )
         assertEquals("answered", complete?.status)
         assertEquals(listOf("B"), complete?.answer)
+        assertTrue(complete?.isComplete == true)
         assertTrue(complete?.warnings?.isEmpty() == true)
     }
 
@@ -467,11 +471,44 @@ class DeviceFeedbackCoreTest {
     }
 
     @Test
-    fun previewRequiresRootObjectToBeClosed() {
+    fun previewKeepsRootOpenContentButDoesNotComplete() {
         val preview = PreviewJsonParser().feed(
             "{\"status\":\"answered\",\"question_type\":\"single\",\"answer\":[\"A\"],\"warnings\":[]"
         )
-        assertNull(preview)
+        assertNotNull(preview)
+        assertFalse(preview!!.isComplete)
+        assertEquals(listOf("A"), preview.answer)
+    }
+
+    @Test
+    fun singleAnswerStringContainingTwoOptionsIsRejected() {
+        val result = AnalysisResultParser.parse(
+            """{"status":"answered","question_type":"single","answer":["A、B"],"confidence":"high","warnings":[]}""",
+            draft
+        )
+        assertEquals("needs_confirmation", result.status)
+        assertTrue(result.warnings.any { it.contains("单选题") })
+    }
+
+    @Test
+    fun missingModelTypeCannotBeMaskedByManualSelection() {
+        val result = AnalysisResultParser.parse(
+            """{"status":"answered","answer":["A"],"confidence":"high","warnings":[]}""",
+            draft
+        )
+        assertEquals("needs_confirmation", result.status)
+        assertTrue(result.warnings.any { it.contains("题型") })
+    }
+
+    @Test
+    fun previewRejectsOptionAnalysisMismatch() {
+        val preview = PreviewJsonParser().feed(
+            """{"status":"answered","question_type":"single","answer":["A"],"warnings":[],"option_analysis":[{"option":"B","verdict":"正确","reason":"不符"}]}""",
+            QuestionType.SINGLE
+        )
+        assertNotNull(preview)
+        assertFalse(preview!!.isComplete)
+        assertTrue(preview.semanticIssue?.contains("不一致") == true)
     }
 
     @Test
@@ -527,7 +564,15 @@ class DeviceFeedbackCoreTest {
             transportClosed = true,
             saveStatus = "saved",
             totalMs = 1234L,
-            answerMode = "fast"
+            answerMode = "fast",
+            clickToImageReadyMs = 120L,
+            clickToRequestReadyMs = 180L,
+            clickToHeadersMs = 420L,
+            clickToFirstEventMs = 430L,
+            clickToFirstContentMs = 520L,
+            clickToFirstAnswerMs = 900L,
+            validationMs = 80L,
+            saveMs = 40L
         )
         val result = AnalysisResult(
             status = "answered",
@@ -537,5 +582,28 @@ class DeviceFeedbackCoreTest {
         )
         val restored = AnalysisResult.fromJson(result.toJson())
         assertEquals(metrics, restored.metrics)
+    }
+
+    @Test
+    fun previewRejectsMissingModelTypeEvenWithManualSelection() {
+        val preview = PreviewJsonParser().feed(
+            """{"status":"answered","answer":["A"],"warnings":[]}""",
+            QuestionType.SINGLE
+        )
+        assertNotNull(preview)
+        assertFalse(preview!!.isComplete)
+        assertTrue(preview.semanticIssue?.contains("题型") == true)
+    }
+
+    @Test
+    fun nullFollowUpContentDoesNotEnterHistory() {
+        val previous = listOf(
+            FollowUp("u1", "q", "user", "请解释", 1L),
+            FollowUp("a1", "q", "assistant", "null", 2L),
+            FollowUp("u2", "q", "user", "再解释", 3L),
+            FollowUp("a2", "q", "assistant", "有效回答", 4L)
+        )
+        val trimmed = QuestionAnalyzer.trimFollowUpHistory(previous)
+        assertEquals(listOf("u2", "a2"), trimmed.map { it.id })
     }
 }

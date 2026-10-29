@@ -37,7 +37,9 @@ data class ChatMessage(val role: String, val content: String)
 data class ChatResponse(
     val content: String,
     val usage: Usage = Usage(),
-    val model: String = ""
+    val model: String = "",
+    /** 非流式响应也必须保留服务端结束原因，不能由客户端伪造。 */
+    val finishReason: String? = null
 )
 
 data class ThinkingConfig(
@@ -265,18 +267,23 @@ class DeepSeekClient {
             throw ApiException("接口返回了无法识别的数据。", raw = response.body.take(500))
         }
         json.optJSONObject("error")?.let {
-            throw ApiException(it.optString("message", "接口返回错误"), raw = response.body.take(1000))
+            throw ApiException(
+                (it.opt("message") as? String)?.takeIf(String::isNotBlank) ?: "接口返回错误",
+                raw = response.body.take(1000)
+            )
         }
         val choices = json.optJSONArray("choices")
         if (choices == null || choices.length() == 0) {
             throw ApiException("接口没有返回内容。", raw = response.body.take(1000))
         }
-        val message = choices.getJSONObject(0).optJSONObject("message")
+        val choice = choices.getJSONObject(0)
+        val message = choice.optJSONObject("message")
             ?: throw ApiException("接口返回结构异常。", raw = response.body.take(1000))
         return ChatResponse(
-            content = message.optString("content", ""),
+            content = (message.opt("content") as? String).orEmpty(),
             usage = json.optJSONObject("usage").toUsage(),
-            model = json.optString("model", "")
+            model = (json.opt("model") as? String).orEmpty(),
+            finishReason = (choice.opt("finish_reason") as? String)?.takeIf { it.isNotBlank() }
         )
     }
 
@@ -366,7 +373,12 @@ class DeepSeekClient {
                         sendThinkingParam = ModelCatalog.capability(model) != ModelCapability.UNKNOWN
                     )
                 )
-                if (response.content.isBlank()) "模型返回空内容，请检查模型是否可用。" else null
+                when {
+                    response.content.isBlank() -> "模型返回空内容，请检查模型是否可用。"
+                    response.finishReason == null -> "模型响应缺少 finish_reason，无法确认结果完整。"
+                    response.finishReason != "stop" -> "模型返回未正常结束（${response.finishReason}）。"
+                    else -> null
+                }
             } catch (e: ApiException) {
                 e.message
             }
@@ -418,22 +430,23 @@ class DeepSeekClient {
             throw ApiException("流式接口返回了无法识别的数据。", raw = data.take(500))
         }
         json.optJSONObject("error")?.let {
-            throw ApiException(it.optString("message", "接口返回错误"), raw = data.take(1000))
+            throw ApiException((it.opt("message") as? String).orEmpty().ifBlank { "接口返回错误" }, raw = data.take(1000))
         }
         val events = mutableListOf<ChatStreamEvent>()
-        json.optString("model", "").takeIf { it.isNotBlank() }?.let { events += ChatStreamEvent.ResponseModel(it) }
+        (json.opt("model") as? String)?.takeIf { it.isNotBlank() }
+            ?.let { events += ChatStreamEvent.ResponseModel(it) }
         val usage = json.optJSONObject("usage").toUsage()
         if (usage.isAvailable) events += ChatStreamEvent.UsageUpdate(usage)
         val choices = json.optJSONArray("choices") ?: return events
         if (choices.length() == 0) return events
         val choice = choices.optJSONObject(0) ?: return events
         val delta = choice.optJSONObject("delta")
-        val reasoning = delta?.optString("reasoning_content", "").orEmpty()
-            .ifBlank { delta?.optString("reasoning", "").orEmpty() }
-        val content = delta?.optString("content", "").orEmpty()
+        val reasoning = ((delta?.opt("reasoning_content") as? String)?.takeIf { it.isNotBlank() }
+            ?: (delta?.opt("reasoning") as? String).orEmpty())
+        val content = (delta?.opt("content") as? String).orEmpty()
         if (reasoning.isNotBlank()) events += ChatStreamEvent.ReasoningDelta(reasoning)
         if (content.isNotBlank()) events += ChatStreamEvent.ContentDelta(content)
-        val finishReason = choice.optString("finish_reason", "").takeIf { it.isNotBlank() }
+        val finishReason = (choice.opt("finish_reason") as? String)?.takeIf { it.isNotBlank() }
         if (finishReason != null) events += ChatStreamEvent.Finished(finishReason)
         return events
     }
@@ -449,7 +462,7 @@ class DeepSeekClient {
 
     private fun mapHttpError(code: Int, body: String): ApiException {
         val apiMessage = runCatching {
-            JSONObject(body).optJSONObject("error")?.optString("message")
+            JSONObject(body).optJSONObject("error")?.opt("message") as? String
         }.getOrNull().orEmpty()
         val message = when (code) {
             400 -> "请求格式被接口拒绝。${apiMessage.takeIf { it.isNotBlank() }?.let { "（$it）" } ?: ""}"

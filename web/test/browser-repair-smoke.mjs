@@ -241,7 +241,6 @@ async function runBrowserChecks() {
 
     await evaluate(send, `document.querySelector('[data-action="load-sample"]').click()`);
     await waitFor(send, `document.querySelector("#question-text").value.includes("胸骨后")`);
-    await evaluate(send, `document.querySelector("#privacy-check").click()`);
     await evaluate(send, `document.querySelector('[data-action="start-analysis"]').click()`);
     await waitFor(send, `document.querySelector("#followup-text") && document.body.innerText.includes("心肌梗死")`, 20000);
     const resultRendered = await evaluate(send, `document.body.innerText.includes("290") && document.body.innerText.includes("已解析")`);
@@ -336,10 +335,24 @@ async function runBrowserChecks() {
     const reanalysisPreserved = reanalysisActual === oldHeadline;
     if (!reanalysisPreserved) throw new Error(`failed re-analysis did not preserve the old answer: old=${JSON.stringify(oldHeadline)} actual=${JSON.stringify(reanalysisActual)} hash=${await evaluate(send, "location.hash")}`);
 
+    // R2-03: a successful edit/re-analysis creates a new answer revision and must not
+    // carry the old answer's follow-up thread into the new record.
+    await evaluate(send, `document.querySelector('[data-action="edit-question"]').click()`);
+    await waitFor(send, `document.querySelector("#question-text")`, 10000);
+    await evaluate(send, `(() => {
+      const el = document.querySelector("#question-text");
+      el.value = "成功重答测试：请生成新答案";
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      document.querySelector('[data-action="start-analysis"]').click();
+    })()`);
+    await waitFor(send, `document.querySelector(".answer-main") && document.body.innerText.includes("心肌梗死")`, 20000);
+    const followUpsAfterEdit = await evaluate(send, `document.querySelectorAll(".follow-msg").length`);
+    if (followUpsAfterEdit !== 0) throw new Error(`successful edit leaked old follow-ups: ${followUpsAfterEdit}`);
+
     await evaluate(send, `location.hash = "#/history"`);
     await waitFor(send, `document.querySelector(".history-card")`, 10000);
     const historyCount = await evaluate(send, `document.querySelectorAll(".history-card").length`);
-    return { imported, afterCrop, resultRendered, followUsage, noUsageLabelHidden, oldRecordUsageHidden, failureRestored, dbFailureRestored: true, reanalysisPreserved, historyCount };
+    return { imported, afterCrop, resultRendered, followUsage, noUsageLabelHidden, oldRecordUsageHidden, failureRestored, dbFailureRestored: true, reanalysisPreserved, followUpsClearedOnEdit: followUpsAfterEdit === 0, historyCount };
   } finally {
     ws.close();
   }

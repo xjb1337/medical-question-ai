@@ -151,8 +151,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun questionFlow(id: String): Flow<Question?> = repository.observeById(id)
 
-    fun followUps(questionId: String): Flow<List<FollowUp>> =
-        followUpRepository.observeForQuestion(questionId)
+    fun followUps(questionId: String, answerRevision: Long): Flow<List<FollowUp>> =
+        followUpRepository.observeForQuestion(questionId, answerRevision)
 
     fun updateQuestionType(type: QuestionType) {
         _draft.value = _draft.value.copy(questionType = type)
@@ -308,13 +308,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 如果建任务失败，停留首页并保留草稿。
      */
     fun startAnalysis(onNavigate: (String) -> Unit) {
+        val clickedAt = SystemClock.elapsedRealtime()
         val snapshot = _draft.value
         if (_isAnalyzing.value || _retryingIds.value.isNotEmpty()) {
             _analysisError.value = "已有解析任务正在进行，请先取消或等待完成"
-            return
-        }
-        if (!snapshot.privacyConfirmed) {
-            _analysisError.value = "请先确认图片不含可识别的患者身份信息"
             return
         }
         if (snapshot.text.isBlank() && snapshot.images.isEmpty()) {
@@ -373,11 +370,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _draft.value = QuestionDraft()
             draftImageSource = null
             onNavigate(questionId)
-            runAnalysis(question, mode)
+            runAnalysis(question, mode, clickedAt = clickedAt)
         }
     }
 
-    private suspend fun runAnalysis(question: Question, mode: AnswerMode, previous: Question? = null) {
+    private suspend fun runAnalysis(
+        question: Question,
+        mode: AnswerMode,
+        previous: Question? = null,
+        clickedAt: Long = SystemClock.elapsedRealtime()
+    ) {
         val apiKey = settingsRepository.apiKey()
         if (apiKey.isNullOrBlank()) {
             _analysisError.value = "尚未配置 API 密钥，请先到设置中填写"
@@ -388,7 +390,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         activeRequestId = requestId
         activeQuestionId = question.id
         cancelRequested = false
-        val startedAt = SystemClock.elapsedRealtime()
+        val startedAt = clickedAt
         val titles = stageTitles(mode)
         val requestModel = question.model.ifBlank { settings.value.model }
         val requestBaseUrl = question.baseUrl.ifBlank { settings.value.baseUrl }
@@ -426,18 +428,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         // B0 埋点：只写 ID、耗时和用量，不写题干、答案、图片或密钥。
-        var firstEventMs: Long? = null
-        var prepareDoneMs: Long? = null
-        var uploadDoneMs: Long? = null
-        var previewMs: Long? = null
         fun logMetrics(
             resultStatus: String,
             durationMs: Long,
             metricsOverride: AnalysisMetrics? = null
         ) {
-            val prepare = prepareDoneMs?.let { (it - startedAt).toString() }.orEmpty()
-            val upload = uploadDoneMs?.let { (it - (prepareDoneMs ?: startedAt)).toString() }.orEmpty()
-            val preview = previewMs?.let { (it - startedAt).toString() }.orEmpty()
             // 失败/取消/中断不能复用上一次成功结果的 usage，只有本次 completed 才记录用量。
             val metrics = metricsOverride ?: if (resultStatus == "completed") current.result?.metrics else null
             val usage = if (resultStatus == "completed") current.result?.usage else null
@@ -460,11 +455,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     "prompt_version=${QuestionAnalyzer.PROMPT_VERSION}",
                     "kind=${current.source}",
                     "image_count=${current.imagePaths.size}",
-                    "prepare_ms=$prepare",
-                    "upload_ms=$upload",
-                    "first_event_ms=${firstEventMs?.let { (it - startedAt).toString() }.orEmpty()}",
-                    "answer_preview_ms=$preview",
-                    "total_ms=$durationMs",
+                    "image_ready_ms=${metrics?.clickToImageReadyMs?.toString().orEmpty()}",
+                    "request_ready_ms=${metrics?.clickToRequestReadyMs?.toString().orEmpty()}",
+                    "headers_ms=${metrics?.clickToHeadersMs?.toString().orEmpty()}",
+                    "first_event_ms=${metrics?.clickToFirstEventMs?.toString().orEmpty()}",
+                    "first_content_ms=${metrics?.clickToFirstContentMs?.toString().orEmpty()}",
+                    "first_answer_ms=${metrics?.clickToFirstAnswerMs?.toString().orEmpty()}",
+                    "validation_ms=${metrics?.validationMs?.toString().orEmpty()}",
+                    "save_ms=${metrics?.saveMs?.toString().orEmpty()}",
+                    "total_ms=${metrics?.totalMs ?: durationMs}",
                     "prompt_tokens=${usage?.promptTokens ?: ""}",
                     "completion_tokens=${usage?.completionTokens ?: ""}",
                     "reasoning_tokens=",
@@ -497,20 +496,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 baseUrl = requestBaseUrl,
                 mode = mode,
                 customModelSupportsImages = settings.value.customModelSupportsImages,
-                customModelStreaming = settings.value.customModelStreaming
+                customModelStreaming = settings.value.customModelStreaming,
+                clickedAtElapsedRealtime = clickedAt
             ).collect { event ->
                 if (activeRequestId != requestId) return@collect
                 when (event) {
                     is com.xjb.medicalquestionai.data.AnalysisEvent.WaitingForModel -> {
-                        if (firstEventMs == null) firstEventMs = SystemClock.elapsedRealtime()
                         updateTaskStatus(AnalysisTaskStatus.WAITING, runningIndex = 2, titles = titles)
                         moveToDbStatus("receiving")
                     }
                     is com.xjb.medicalquestionai.data.AnalysisEvent.Stage -> {
-                        when (event.index) {
-                            1 -> prepareDoneMs = SystemClock.elapsedRealtime()
-                            2 -> uploadDoneMs = SystemClock.elapsedRealtime()
-                        }
                         val mapped = when (event.index) {
                             0 -> AnalysisTaskStatus.PREPARING
                             1 -> AnalysisTaskStatus.UPLOADING
@@ -527,7 +522,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     }
                     is com.xjb.medicalquestionai.data.AnalysisEvent.Preview -> {
-                        if (previewMs == null) previewMs = SystemClock.elapsedRealtime()
                         _analysisTask.update { it?.copy(preview = event.preview) }
                     }
                     is com.xjb.medicalquestionai.data.AnalysisEvent.Reasoning -> {
@@ -538,9 +532,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                     is com.xjb.medicalquestionai.data.AnalysisEvent.Completed -> {
-                        val duration = SystemClock.elapsedRealtime() - startedAt
+                        val completionAt = SystemClock.elapsedRealtime()
+                        val duration = completionAt - clickedAt
                         val resultForSave = event.result.copy(
-                            metrics = event.result.metrics?.copy(saveStatus = "saved")
+                            metrics = event.result.metrics?.copy(
+                                saveStatus = "saving",
+                                totalMs = duration
+                            )
                         )
                         val base = previous ?: current
                         val completed = base.copy(
@@ -552,10 +550,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             mode = mode.storageValue,
                             durationMs = duration,
                             promptVersion = QuestionAnalyzer.PROMPT_VERSION,
-                            answerInputRevision = current.inputRevision
+                            answerInputRevision = current.inputRevision,
+                            answerRevision = maxOf(base.answerRevision, current.answerRevision) + 1
                         )
+                        var savedQuestion = completed
                         val saveFailure = try {
+                            val saveStart = SystemClock.elapsedRealtime()
                             repository.update(completed)
+                            val saveEnd = SystemClock.elapsedRealtime()
+                            savedQuestion = completed.copy(
+                                durationMs = saveEnd - clickedAt,
+                                result = completed.result?.copy(
+                                    metrics = completed.result.metrics?.copy(
+                                        saveStatus = "saved",
+                                        totalMs = saveEnd - clickedAt,
+                                        saveMs = saveEnd - saveStart
+                                    )
+                                )
+                            )
+                            // 答案已经由上一笔写入落盘；这里只补保存耗时，失败不应把已完成结果误报为保存失败。
+                            runCatching { repository.update(savedQuestion) }
                             null
                         } catch (e: Exception) {
                             e
@@ -583,11 +597,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             activeRequestId = null
                             activeQuestionId = null
                         } else {
-                            current = completed
+                            current = savedQuestion
                             // 新答案不再对应旧的追问上下文，避免追问引用修改前的答案。
-                            if (previous != null) runCatching { followUpRepository.deleteForQuestion(current.id) }
-                            _analysisElapsedMs.value = duration
-                            logMetrics("completed", duration)
+                            if (previous != null) {
+                                runCatching { followUpRepository.deleteForQuestion(current.id) }
+                            }
+                            _analysisElapsedMs.value = current.durationMs
+                            logMetrics("completed", current.durationMs)
                             updateTaskStatus(AnalysisTaskStatus.COMPLETED, titles = titles, allDone = true, preview = null)
                             stopElapsedTicker()
                             _isAnalyzing.value = false
@@ -694,6 +710,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun retryAnalysis(id: String, onSuccess: (() -> Unit)? = null) {
+        val clickedAt = SystemClock.elapsedRealtime()
         if (id in _retryingIds.value) return
         if (_isAnalyzing.value || _retryingIds.value.isNotEmpty()) {
             _analysisError.value = "已有解析任务正在进行，请先取消或等待完成"
@@ -733,7 +750,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         mode = mode.storageValue
                     ),
                     mode,
-                    previous = previous
+                    previous = previous,
+                    clickedAt = clickedAt
                 )
                 onSuccess?.invoke()
             } finally {
@@ -746,18 +764,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun updateQuestionTextAndRetry(id: String, newText: String, newType: QuestionType? = null) {
+    fun updateQuestionTextAndRetry(
+        id: String,
+        newText: String,
+        newType: QuestionType? = null,
+        onSaved: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
         val trimmed = newText.trim()
         if (trimmed.isBlank()) {
-            _analysisError.value = "题目文字不能为空，如需保留图片请至少补充关键词"
+            val message = "题目文字不能为空，如需保留图片请至少补充关键词"
+            _analysisError.value = message
+            onError(message)
             return
         }
         if (_isAnalyzing.value && activeQuestionId == id) {
-            _analysisError.value = "解析进行中，暂时不能修改题干；请先取消或等待完成"
+            val message = "解析进行中，暂时不能修改题干；请先取消或等待完成"
+            _analysisError.value = message
+            onError(message)
             return
         }
         viewModelScope.launch {
-            val question = repository.getById(id) ?: return@launch
+            val question = repository.getById(id)
+            if (question == null) {
+                val message = "题目不存在或已被删除"
+                _analysisError.value = message
+                onError(message)
+                return@launch
+            }
             val updated = question.copy(
                 questionText = trimmed,
                 questionType = (newType ?: QuestionType.fromStorage(question.questionType)).storageValue,
@@ -766,9 +800,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 repository.update(updated)
             } catch (e: Exception) {
-                _analysisError.value = "题目修改保存失败：${e.message ?: "本地存储不可用"}，请检查存储空间后重试"
+                val message = "题目修改保存失败：${e.message ?: "本地存储不可用"}，请检查存储空间后重试"
+                _analysisError.value = message
+                onError(message)
                 return@launch
             }
+            onSaved()
             retryAnalysis(id)
         }
     }
@@ -856,19 +893,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             var usage = com.xjb.medicalquestionai.data.Usage()
             var sawDone = false
             var finishReason: String? = null
+            var answerRevision = 0L
             try {
                 val question = repository.getById(questionId)
                     ?: throw ApiException("题目不存在或已被删除")
+                if (question.isAnswerStale) {
+                    throw ApiException("题目已修改，旧答案的追问不会继续。请先重新解析。")
+                }
+                answerRevision = question.answerRevision
                 val userItem = FollowUp(
                     id = UUID.randomUUID().toString(),
                     questionId = questionId,
                     role = "user",
                     content = trimmed,
-                    createdAt = System.currentTimeMillis()
+                    createdAt = System.currentTimeMillis(),
+                    answerRevision = answerRevision
                 )
                 followUpRepository.insert(userItem)
                 onAccepted?.invoke()
-                val previous = followUpRepository.getForQuestion(questionId).filterNot { it.id == userItem.id }
+                val previous = followUpRepository.getForQuestion(questionId, answerRevision)
+                    .filterNot { it.id == userItem.id }
                 analyzer.followUpStream(
                     question = question,
                     previous = previous,
@@ -917,7 +961,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         role = "assistant",
                         content = answer,
                         createdAt = System.currentTimeMillis(),
-                        usage = usage
+                        usage = usage,
+                        answerRevision = answerRevision
                     )
                 )
             } catch (e: CancellationException) {
@@ -932,7 +977,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     role = "assistant",
                                     content = "$partial\n\n（已停止生成）",
                                     createdAt = System.currentTimeMillis(),
-                                    usage = usage
+                                    usage = usage,
+                                    answerRevision = answerRevision
                                 )
                             )
                         }
@@ -949,7 +995,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             role = "assistant",
                             content = "（追问失败：$message）",
                             createdAt = System.currentTimeMillis(),
-                            failed = true
+                            failed = true,
+                            answerRevision = answerRevision
                         )
                     )
                 }

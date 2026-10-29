@@ -17,7 +17,8 @@ data class AnalysisPreview(
     val warningsFieldPresent: Boolean = true,
     val warningsFieldValid: Boolean = true,
     val rootClosed: Boolean = false,
-    val semanticIssue: String? = null
+    val semanticIssue: String? = null,
+    val selectedType: QuestionType = QuestionType.AUTO
 ) {
     val hasUsefulContent: Boolean
         get() = recognizedQuestion.isNotBlank() || answer.any(String::isNotBlank) || answerText.isNotBlank()
@@ -30,7 +31,7 @@ data class AnalysisPreview(
      */
     val isComplete: Boolean
         get() = statusFieldPresent &&
-            questionTypeFieldPresent &&
+            (questionTypeFieldPresent || selectedType != QuestionType.AUTO) &&
             warningsFieldPresent &&
             warningsFieldValid &&
             rootClosed &&
@@ -69,6 +70,7 @@ class PreviewJsonParser {
         val answerText = fields.stringValue("answer_text")
         val confidence = fields.stringValue("confidence")
         val warnings = fields.arrayValue("warnings")
+        val optionAnalysisOptions = fields.optionAnalysisOptions()
         val warningsFieldPresent = fields.containsKey("warnings")
         val warningsFieldValid = fields["warnings"]?.let { raw ->
             runCatching { JSONArray(raw) }.isSuccess
@@ -80,13 +82,14 @@ class PreviewJsonParser {
             answerText = answerText,
             warningsFieldPresent = warningsFieldPresent,
             warningsFieldValid = warningsFieldValid,
-            selectedType = selectedType
+            selectedType = selectedType,
+            optionAnalysisOptions = optionAnalysisOptions
         )
         val preview = AnalysisPreview(
             status = status,
             questionType = evaluation.normalizedType,
             recognizedQuestion = question,
-            answer = answer,
+            answer = evaluation.normalizedAnswer,
             answerText = answerText,
             confidence = confidence,
             warnings = warnings,
@@ -95,9 +98,12 @@ class PreviewJsonParser {
             warningsFieldPresent = warningsFieldPresent,
             warningsFieldValid = warningsFieldValid,
             rootClosed = rootClosed,
-            semanticIssue = evaluation.previewIssue
+            semanticIssue = evaluation.previewIssue,
+            selectedType = selectedType
         )
-        return preview.takeIf { it.isComplete }
+        // 运行中先展示“预览”，完整性与语义问题由 isComplete/semanticIssue 标记；
+        // 不能等到根对象闭合才显示答案，否则答案卡会永远停在占位状态。
+        return preview.takeIf { it.hasUsefulContent }
     }
 
     /**
@@ -208,6 +214,16 @@ class PreviewJsonParser {
         return runCatching { JSONTokener(raw).nextValue() as? String }.getOrNull().orEmpty()
     }
 
+    private fun Map<String, String>.optionAnalysisOptions(): List<String> {
+        val raw = this["option_analysis"] ?: return emptyList()
+        val array = runCatching { JSONArray(raw) }.getOrNull() ?: return emptyList()
+        return (0 until array.length()).mapNotNull { index ->
+            val item = array.optJSONObject(index) ?: return@mapNotNull null
+            val letter = item.opt("option") as? String
+            if (letter.isNullOrBlank()) null else letter.trim()
+        }
+    }
+
     private fun Map<String, String>.arrayValue(key: String): List<String> {
         val raw = this[key] ?: return emptyList()
         val array = runCatching { JSONArray(raw) }.getOrNull() ?: return emptyList()
@@ -216,7 +232,8 @@ class PreviewJsonParser {
                 when (value) {
                     is String -> value.trim().takeIf(String::isNotBlank)
                     is Number -> value.toString()
-                    is JSONObject -> value.optString("value").ifBlank { value.optString("option") }.takeIf(String::isNotBlank)
+                    is JSONObject -> ((value.opt("value") as? String)?.takeIf(String::isNotBlank)
+                        ?: (value.opt("option") as? String)?.takeIf(String::isNotBlank))
                     else -> null
                 }
             }

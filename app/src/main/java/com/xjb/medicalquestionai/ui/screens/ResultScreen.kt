@@ -2,6 +2,8 @@ package com.xjb.medicalquestionai.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import com.xjb.medicalquestionai.isJsonNullLiteral
+import com.xjb.medicalquestionai.toReadablePlainText
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -141,15 +143,21 @@ fun ResultScreen(
     val showJumpToBottom by remember { derivedStateOf { listState.canScrollForward } }
 
     var showEditDialog by remember { mutableStateOf(false) }
+    var editSaving by remember { mutableStateOf(false) }
+    var editError by remember { mutableStateOf<String?>(null) }
     var addingImages by remember { mutableStateOf(false) }
-    var pendingAddImages by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var followUpInput by rememberSaveable(questionId) { mutableStateOf("") }
     var attachImages by rememberSaveable(questionId) { mutableStateOf(false) }
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(9)
     ) { uris ->
-        // 先确认新增图片不含患者身份信息，再导入；不能绕过首页的隐私确认。
-        if (uris.isNotEmpty()) pendingAddImages = uris
+        if (uris.isNotEmpty()) {
+            addingImages = true
+            viewModel.addImagesToQuestion(questionId, uris) { message ->
+                addingImages = false
+                scope.launch { snackbarHostState.showSnackbar(message) }
+            }
+        }
     }
 
     val running = task?.takeIf { it.questionId == questionId && it.isActive }
@@ -242,17 +250,19 @@ fun ResultScreen(
                         if (running != null && previewHasAnswer && runningPreviewResult != null) {
                             item {
                                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    AnalysisAnswerCard(result = runningPreviewResult)
+                                    AnalysisAnswerCard(result = runningPreviewResult, compact = true)
                                     if (runningPreviewResult.warnings.isNotEmpty()) {
                                         AnalysisWarningCard(runningPreviewResult.warnings)
                                     }
-                                    if (!runningPreview.isComplete) {
-                                        Text(
-                                            "以上为预览答案，模型仍在核对完整性与格式，最终结果会自动替换。",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
+                                    Text(
+                                        if (!runningPreview.isComplete) {
+                                            "以上为预览答案，模型仍在核对完整性与格式，最终结果会自动替换。"
+                                        } else {
+                                            "以上为预览答案，已通过格式校验，正在等待最终结果。"
+                                        },
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                             }
                         }
@@ -365,6 +375,7 @@ fun ResultScreen(
                             item {
                                 FollowUpThread(
                                     questionId = questionId,
+                                    answerRevision = q.answerRevision,
                                     viewModel = viewModel,
                                     stream = followUpStream,
                                     sending = sendingFollowUp,
@@ -404,38 +415,34 @@ fun ResultScreen(
         EditQuestionDialog(
             initialText = question.questionText,
             initialType = QuestionType.fromStorage(question.questionType),
-            retrying = running != null,
-            onDismiss = { showEditDialog = false },
+            retrying = running != null || editSaving,
+            error = editError,
+            onDismiss = {
+                if (!editSaving) {
+                    showEditDialog = false
+                    editError = null
+                }
+            },
             onConfirm = { text, type ->
-                showEditDialog = false
-                viewModel.updateQuestionTextAndRetry(questionId, text, type)
+                editSaving = true
+                editError = null
+                viewModel.updateQuestionTextAndRetry(
+                    id = questionId,
+                    newText = text,
+                    newType = type,
+                    onSaved = {
+                        editSaving = false
+                        showEditDialog = false
+                    },
+                    onError = { message ->
+                        editSaving = false
+                        editError = message
+                    }
+                )
             }
         )
     }
 
-    if (pendingAddImages.isNotEmpty()) {
-        AlertDialog(
-            onDismissRequest = { pendingAddImages = emptyList() },
-            title = { Text("确认新增图片") },
-            text = {
-                Text("请确认所选图片不含姓名、住院号、面部等可识别个人身份的信息。上传后会发送给模型服务。")
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val uris = pendingAddImages
-                    pendingAddImages = emptyList()
-                    addingImages = true
-                    viewModel.addImagesToQuestion(questionId, uris) { message ->
-                        addingImages = false
-                        scope.launch { snackbarHostState.showSnackbar(message) }
-                    }
-                }) { Text("已确认，添加") }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingAddImages = emptyList() }) { Text("取消") }
-            }
-        )
-    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -945,6 +952,7 @@ private fun FollowUpInputBar(
 @Composable
 private fun FollowUpThread(
     questionId: String,
+    answerRevision: Long,
     viewModel: MainViewModel,
     stream: FollowUpStreamState?,
     sending: Boolean,
@@ -952,7 +960,9 @@ private fun FollowUpThread(
     onStop: () -> Unit,
     onDismissError: () -> Unit
 ) {
-    val messages by remember(questionId) { viewModel.followUps(questionId) }
+    val messages by remember(questionId, answerRevision) {
+        viewModel.followUps(questionId, answerRevision)
+    }
         .collectAsState(initial = emptyList())
     SectionCard(title = "继续追问") {
         if (messages.isEmpty() && !sending) {
@@ -1014,7 +1024,7 @@ private fun FollowUpStreamBubble(stream: FollowUpStreamState, onStop: () -> Unit
                     }
                 } else {
                     Text(
-                        stream.content,
+                        stream.content.toReadablePlainText(),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1077,7 +1087,8 @@ private fun FollowUpBubble(item: FollowUp) {
         ) {
             Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
                 Text(
-                    item.content,
+                    if (item.content.isJsonNullLiteral()) "（本次回答为空，请重试）"
+                    else item.content.toReadablePlainText(),
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1119,6 +1130,7 @@ private fun EditQuestionDialog(
     initialText: String,
     initialType: QuestionType,
     retrying: Boolean,
+    error: String?,
     onDismiss: () -> Unit,
     onConfirm: (String, QuestionType) -> Unit
 ) {
@@ -1134,6 +1146,14 @@ private fun EditQuestionDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (!error.isNullOrBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
                 Spacer(Modifier.height(10.dp))
                 QuestionTypeChips(
                     selected = type,

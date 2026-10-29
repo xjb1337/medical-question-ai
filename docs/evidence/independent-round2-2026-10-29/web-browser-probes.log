@@ -1,0 +1,14 @@
+{"case":"successful_edit_retains_old_followups","oldCount":2,"inheritedCount":2,"questionText":"第二轮独立合成测试：新题目，与旧追问不同","status":"completed"}
+{
+  "ok": true,
+  "imported": 1,
+  "afterCrop": 2,
+  "resultRendered": true,
+  "followUsage": "Token 用量：输入 234 · 输出 56 · 合计 290",
+  "noUsageLabelHidden": true,
+  "oldRecordUsageHidden": true,
+  "failureRestored": true,
+  "dbFailureRestored": true,
+  "reanalysisPreserved": true,
+  "historyCount": 1
+}

@@ -1,0 +1,27 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+const sourcePath = 'E:/souti/repo/web/test/browser-repair-smoke.mjs';
+let source = readFileSync(sourcePath, 'utf8');
+source = source.replace('const WEB_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");', 'const WEB_DIR = "E:/souti/repo/web";');
+source = source.replace('stdio: "pipe"', 'stdio: "pipe", windowsHide: true');
+source = source.replace('{ stdio: "ignore" }', '{ stdio: "ignore", windowsHide: true }');
+source = source.replace('rmSync(profileDir, { recursive: true, force: true });', 'if (!resolve(profileDir).startsWith(resolve(tmpdir()) + "\\\\medical-web-test-")) throw new Error("Unexpected profile cleanup path"); rmSync(profileDir, { recursive: true, force: true });');
+const marker = source.indexOf('    if (!reanalysisPreserved)');
+if (marker < 0) throw new Error('insertion point missing');
+const lineEnd = source.indexOf('\n', marker);
+const extra = String.raw`
+    await evaluate(send, '(async () => {const s=await import("/assets/store.js"); const q=await s.getQuestion(decodeURIComponent(location.hash.split("/").pop())); q.followUps=[{id:"independent-old-u",role:"user",text:"旧题为什么选B",createdAt:1},{id:"independent-old-a",role:"assistant",text:"旧题专用解释",createdAt:2}]; await s.saveQuestion(q);})()');
+    await send("Page.reload");
+    await sleep(400);
+    await waitFor(send, 'document.querySelector(\'[data-action="edit-question"]\')');
+    const oldFollowUps = await evaluate(send, '(async () => {const s = await import("/assets/store.js"); const q = await s.getQuestion(decodeURIComponent(location.hash.split("/").pop())); return (q.followUps || []).map(x => x.id);})()');
+    await evaluate(send, 'document.querySelector(\'[data-action="edit-question"]\').click()');
+    await waitFor(send, 'document.querySelector("#question-text")');
+    await evaluate(send, '(() => {const e=document.querySelector("#question-text"); e.value="第二轮独立合成测试：新题目，与旧追问不同"; e.dispatchEvent(new Event("input", {bubbles:true})); document.querySelector(\'[data-action="start-analysis"]\').click();})()');
+    await waitFor(send, 'location.hash !== ' + JSON.stringify(oldResultHash) + ' && document.querySelector(\'[data-action="edit-question"]\')');
+    const afterSuccess = await evaluate(send, '(async () => {const s=await import("/assets/store.js"); const q=await s.getQuestion(decodeURIComponent(location.hash.split("/").pop())); return {questionText:q.questionText, status:q.status, followUps:(q.followUps||[]).map(x=>({id:x.id,text:x.text}))};})()');
+    console.log(JSON.stringify({case:"successful_edit_retains_old_followups", oldCount:oldFollowUps.length, inheritedCount:afterSuccess.followUps.filter(x=>oldFollowUps.includes(x.id)).length, questionText:afterSuccess.questionText, status:afterSuccess.status}));
+`;
+source = source.slice(0, lineEnd + 1) + extra + source.slice(lineEnd + 1);
+const output = 'E:/souti/acceptance-artifacts/round2-web-browser-generated.mjs';
+writeFileSync(output, source);
+await import('file:///' + output);

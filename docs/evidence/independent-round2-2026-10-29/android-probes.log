@@ -1,0 +1,18 @@
+single_two_answers: preview=BLOCKED final=needs_confirmation [A, B]
+invalid_status: preview=BLOCKED final=needs_confirmation [A]
+warnings_wrong_type: preview=BLOCKED final=needs_confirmation [A]
+explicit_type_conflict: preview=BLOCKED final=needs_confirmation []
+invalid_type_manual_single: preview=answered [A] final=answered [A]
+missing_type_manual_single: preview=BLOCKED final=answered [A]
+option_analysis_mismatch: preview=answered [A] final=needs_confirmation [A]
+choice_delimiter_multiple_letters: preview=answered [A、B] final=answered [A、B]
+short_without_answer_text: preview=BLOCKED final=needs_confirmation [A]
+good: preview=answered [A] final=answered [A]
+unknown_request: stream=false thinking=false jsonMode=false
+nonstream_finish_stop: [COMPLETED status=answered recordedFinish=stop]
+unknown_request: stream=false thinking=false jsonMode=false
+nonstream_finish_length: [COMPLETED status=answered recordedFinish=stop]
+unknown_request: stream=false thinking=false jsonMode=false
+nonstream_finish_content_filter: [COMPLETED status=answered recordedFinish=stop]
+unknown_request: stream=false thinking=false jsonMode=false
+nonstream_finish_null: [COMPLETED status=answered recordedFinish=stop]

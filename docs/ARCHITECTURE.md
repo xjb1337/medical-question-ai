@@ -43,7 +43,7 @@ MainViewModel
 
 ### Question / FollowUp
 
-`QuestionEntity` 保存题目主记录；`FollowUpEntity` 通过 `questionId` 关联追问，按 `createdAt` 升序读取。删除题目时会先删除其追问与本地图片，再删除主记录。数据库当前为 version 6：`MIGRATION_1_2` 创建追问表，`MIGRATION_2_3` 增加 `isEphemeral` 列，`MIGRATION_3_4` 增加 `mode`、`durationMs`、`promptVersion`，`MIGRATION_4_5` 增加实际请求使用的 `baseUrl` 快照，`MIGRATION_5_6` 增加答案输入版本 `inputRevision`/`answerInputRevision`；不使用破坏性迁移，后续版本升级需继续提供显式迁移。
+`QuestionEntity` 保存题目主记录；`FollowUpEntity` 通过 `questionId` 关联追问，按 `createdAt` 升序读取。删除题目时会先删除其追问与本地图片，再删除主记录。数据库当前为 version 7：`MIGRATION_1_2` 创建追问表，`MIGRATION_2_3` 增加 `isEphemeral` 列，`MIGRATION_3_4` 增加 `mode`、`durationMs`、`promptVersion`，`MIGRATION_4_5` 增加实际请求使用的 `baseUrl` 快照，`MIGRATION_5_6` 增加答案输入版本 `inputRevision`/`answerInputRevision`，`MIGRATION_6_7` 增加追问答案版本 `answerRevision`；不使用破坏性迁移，后续版本升级需继续提供显式迁移。
 
 ## 3. 一次解析的完整流程
 

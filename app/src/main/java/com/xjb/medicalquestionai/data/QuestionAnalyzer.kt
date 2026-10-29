@@ -1,5 +1,7 @@
 package com.xjb.medicalquestionai.data
 
+import android.os.SystemClock
+import com.xjb.medicalquestionai.isJsonNullLiteral
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -34,10 +36,18 @@ class QuestionAnalyzer(
         baseUrl: String,
         mode: AnswerMode,
         customModelSupportsImages: Boolean = false,
-        customModelStreaming: Boolean = false
+        customModelStreaming: Boolean = false,
+        clickedAtElapsedRealtime: Long = SystemClock.elapsedRealtime()
     ): Flow<AnalysisEvent> = flow {
         val totalStages = 4
         val requestStartedAt = System.currentTimeMillis()
+        val clickAt = clickedAtElapsedRealtime
+        var imageReadyAt: Long? = null
+        var requestReadyAt: Long? = null
+        var headersAt: Long? = null
+        var firstEventAt: Long? = null
+        var firstContentAt: Long? = null
+        var firstAnswerAt: Long? = null
         emit(AnalysisEvent.Stage(0, totalStages, "正在读取并压缩图片"))
         try {
             withTimeout(mode.timeoutMs) {
@@ -58,6 +68,7 @@ class QuestionAnalyzer(
                 throw ApiException("图片总大小过大，请减少图片数量或先裁剪。")
             }
             val images = draft.images.map { imageStore.readBase64(it.path) }
+            imageReadyAt = SystemClock.elapsedRealtime()
             emit(AnalysisEvent.Stage(1, totalStages, "正在上传题目"))
             // 未知/自定义模型不能假设支持 JSON mode 或 thinking，否则容易被接口以 400/422 拒绝。
             val knownModel = ModelCatalog.isOfficialBaseUrl(baseUrl) &&
@@ -78,6 +89,7 @@ class QuestionAnalyzer(
                 sendThinkingParam = knownModel,
                 jsonMode = knownModel
             )
+            requestReadyAt = SystemClock.elapsedRealtime()
             val content = StringBuilder()
             val previewParser = PreviewJsonParser()
             var usage = Usage()
@@ -98,12 +110,19 @@ class QuestionAnalyzer(
                 content.append(response.content)
                 usage = response.usage
                 responseModel = response.model
-                finishReason = "stop"
+                finishReason = response.finishReason
+                // 非流式响应无法单独观测 headers / 首个事件，保留为未知；答案在完整响应到达时可用。
+                if (response.content.isNotBlank()) firstAnswerAt = SystemClock.elapsedRealtime()
                 sawDone = true
             } else {
                 client.stream(request).collect { event ->
+                    val now = SystemClock.elapsedRealtime()
+                    if (firstEventAt == null) firstEventAt = now
                     when (event) {
-                        is ChatStreamEvent.ResponseStarted -> emit(AnalysisEvent.WaitingForModel)
+                        is ChatStreamEvent.ResponseStarted -> {
+                            headersAt = now
+                            emit(AnalysisEvent.WaitingForModel)
+                        }
                         is ChatStreamEvent.ResponseModel -> responseModel = event.model
                         is ChatStreamEvent.ReasoningDelta -> {
                             emit(AnalysisEvent.Reasoning(event.text))
@@ -113,6 +132,7 @@ class QuestionAnalyzer(
                             }
                         }
                         is ChatStreamEvent.ContentDelta -> {
+                            if (firstContentAt == null) firstContentAt = now
                             if (!emittedAnswerStage) {
                                 emittedAnswerStage = true
                                 emit(AnalysisEvent.Stage(2, totalStages, "正在接收答案"))
@@ -120,7 +140,12 @@ class QuestionAnalyzer(
                             content.append(event.text)
                             if (content.length - lastPreviewLength >= 48) {
                                 lastPreviewLength = content.length
-                                previewParser.feed(content.toString(), draft.questionType)?.let { emit(AnalysisEvent.Preview(it)) }
+                                previewParser.feed(content.toString(), draft.questionType)?.let {
+                                    if (firstAnswerAt == null && (it.answer.isNotEmpty() || it.answerText.isNotBlank())) {
+                                        firstAnswerAt = now
+                                    }
+                                    emit(AnalysisEvent.Preview(it))
+                                }
                             }
                         }
                         is ChatStreamEvent.UsageUpdate -> usage = event.usage
@@ -133,8 +158,14 @@ class QuestionAnalyzer(
             if (!sawDone) {
                 throw ApiException("连接提前中断，未收到完整结束标记，请重试。")
             }
-            previewParser.feed(content.toString(), draft.questionType)?.let { emit(AnalysisEvent.Preview(it)) }
+            previewParser.feed(content.toString(), draft.questionType)?.let {
+                if (firstAnswerAt == null && (it.answer.isNotEmpty() || it.answerText.isNotBlank())) {
+                    firstAnswerAt = SystemClock.elapsedRealtime()
+                }
+                emit(AnalysisEvent.Preview(it))
+            }
             emit(AnalysisEvent.Stage(totalStages - 1, totalStages, "正在核对答案"))
+            val validationAt = SystemClock.elapsedRealtime()
             val result = parseResult(content.toString(), draft).copy(
                 usage = usage,
                 metrics = AnalysisMetrics(
@@ -146,7 +177,16 @@ class QuestionAnalyzer(
                     transportClosed = sawDone,
                     saveStatus = "pending",
                     totalMs = System.currentTimeMillis() - requestStartedAt,
-                    answerMode = mode.storageValue
+                    answerMode = mode.storageValue,
+                    clickToImageReadyMs = imageReadyAt?.minus(clickAt),
+                    clickToRequestReadyMs = requestReadyAt?.minus(clickAt),
+                    clickToHeadersMs = headersAt?.minus(clickAt),
+                    clickToFirstEventMs = firstEventAt?.minus(clickAt),
+                    clickToFirstContentMs = firstContentAt?.minus(clickAt),
+                    clickToFirstAnswerMs = firstAnswerAt?.minus(clickAt),
+                    validationMs = (validationAt -
+                        (firstAnswerAt ?: firstContentAt ?: firstEventAt ?: requestReadyAt ?: clickAt))
+                        .coerceAtLeast(0)
                 )
             )
             emit(AnalysisEvent.Completed(result))
@@ -176,6 +216,7 @@ class QuestionAnalyzer(
             customModelSupportsImages
         )
         val response = client.chatOnce(request, mode.timeoutMs)
+        validateFinishReason(response.finishReason, "追问回答")
         FollowUpAnswer(content = response.content.trim(), usage = response.usage)
     }
 
@@ -205,7 +246,7 @@ class QuestionAnalyzer(
                     val response = client.chatOnce(request, mode.timeoutMs)
                     emit(ChatStreamEvent.ContentDelta(response.content))
                     emit(ChatStreamEvent.UsageUpdate(response.usage))
-                    emit(ChatStreamEvent.Finished("stop"))
+                    emit(ChatStreamEvent.Finished(response.finishReason))
                     emit(ChatStreamEvent.StreamDone)
                 } else {
                     emitAll(client.stream(request))
@@ -385,6 +426,7 @@ class QuestionAnalyzer(
         private fun FollowUp.isUsableForHistory(): Boolean =
             !failed &&
                 content.isNotBlank() &&
+                !content.isJsonNullLiteral() &&
                 !content.contains("已停止生成") &&
                 !content.startsWith("（追问失败：")
 

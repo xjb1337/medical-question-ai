@@ -1,0 +1,9 @@
+
+Algorithm : SHA256
+Hash      : BD029D5F2FA51064B86A1AEF425CADBCFF1582043EFC26564D5260B15B3A632C
+Path      : E:\souti\repo\dist\medical-question-ai-debug.apk
+
+Algorithm : SHA256
+Hash      : F6ADB67B83A23C086201ABC1BEF0515ECF73FECDDACCA71FC261A144540D6C90
+Path      : E:\souti\repo\app\build\outputs\apk\debug\app-debug.apk
+

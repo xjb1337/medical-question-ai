@@ -1,5 +1,6 @@
 package com.xjb.medicalquestionai.data
 
+import com.xjb.medicalquestionai.toReadablePlainText
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -71,7 +72,9 @@ data class FollowUp(
     val content: String,
     val createdAt: Long,
     val usage: Usage = Usage(),
-    val failed: Boolean = false
+    val failed: Boolean = false,
+    /** 该追问所属的答案版本；旧答案的追问不得混入新答案。 */
+    val answerRevision: Long = 0
 )
 
 data class AnalysisMetrics(
@@ -83,8 +86,20 @@ data class AnalysisMetrics(
     val transportClosed: Boolean = false,
     val saveStatus: String = "",
     val totalMs: Long = 0,
-    val answerMode: String = ""
+    val answerMode: String = "",
+    val clickToImageReadyMs: Long? = null,
+    val clickToRequestReadyMs: Long? = null,
+    val clickToHeadersMs: Long? = null,
+    val clickToFirstEventMs: Long? = null,
+    val clickToFirstContentMs: Long? = null,
+    val clickToFirstAnswerMs: Long? = null,
+    val validationMs: Long? = null,
+    val saveMs: Long? = null
 )
+
+private fun JSONObject.putNullable(key: String, value: Long?) {
+    put(key, value ?: JSONObject.NULL)
+}
 
 data class AnalysisResult(
     val status: String = "answered",
@@ -110,7 +125,7 @@ data class AnalysisResult(
     val answerDisplay: String
         get() = when {
             answer.isNotEmpty() -> answer.joinToString("、")
-            answerText.isNotBlank() -> answerText
+            answerText.isNotBlank() -> answerText.toReadablePlainText()
             else -> "未能确定答案"
         }
 
@@ -173,6 +188,14 @@ data class AnalysisResult(
                 put("save_status", m.saveStatus)
                 put("total_ms", m.totalMs)
                 put("answer_mode", m.answerMode)
+                putNullable("click_to_image_ready_ms", m.clickToImageReadyMs)
+                putNullable("click_to_request_ready_ms", m.clickToRequestReadyMs)
+                putNullable("click_to_headers_ms", m.clickToHeadersMs)
+                putNullable("click_to_first_event_ms", m.clickToFirstEventMs)
+                putNullable("click_to_first_content_ms", m.clickToFirstContentMs)
+                putNullable("click_to_first_answer_ms", m.clickToFirstAnswerMs)
+                putNullable("validation_ms", m.validationMs)
+                putNullable("save_ms", m.saveMs)
             })
         }
     }.toString()
@@ -180,10 +203,18 @@ data class AnalysisResult(
     companion object {
         fun fromJson(raw: String): AnalysisResult {
             val obj = runCatching { JSONObject(raw) }.getOrElse { return AnalysisResult(rawJson = raw) }
+            fun text(item: JSONObject, key: String, fallback: String = ""): String {
+                val value = item.opt(key)
+                return (value as? String)?.takeIf { it.isNotBlank() } ?: fallback
+            }
+            fun longOrNull(item: JSONObject, key: String): Long? =
+                if (item.has(key) && !item.isNull(key)) item.optLong(key) else null
             fun stringList(key: String): List<String> {
                 val value = obj.opt(key) ?: return emptyList()
                 return when (value) {
-                    is JSONArray -> (0 until value.length()).mapNotNull { value.optString(it).takeIf(String::isNotBlank) }
+                    is JSONArray -> (0 until value.length()).mapNotNull { index ->
+                        (value.opt(index) as? String)?.takeIf(String::isNotBlank)
+                    }
                     is String -> if (value.isBlank()) emptyList() else listOf(value)
                     else -> emptyList()
                 }
@@ -194,12 +225,12 @@ data class AnalysisResult(
                     val item = array.optJSONObject(i)
                     if (item != null) {
                         steps += ReasoningStep(
-                            title = item.optString("title", "步骤 ${i + 1}"),
-                            detail = item.optString("detail", item.optString("content"))
+                            title = text(item, "title", "步骤 ${i + 1}"),
+                            detail = text(item, "detail", text(item, "content"))
                         )
                     } else {
-                        val text = array.optString(i)
-                        if (text.isNotBlank()) steps += ReasoningStep("步骤 ${i + 1}", text)
+                        val text = array.opt(i) as? String
+                        if (!text.isNullOrBlank()) steps += ReasoningStep("步骤 ${i + 1}", text)
                     }
                 }
             }
@@ -208,28 +239,28 @@ data class AnalysisResult(
                 for (i in 0 until array.length()) {
                     val item = array.optJSONObject(i)
                     if (item != null) {
-                        val observation = item.optString("observation", item.optString("summary"))
+                        val observation = text(item, "observation", text(item, "summary"))
                         if (observation.isNotBlank()) {
                             observations += ImageObservation(
                                 imageIndex = item.optInt("image_index", i + 1),
                                 observation = observation,
-                                uncertainty = item.optString("uncertainty", item.optString("uncertain"))
+                                uncertainty = text(item, "uncertainty", text(item, "uncertain"))
                             )
                         }
                     } else {
-                        val text = array.optString(i)
-                        if (text.isNotBlank()) observations += ImageObservation(i + 1, text)
+                        val text = array.opt(i) as? String
+                        if (!text.isNullOrBlank()) observations += ImageObservation(i + 1, text)
                     }
                 }
             }
             val options = mutableListOf<OptionAnalysis>()
             fun addOption(item: JSONObject, fallbackLabel: String) {
-                val option = item.optString("option", item.optString("label", ""))
-                val reason = item.optString("reason", item.optString("detail", ""))
+                val option = text(item, "option", text(item, "label"))
+                val reason = text(item, "reason", text(item, "detail"))
                 if (option.isNotBlank() || reason.isNotBlank()) {
                     options += OptionAnalysis(
                         option = option.ifBlank { fallbackLabel },
-                        verdict = item.optString("verdict", item.optString("status", "")),
+                        verdict = text(item, "verdict", text(item, "status")),
                         reason = reason
                     )
                 }
@@ -249,17 +280,17 @@ data class AnalysisResult(
                 }
             }
             return AnalysisResult(
-                status = obj.optString("status", "answered"),
-                questionType = obj.optString("question_type", obj.optString("type", "unknown")),
-                recognizedQuestion = obj.optString("recognized_question", obj.optString("question", "")),
+                status = text(obj, "status", "answered"),
+                questionType = text(obj, "question_type", text(obj, "type", "unknown")),
+                recognizedQuestion = text(obj, "recognized_question", text(obj, "question")),
                 answer = stringList("answer"),
-                answerText = obj.optString("answer_text", obj.optString("answerText", "")),
+                answerText = text(obj, "answer_text", text(obj, "answerText")),
                 imageObservations = observations,
                 optionAnalyses = options,
                 reasoningSteps = steps,
                 keyPoints = stringList("key_points"),
                 pitfalls = stringList("pitfalls"),
-                confidence = obj.optString("confidence", "medium"),
+                confidence = text(obj, "confidence", "medium"),
                 warnings = stringList("warnings"),
                 rawJson = raw,
                 usage = obj.optJSONObject("usage")?.let { usage ->
@@ -271,15 +302,23 @@ data class AnalysisResult(
                 } ?: Usage(),
                 metrics = obj.optJSONObject("metrics")?.let { m ->
                     AnalysisMetrics(
-                        requestModel = m.optString("request_model"),
-                        responseModel = m.optString("response_model"),
+                        requestModel = text(m, "request_model"),
+                        responseModel = text(m, "response_model"),
                         thinkingEnabled = m.optBoolean("thinking_enabled", false),
                         streamed = m.optBoolean("streamed", false),
-                        finishReason = m.optString("finish_reason"),
+                        finishReason = text(m, "finish_reason"),
                         transportClosed = m.optBoolean("transport_closed", false),
-                        saveStatus = m.optString("save_status"),
+                        saveStatus = text(m, "save_status"),
                         totalMs = m.optLong("total_ms", 0),
-                        answerMode = m.optString("answer_mode")
+                        answerMode = text(m, "answer_mode"),
+                        clickToImageReadyMs = longOrNull(m, "click_to_image_ready_ms"),
+                        clickToRequestReadyMs = longOrNull(m, "click_to_request_ready_ms"),
+                        clickToHeadersMs = longOrNull(m, "click_to_headers_ms"),
+                        clickToFirstEventMs = longOrNull(m, "click_to_first_event_ms"),
+                        clickToFirstContentMs = longOrNull(m, "click_to_first_content_ms"),
+                        clickToFirstAnswerMs = longOrNull(m, "click_to_first_answer_ms"),
+                        validationMs = longOrNull(m, "validation_ms"),
+                        saveMs = longOrNull(m, "save_ms")
                     )
                 }
             )
@@ -307,7 +346,9 @@ data class Question(
     /** 题目输入版本：题干或图片每次修改都递增。 */
     val inputRevision: Long = 0,
     /** 当前展示答案对应的输入版本；旧记录均为 0，与 inputRevision 相同。 */
-    val answerInputRevision: Long = 0
+    val answerInputRevision: Long = 0,
+    /** 答案版本：每次成功生成新答案递增，用于隔离旧追问。 */
+    val answerRevision: Long = 0
 ) {
     val isAnswerStale: Boolean
         get() = result != null && answerInputRevision != inputRevision

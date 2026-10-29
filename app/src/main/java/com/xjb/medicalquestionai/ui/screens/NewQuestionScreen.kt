@@ -111,7 +111,6 @@ fun NewQuestionScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var editingImageId by remember { mutableStateOf<String?>(null) }
     var textExpanded by rememberSaveable { mutableStateOf(false) }
-    var privacyDetailExpanded by rememberSaveable { mutableStateOf(false) }
     val editingImage = editingImageId?.let { id -> draft.images.firstOrNull { it.id == id } }
 
     val picker = rememberLauncherForActivityResult(
@@ -131,7 +130,6 @@ fun NewQuestionScreen(
     val submitBlockedReason = when {
         isImporting -> "正在导入图片…"
         draft.text.isBlank() && draft.images.isEmpty() -> "未添加图片或文字"
-        !draft.privacyConfirmed -> "请先确认隐私"
         !settings.apiKeyConfigured -> "未配置密钥"
         imageUnsupported -> "当前模型不支持图片，请切换到 DeepSeek Flash"
         analyzing -> "正在解析…"
@@ -372,59 +370,6 @@ fun NewQuestionScreen(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                }
-            }
-
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    shape = MaterialTheme.shapes.large
-                ) {
-                    Column(Modifier.padding(14.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = draft.privacyConfirmed,
-                                onCheckedChange = viewModel::setPrivacyConfirmed,
-                                enabled = !analyzing
-                            )
-                            Text(
-                                "我已确认题目内容不含可识别的患者身份信息",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                        Row(verticalAlignment = Alignment.Top) {
-                            Icon(
-                                Icons.Outlined.Lock,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .padding(start = 10.dp, top = 2.dp)
-                                    .size(15.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    "图片和文字会发送给 DeepSeek；请先遮挡姓名、住院号、联系方式等。",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                TextButton(
-                                    onClick = { privacyDetailExpanded = !privacyDetailExpanded },
-                                    contentPadding = PaddingValues(0.dp)
-                                ) {
-                                    Text(if (privacyDetailExpanded) "收起说明" else "隐私说明")
-                                }
-                                if (privacyDetailExpanded) {
-                                    Text(
-                                        "应用会重新编码图片以移除文件元数据，但图片中可见的文字仍需你人工确认。解析记录默认保存在本机；关闭“保存解析历史”后仅当前解析可用。",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
                 }
             }
 

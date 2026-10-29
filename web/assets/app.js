@@ -120,7 +120,6 @@ function draftSubmitIssue(draft = state.draft, imagesAllowed = true) {
   if (!state.settings.demoMode && !state.settings.apiKey) return "先在设置中配置 API Key，或开启演示模式";
   if (!draft.text.trim() && !draft.images.length) return "先拍一张题目图片，或粘贴题干文字";
   if (draft.images.length && !imagesAllowed) return "当前模型不支持图片，请切换到 DeepSeek Flash，或在设置中允许自定义模型图片输入";
-  if (draft.images.length && !draft.privacy) return "请先确认图片不含未遮挡的个人信息";
   return "";
 }
 
@@ -563,22 +562,7 @@ function renderComposePage() {
           ${modelCapabilityNotice()}
         </div>
 
-        <div class="privacy-block">
-          <div class="privacy-row">
-            <label class="checkbox">
-              <input id="privacy-check" type="checkbox" ${draft.privacy ? "checked" : ""}>
-              <span>${icon("check")}</span>
-            </label>
-            <label class="privacy-copy" for="privacy-check">
-              <strong>我确认图片不含未遮挡的姓名、病历号等个人信息</strong>
-            </label>
-          </div>
-          <details class="privacy-details">
-            <summary>图片会发送到哪里？</summary>
-            <p>题目图片和文字会随解析请求发送到你配置的 API；请先遮挡姓名、病历号、联系方式等敏感信息。解析结果仅供学习参考。</p>
-          </details>
-          ${state.analysisError ? `<div class="error-banner">${icon("alert")}<span>${escapeHtml(state.analysisError)}</span></div>` : ""}
-        </div>
+        ${state.analysisError ? `<div class="error-banner">${icon("alert")}<span>${escapeHtml(state.analysisError)}</span></div>` : ""}
       </section>
 
       <aside class="compose-aside">
@@ -1376,7 +1360,8 @@ async function startAnalysis() {
     receivedChars: 0,
     durationMs: 0,
     favorite: editingQuestion?.favorite || false,
-    followUps: editingQuestion?.followUps || [],
+    // 重新解析会生成新答案；旧答案的追问不能带入新记录，避免追问引用错误上下文。
+    followUps: [],
     isEphemeral: !state.settings.saveHistory && !editingQuestion?.favorite
   };
   const controller = new AbortController();
@@ -2302,10 +2287,6 @@ document.addEventListener("change", async (event) => {
   if (target.id === "followup-input") {
     await addFollowUpImages(target.files);
     target.value = "";
-    return;
-  }
-  if (target.id === "privacy-check") {
-    setDraftPrivacy(target.checked);
     return;
   }
   if (target.id === "follow-include-images") {

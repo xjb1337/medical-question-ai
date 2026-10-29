@@ -37,7 +37,7 @@ npm start
 - **编辑重答**：修改题干或图片后重新分析；失败保留旧答案与追问。
 - **结果阅读**：答案卡片置顶，解析详情默认折叠，题目图片和追问按阅读顺序排列。
 - **历史与收藏**：搜索、收藏、删除、清空；可配置是否保存历史。
-- **隐私控制**：分析前需确认无患者身份信息；Android 版 API Key 使用 AndroidX Security + Android Keystore 加密，网页版存储边界见网页版说明。
+- **隐私控制**：请勿上传可识别患者身份的信息；应用不要求逐题勾选隐私确认，Android 版 API Key 使用 AndroidX Security + Android Keystore 加密，网页版存储边界见网页版说明。
 - **深浅色主题**：Material 3 界面，适配手机竖屏。
 
 ## 技术栈
@@ -91,7 +91,7 @@ app/build/outputs/apk/debug/app-debug.apk
 本次交付的预构建副本位于 `dist/medical-question-ai-debug.apk`（versionCode 2 / versionName 1.1.0），SHA-256：
 
 ```text
-bd029d5f2fa51064b86a1aef425cadbcff1582043efc26564d5260b15b3a632c
+44a4448da332a40812611b9bf1c4a518882bb033d9871f3c5cc77ed8d207cc1b
 ```
 
 旧版 APK 保留在 `dist/archive/medical-question-ai-debug-v1.0.0-20261028.apk`，用于升级对照。

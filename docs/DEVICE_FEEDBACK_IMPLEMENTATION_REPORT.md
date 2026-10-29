@@ -5,11 +5,11 @@
 ## 1. 版本与范围
 
 - 实施日期/时区：2026-10-29，Asia/Shanghai。
-- 开始提交/结束提交：开始 `4b6f3ee`（2026-10-28 23:15:48 +08:00）；结束时未创建新提交，全部改动保留在工作区，便于审查者直接复核 diff。
+- 开始提交/结束提交：开始 `4b6f3ee`（2026-10-28 23:15:48 +08:00）；结束时提交：本轮 R2 修复提交（以 `git log -1 --oneline` 为准）。
 - 开始工作区状态及保留改动：开始时 `docs/DEVICE_FEEDBACK_PLAN_2026-10-29.md` 与 `docs/DEVICE_FEEDBACK_REPORT_TEMPLATE.md` 为未跟踪文件，其余工作区干净；实施后保留全部业务代码、测试、文档、APK 和 `docs/evidence/` 证据，不清理、不覆盖旧验收报告。
 - DeepSeek 官方文档复核日期、页面和相对方案变化：未复核（沿用方案第 1 节 2026-10-29 的历史结论，页面为 `api-docs.deepseek.com` 的模型列表/思考模式说明；本次未重新联网抓取，未确认相对变化）。正式模型名为 `deepseek-flash`（文字+图片）与 `deepseek-v4-pro`（仅文字）。
 - Android 版本/build：`versionCode 2`、`versionName 1.1.0`，debug 构建；包名 `com.xjb.medicalquestionai`，minSdk 26、targetSdk 35。
-- APK 绝对路径 / SHA-256：`E:\souti\repo\dist\medical-question-ai-debug.apk`；`bd029d5f2fa51064b86a1aef425cadbcff1582043efc26564d5260b15b3a632c`（21,810,362 bytes）。旧版归档于 `dist/archive/medical-question-ai-debug-v1.0.0-20261028.apk`，SHA-256 `9da7a2aa7908811af2ced7a01979e4c4058610d6e10b8b445b3493b448a058f3`。
+- APK 绝对路径 / SHA-256：`E:\souti\repo\dist\medical-question-ai-debug.apk`；`44a4448da332a40812611b9bf1c4a518882bb033d9871f3c5cc77ed8d207cc1b`（21,826,875 bytes）。旧版归档于 `dist/archive/medical-question-ai-debug-v1.0.0-20261028.apk`，SHA-256 `9da7a2aa7908811af2ced7a01979e4c4058610d6e10b8b445b3493b448a058f3`。
 - 真机型号 / Android 版本 / 屏幕宽度 / 字体缩放：无设备，未执行。
 - 真实接口 / mock / 演示分别使用在哪些检查：真实接口未使用（无 Key）；单元测试使用纯 JVM 逻辑与固定 JSON/SSE 字节；Web 测试使用本地 mock DeepSeek 和浏览器 headless 环境；演示模式未作为验收证据。
 
@@ -66,12 +66,12 @@
 
 | 命令 | 实际执行时间 | 退出状态/统计 | 报告位置 | 未覆盖内容 |
 | --- | --- | --- | --- | --- |
-| `./gradlew :app:testDebugUnitTest` | 2026-10-29 17:23 +08:00（最终重跑） | BUILD SUCCESSFUL；52 tests / 0 failures / 0 errors / 0 skipped（37 `DeviceFeedbackCoreTest` + 4 `ImageEditPolicyTest` + 7 `ModelsTest` + 4 `SettingsValidationTest`） | `app/build/reports/tests/testDebugUnitTest/index.html`；`app/build/test-results/testDebugUnitTest/*.xml`；`docs/evidence/2026-10-29-android-final.log`（仅构建日志） | 纯 JVM，无设备/网络 |
-| `./gradlew :app:lintDebug` | 2026-10-29 17:23 +08:00 | BUILD SUCCESSFUL；0 errors / 22 warnings（18 个 `GradleDependency` + 4 个 `ApplySharedPref`，统计来自 `app/build/reports/lint-results-debug.xml`） | `app/build/reports/lint-results-debug.html`、`app/build/reports/lint-results-debug.xml`；`docs/evidence/2026-10-29-android-final.log`（仅构建日志） | 静态检查，不证明 UI |
-| `./gradlew :app:assembleDebug` | 2026-10-29 17:23 +08:00 | BUILD SUCCESSFUL；APK 21,810,362 bytes | `dist/medical-question-ai-debug.apk` | 未安装运行 |
-| `./gradlew :app:assembleDebugAndroidTest` | 2026-10-29 17:23 +08:00 | BUILD SUCCESSFUL（测试 APK 编译） | `app/build/outputs/apk/androidTest/` | 未执行 instrumented 测试 |
+| `./gradlew :app:testDebugUnitTest` | 2026-10-29 18:43 +08:00（最终重跑） | BUILD SUCCESSFUL；57 tests / 0 failures / 0 errors / 0 skipped（42 `DeviceFeedbackCoreTest` + 4 `ImageEditPolicyTest` + 7 `ModelsTest` + 4 `SettingsValidationTest`） | `app/build/reports/tests/testDebugUnitTest/index.html`；`app/build/test-results/testDebugUnitTest/*.xml`；`docs/evidence/2026-10-29-android-final.log`（仅构建日志） | 纯 JVM，无设备/网络 |
+| `./gradlew :app:lintDebug` | 2026-10-29 18:43 +08:00 | BUILD SUCCESSFUL；0 errors / 22 warnings（18 个 `GradleDependency` + 4 个 `ApplySharedPref`，统计来自 `app/build/reports/lint-results-debug.xml`） | `app/build/reports/lint-results-debug.html`、`app/build/reports/lint-results-debug.xml`；`docs/evidence/2026-10-29-android-final.log`（仅构建日志） | 静态检查，不证明 UI |
+| `./gradlew :app:assembleDebug` | 2026-10-29 18:43 +08:00 | BUILD SUCCESSFUL；APK 21,826,875 bytes | `dist/medical-question-ai-debug.apk` | 未安装运行 |
+| `./gradlew :app:assembleDebugAndroidTest` | 2026-10-29 18:43 +08:00 | BUILD SUCCESSFUL（测试 APK 编译） | `app/build/outputs/apk/androidTest/` | 未执行 instrumented 测试 |
 | `./gradlew :app:connectedDebugAndroidTest` | 未执行 | `adb devices` 无设备 | — | 无设备 |
-| `npm --prefix web test` | 2026-10-29 17:26 +08:00 | 19/19 单元测试通过；browser smoke `ok: true` | `docs/evidence/2026-10-29-web-final.log` | mock 上游，非真实 DeepSeek |
+| `npm --prefix web test` | 2026-10-29 18:44 +08:00 | 19/19 单元测试通过；browser smoke `ok: true` | `docs/evidence/2026-10-29-web-final.log` | mock 上游，非真实 DeepSeek |
 | `git diff --check` | 2026-10-29 17:31 +08:00 | 退出 0（仅 CRLF 提示） | `docs/evidence/2026-10-29-git-diff-check.log` | 不检查运行行为 |
 
 新增针对性测试：`DeviceFeedbackCoreTest`（模型/迁移/模式请求参数/SSE/预览 JSON/解析边界）、`SettingsValidationTest`（URL）、`ModelsTest`（旧 JSON 兼容）、`ImageEditPolicyTest`（裁剪）。测试结果 XML：`app/build/test-results/testDebugUnitTest/*.xml`。取消竞争、失败不覆盖旧结果两项需要 MainViewModel/Android instrumentation 环境，本机无设备，报告按“未覆盖”处理，未虚列为通过。
@@ -120,7 +120,7 @@ P50 改善百分比、P95 回归、失败请求处理及未达到目标：均无
 - 手机显示版本和被安装 APK 哈希对应关系：未安装到手机；静态核验结果：
   - `aapt2 dump badging`：`package: name='com.xjb.medicalquestionai' versionCode='2' versionName='1.1.0'`，`minSdkVersion:'26'`，`targetSdkVersion:'35'`（`docs/evidence/2026-10-29-apk-badging.txt`）
   - `apksigner verify --print-certs`：APK Signature Scheme v2 通过；新旧 APK 证书 SHA-256 均为 `77c3ca8d1a7cf0aca4718b328705bb21833976bc701dad89c11881c83ca1c861`（`docs/evidence/2026-10-29-apk-signature.txt`）
-  - 新 APK SHA-256：`bd029d5f2fa51064b86a1aef425cadbcff1582043efc26564d5260b15b3a632c`
+  - 新 APK SHA-256：`44a4448da332a40812611b9bf1c4a518882bb033d9871f3c5cc77ed8d207cc1b`
 
 ## 8. 已知问题及待验收
 
@@ -139,8 +139,8 @@ P50 改善百分比、P95 回归、失败请求处理及未达到目标：均无
 | 级别 | 问题 | 处理结果 | 自动证据 |
 | --- | --- | --- | --- |
 | P1-1 | Web 解析非事务化、失败覆盖旧结果、分享状态未同步 | 已修复：开始解析先保存记录，失败恢复旧结果；分享按钮按可分享状态禁用并给出原因 | `web/test/unit.test.mjs`、`web/test/browser-repair-smoke.mjs` |
-| P1-2 | Android 编辑题目图片缺少隐私确认，编辑后可能沿用旧结果 | 已修复：修改图片前弹出隐私确认；重新解析保留旧结果，成功后才替换 | `ResultScreen.kt` 编译通过；`DeviceFeedbackCoreTest` 覆盖解析边界 |
-| P1-3 | 答案预览可能把半截 JSON 当成可展示答案 | 已修复：预览必须 `status`、`answer`、`warnings` 等字段完整且答案通过题型校验后才展示 | `DeviceFeedbackCoreTest` 预览用例 |
+| P1-2 | Android 编辑题目图片缺少隐私确认，编辑后可能沿用旧结果 | 已按 2026-10-29 用户要求取消逐题隐私勾选/弹窗；编辑后重新解析仍保留旧结果，成功后才替换 | `ResultScreen.kt` 编译通过；`DeviceFeedbackCoreTest` 覆盖解析边界 |
+| P1-3 | 答案预览可能把半截 JSON 当成可展示答案 | 已修复：预览必须通过 `status`、`answer`、`warnings` 等字段和题型校验；不足时只显示“生成中预览”，不冒充最终答案 | `DeviceFeedbackCoreTest` 预览用例 |
 | P1-4 | 流式回答未校验 `finish_reason`，截断/过滤回答被当成完成 | 已修复：`QuestionAnalyzer.validateFinishReason` 拒绝 `length`、`content_filter`、空值和非正常结束，并保留用户可读错误 | `DeviceFeedbackCoreTest` finishReason 用例 |
 | P2/P3 | 未知模型图片能力、官方模型名迁移、设置启动升级、取消残留、追问输入/预算、错误文案、Web 状态与浏览器返回键等 | 已逐项修复或按平台能力复核；不能自动验证的真机项保持未执行 | `DeviceFeedbackCoreTest`、`SettingsValidationTest`、`ModelsTest`、`ImageEditPolicyTest`、`web/test/unit.test.mjs` |
 
@@ -150,11 +150,28 @@ P50 改善百分比、P95 回归、失败请求处理及未达到目标：均无
 
 | 编号 | 原问题 | 处理结果 | 自动证据 |
 | --- | --- | --- | --- |
-| F1 | 流末尾“预览”口径与最终结果不一致，半截 JSON 可能短暂显示为答案 | `AnswerSemantics` 统一预览/最终校验；`PreviewJsonParser.isComplete` 要求 `status`、`answer`、`warnings` 等完整字段且题型答案合法；不足时保持预览为空并提示核对 | `DeviceFeedbackCoreTest`：`previewRequiresStatusAnswerAndWarningsFields`、`previewParsesWarningsArray`、`previewRequiresRootObjectToBeClosed`；`web/test/unit.test.mjs` 对应预览用例 |
-| F2 | 修改题干/题型/图片后仍把旧答案当当前答案，缺少输入版本关联 | `Question` 增加 `inputRevision`/`answerInputRevision` 与 `isAnswerStale`；文本、题型、图片修改均递增输入版本，成功答案写入当前版本；过期答案保留查看但状态标记“答案待更新”，复制/分享显示过期提示，追问禁用并要求重新解析；DB v6 迁移补列 | `DeviceFeedbackCoreTest`：`staleAnswerTracksInputRevision`、`settingsMigrationDoesNotReapplyAfterCurrentVersion`；`QuestionDatabase.kt`、`MainViewModel.kt`、`ResultScreen.kt`、`HistoryScreen.kt` 编译通过 |
+| F1 | 流末尾“预览”口径与最终结果不一致，半截 JSON 可能短暂显示为答案 | `AnswerSemantics` 统一预览/最终校验；`PreviewJsonParser` 解析可读的部分内容并统一做语义校验，不足时仅作为“生成中预览”并提示核对，不写入最终答案 | `DeviceFeedbackCoreTest`：`previewRequiresStatusAnswerAndWarningsFields`、`previewParsesWarningsArray`、`previewRequiresRootObjectToBeClosed`；`web/test/unit.test.mjs` 对应预览用例 |
+| F2 | 修改题干/题型/图片后仍把旧答案当当前答案，缺少输入版本关联 | `Question` 增加 `inputRevision`/`answerInputRevision` 与 `isAnswerStale`；文本、题型、图片修改均递增输入版本，成功答案写入当前版本；过期答案保留查看但状态标记“答案待更新”，复制/分享显示过期提示，追问禁用并要求重新解析；DB v7 迁移补列（`questions` 与 `follow_ups` 均含答案版本） | `DeviceFeedbackCoreTest`：`staleAnswerTracksInputRevision`、`settingsMigrationDoesNotReapplyAfterCurrentVersion`；`QuestionDatabase.kt`、`MainViewModel.kt`、`ResultScreen.kt`、`HistoryScreen.kt` 编译通过 |
 | F3 | 最终题型与用户选择冲突时静默按模型题型展示 | `AnswerSemantics.evaluate` 校验 `status`/`questionType`/`answer`/`warnings`；用户选定题型时最终 `question_type` 必须一致，自动识别冲突降级为 `needs_confirmation` 并清空答案、附带原因；预览与最终共用同一规则 | `DeviceFeedbackCoreTest`：`parserDowngradesInvalidChoiceAnswers`、`parserRequiresExplicitWarningsArray` |
 | F4 | 答案完整性判定不严：`finish_reason=length`/`content_filter`/空值/异常 EOF 仍可能显示完成；Web 在 `[DONE]` 后仍等待连接关闭，缺 `[DONE]` 未失败 | Android `QuestionAnalyzer.validateFinishReason` 只接受 `stop`/`normal`，空值、`length`、`content_filter` 等一律失败；Web `requestChatStream` 区分 `missing_finish_reason`/`incomplete_finish`，收到 `[DONE]` 立即 abort 上游并完成，缺 `[DONE]` 报错；服务端首包/连接超时和断连处理补齐 | `DeviceFeedbackCoreTest`：`finishReasonMustBeExplicitStopOrNormal`；`web/test/unit.test.mjs` 19 项中 finish/`[DONE]` 用例全部通过 |
 | F5 | 未知/自定义模型被强制发送 `thinking`/`stream`/JSON mode，且图片能力无高级配置入口 | Android `QuestionAnalyzer` 对非官方 base 或未知模型默认走非流式、不发送 `thinking`/JSON mode，仅使用基础 chat；设置页高级接口提供“自定义模型支持图片/允许流式”能力声明；Web 对未知模型同样不假设能力 | `DeviceFeedbackCoreTest`：`customModelDoesNotGainImageCapabilityByDefault`；`SettingsScreen.kt` 编译通过；`web/test/unit.test.mjs` 自定义能力用例 |
 | F6 | 数据库写失败仍显示解析成功 | 最终保存 `repository.update(completed)` 失败时任务置失败并提示保存失败，不显示旧结果冒充成功；图片/题干修改失败不关闭编辑入口并提示重试；Web 原已事务化保存并恢复旧记录 | `DeviceFeedbackCoreTest`/`MainViewModel.kt` 分支审查；Android 构建通过；Web smoke `dbFailureRestored=true` |
 | F7 | 指标只进日志，结果不保存 `response_model`/`streamed`/`finish_reason`/`save_status` | `AnalysisMetrics` 新增并持久化 `requestModel`、`responseModel`、`thinkingEnabled`、`streamed`、`finishReason`、`transportClosed`、`saveStatus`、`totalMs`、`answerMode`；结果页元信息展示模型/传输方式/结束原因/耗时，保存失败日志标记 `save_status=failed` | `DeviceFeedbackCoreTest.metricsRoundTripThroughAnalysisResultJson`；`Models.kt`、`QuestionAnalyzer.kt`、`MainViewModel.kt`、`ResultScreen.kt` |
-| F8 | 追问内容在失败时被清空，用户需重输 | `ResultScreen` 仅接受回调后清空输入；`sendFollowUp` 在用户 FollowUp 成功插入后调用 `onAccepted`，插入/请求失败保留输入并显示错误 | `MainViewModel.kt`、`ResultScreen.kt` 编译通过；Android 52 项 JVM 测试通过 |
+| F8 | 追问内容在失败时被清空，用户需重输 | `ResultScreen` 仅接受回调后清空输入；`sendFollowUp` 在用户 FollowUp 成功插入后调用 `onAccepted`，插入/请求失败保留输入并显示错误 | `MainViewModel.kt`、`ResultScreen.kt` 编译通过；Android 57 项 JVM 测试通过 |
+
+## 11. 第二轮独立验收 R2-01～R2-06 与追问 null 修复（2026-10-29 第三轮修订）
+
+> 对应 `docs/DEVICE_FEEDBACK_INDEPENDENT_ACCEPTANCE_ROUND2_2026-10-29.md` 与 `docs/FOLLOWUP_NULL_ROOT_CAUSE_2026-10-29.md`。所有结论仅覆盖代码与自动测试；真机与真实 API 仍未执行。
+
+| 编号 | 原问题 | 处理结果 | 自动证据 |
+| --- | --- | --- | --- |
+| R2-01 | 单选题答案 `A、B` 被当作一个选项通过 | `AnswerSemantics.normalizeAnswerOptions` 统一拆分 `A、B`、`A,B`、`A/B`、`AB`、`A和B`；单选/多选按规范化后的选项数量校验；预览、最终解析、选项逐项分析共用同一规则 | `DeviceFeedbackCoreTest` 新增单字符串多选项与预览/最终一致性用例 |
+| R2-02 | 非流式 `ChatResponse` 丢弃 `finish_reason`，分析/追问/验证伪造 `stop` | `ChatResponse` 增加 `finishReason`；`chatOnce`、非流式分析/追问、`verifyModel` 读取真实 `finish_reason` 并拒绝空值/非 `stop`；不再伪造完成 | `DeviceFeedbackCoreTest` finishReason 用例；`DeepSeekClient.kt` 编译通过 |
+| R2-03 | 重答/修改成功后仍显示旧追问，Android 清理与保存不具事务性 | `FollowUp` 增加 `answerRevision`，DB v7 增加列并按 `questionId+answerRevision` 查询/写入；重答成功生成新答案版本，旧追问不再进入当前会话；Web 编辑/重答成功同步清空 `followUps` | `DeviceFeedbackCoreTest` 追问版本用例；`web/test/unit.test.mjs` 覆盖编辑清空追问 |
+| R2-04 | 手选题型掩盖模型缺失/非法题型；选项分析不一致只影响最终、不影响预览；运行中答案卡未明确标记为预览 | `AnswerSemantics` 区分模型题型合法性与手选展示类型，非法/缺失题型仍判失败；选项分析不一致同时降级预览与最终；`PreviewJsonParser` 保留可用部分预览，`ResultScreen` 始终标注“生成中预览” | `DeviceFeedbackCoreTest` 预览/最终题型一致性、选项分析用例 |
+| R2-05 | 计时字段不是用户可感知边界，且日志、持久化、UI 含义不一致 | 增加点击、图片就绪、请求体就绪、响应头、首个有效事件、首个内容、首个可用答案、校验、保存等 `clickTo*Ms`/`validationMs`/`saveMs` 字段；未知值保留 null；`totalMs` 从点击到最终保存结束；UI 元信息与日志读取同一 `AnalysisMetrics` | `DeviceFeedbackCoreTest.metricsRoundTripThroughAnalysisResultJson`、计时序列化用例；`Models.kt`、`QuestionAnalyzer.kt`、`MainViewModel.kt`、`ResultScreen.kt` |
+| R2-06 | 编辑题目弹窗在保存失败时关闭并丢失草稿 | 编辑弹窗增加 `saving`/`error` 状态，保存成功才回调关闭；保存失败保持输入和弹窗，另行报告错误；重新解析失败不影响已保存旧结果 | `ResultScreen.kt` 编译通过；`MainViewModel.updateQuestionTextAndRetry` 分支审查 |
+| Null P1 | 流式 `content`/`reasoning_content` 等显式 null 被转成字符串 `"null"`，历史追问可能污染上下文 | `DeepSeekClient` 与 `Models` 全部改为 `opt(key) as? String` 类型严格读取；空/角色/usage-only chunk 不刷新进度；历史遗留 `"null"` 追问展示为“未返回内容”，发送历史时过滤，失败条目可重试/删除 | `DeviceFeedbackCoreTest` null/空内容用例；Android 57 项 JVM 测试通过 |
+| 用户体验调整 | 每次拍照/相册选题都出现隐私勾选 | 按用户要求移除 `NewQuestionScreen` 的隐私勾选、`MainViewModel.startAnalysis` 的提交门槛以及 `ResultScreen` 添加图片的隐私弹窗；保留设置页隐私说明 | 编译通过；`NewQuestionScreen.kt`/`MainViewModel.kt`/`ResultScreen.kt` 代码审查 |
+
+**第三轮自动验证**：Android 57/57 JVM 测试通过（42 `DeviceFeedbackCoreTest` + 4 `ImageEditPolicyTest` + 7 `ModelsTest` + 4 `SettingsValidationTest`），Lint 0 errors / 22 warnings；Web `npm test` 19/19 单元测试通过、浏览器 smoke 通过（含 `followUpsClearedOnEdit: true`）；APK `dist/medical-question-ai-debug.apk` 21,826,875 bytes，SHA-256 `44a4448da332a40812611b9bf1c4a518882bb033d9871f3c5cc77ed8d207cc1b`。

@@ -12,6 +12,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Update
 import androidx.room.migration.Migration
+import com.xjb.medicalquestionai.isJsonNullLiteral
 import androidx.sqlite.db.SupportSQLiteDatabase
 import android.content.Context
 import kotlinx.coroutines.flow.Flow
@@ -37,7 +38,8 @@ data class QuestionEntity(
     @ColumnInfo(defaultValue = "''") val promptVersion: String = "",
     @ColumnInfo(defaultValue = "''") val baseUrl: String = "",
     @ColumnInfo(defaultValue = "0") val inputRevision: Long = 0,
-    @ColumnInfo(defaultValue = "0") val answerInputRevision: Long = 0
+    @ColumnInfo(defaultValue = "0") val answerInputRevision: Long = 0,
+    @ColumnInfo(defaultValue = "0") val answerRevision: Long = 0
 )
 
 @Entity(tableName = "follow_ups")
@@ -50,7 +52,8 @@ data class FollowUpEntity(
     val promptTokens: Int,
     val completionTokens: Int,
     val totalTokens: Int,
-    val failed: Boolean
+    val failed: Boolean,
+    @ColumnInfo(defaultValue = "0") val answerRevision: Long = 0
 )
 
 @Dao
@@ -85,11 +88,11 @@ interface QuestionDao {
 
 @Dao
 interface FollowUpDao {
-    @Query("SELECT * FROM follow_ups WHERE questionId = :questionId ORDER BY createdAt ASC")
-    fun observeForQuestion(questionId: String): Flow<List<FollowUpEntity>>
+    @Query("SELECT * FROM follow_ups WHERE questionId = :questionId AND answerRevision = :answerRevision ORDER BY createdAt ASC")
+    fun observeForQuestion(questionId: String, answerRevision: Long): Flow<List<FollowUpEntity>>
 
-    @Query("SELECT * FROM follow_ups WHERE questionId = :questionId ORDER BY createdAt ASC")
-    suspend fun getForQuestion(questionId: String): List<FollowUpEntity>
+    @Query("SELECT * FROM follow_ups WHERE questionId = :questionId AND answerRevision = :answerRevision ORDER BY createdAt ASC")
+    suspend fun getForQuestion(questionId: String, answerRevision: Long): List<FollowUpEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entity: FollowUpEntity)
@@ -103,7 +106,7 @@ interface FollowUpDao {
 
 @Database(
     entities = [QuestionEntity::class, FollowUpEntity::class],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -164,13 +167,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `questions` ADD COLUMN `answerRevision` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `follow_ups` ADD COLUMN `answerRevision` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun get(context: Context): AppDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 AppDatabase::class.java,
                 "medical_question.db"
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                 .build()
                 .also { instance = it }
         }
@@ -204,11 +214,14 @@ class QuestionRepository(private val dao: QuestionDao) {
 }
 
 class FollowUpRepository(private val dao: FollowUpDao) {
-    fun observeForQuestion(questionId: String): Flow<List<FollowUp>> =
-        dao.observeForQuestion(questionId).map { list -> list.map { it.toDomain() } }
+    fun observeForQuestion(questionId: String, answerRevision: Long): Flow<List<FollowUp>> =
+        dao.observeForQuestion(questionId, answerRevision).map { list ->
+            list.map { it.toDomain() }.filterNot { it.content.isJsonNullLiteral() }
+        }
 
-    suspend fun getForQuestion(questionId: String): List<FollowUp> =
-        dao.getForQuestion(questionId).map { it.toDomain() }
+    suspend fun getForQuestion(questionId: String, answerRevision: Long): List<FollowUp> =
+        dao.getForQuestion(questionId, answerRevision).map { it.toDomain() }
+            .filterNot { it.content.isJsonNullLiteral() }
 
     suspend fun insert(followUp: FollowUp) = dao.insert(followUp.toEntity())
 
@@ -224,7 +237,8 @@ fun FollowUpEntity.toDomain(): FollowUp = FollowUp(
     content = content,
     createdAt = createdAt,
     usage = Usage(promptTokens, completionTokens, totalTokens),
-    failed = failed
+    failed = failed,
+    answerRevision = answerRevision
 )
 
 fun FollowUp.toEntity(): FollowUpEntity = FollowUpEntity(
@@ -236,7 +250,8 @@ fun FollowUp.toEntity(): FollowUpEntity = FollowUpEntity(
     promptTokens = usage.promptTokens,
     completionTokens = usage.completionTokens,
     totalTokens = usage.totalTokens,
-    failed = failed
+    failed = failed,
+    answerRevision = answerRevision
 )
 
 fun QuestionEntity.toDomain(): Question = Question(
@@ -260,7 +275,8 @@ fun QuestionEntity.toDomain(): Question = Question(
     promptVersion = promptVersion,
     baseUrl = baseUrl,
     inputRevision = inputRevision,
-    answerInputRevision = answerInputRevision
+    answerInputRevision = answerInputRevision,
+    answerRevision = answerRevision
 )
 
 fun Question.toEntity(): QuestionEntity = QuestionEntity(
@@ -287,5 +303,6 @@ fun Question.toEntity(): QuestionEntity = QuestionEntity(
     promptVersion = promptVersion,
     baseUrl = baseUrl,
     inputRevision = inputRevision,
-    answerInputRevision = answerInputRevision
+    answerInputRevision = answerInputRevision,
+    answerRevision = answerRevision
 )

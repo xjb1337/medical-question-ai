@@ -1,5 +1,6 @@
 package com.xjb.medicalquestionai.ui.components
 
+import com.xjb.medicalquestionai.toReadablePlainText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -123,7 +124,7 @@ fun AnalysisAnswerCard(
             SelectionContainer {
                 Text(
                     when {
-                        isOutOfScope -> result.answerText.ifBlank { "本题不属于医学学习范围。" }
+                        isOutOfScope -> result.answerText.toReadablePlainText().ifBlank { "本题不属于医学学习范围。" }
                         needsConfirmation && result.answerDisplay == "未能确定答案" -> "信息不足，暂无法确定答案"
                         else -> result.answerDisplay
                     },
