@@ -13,6 +13,7 @@ enum class StopReason {
 data class StopOutcome(
     val stopped: Boolean,
     val timedOut: Boolean = false,
+    val ignored: Boolean = false,
     val message: String? = null
 )
 
@@ -21,6 +22,21 @@ data class NextQuestionResult(
     val sessionId: String? = null,
     val message: String? = null
 )
+
+/**
+ * 页面在一次退出事件中实际拥有的任务快照。
+ * null 表示“当时没有这类任务”，不是“匹配任意任务”；旧事件不能取消后来启动的新任务。
+ */
+data class WorkIdentity(
+    val analysisRequestId: String? = null,
+    val followUpRequestId: String? = null
+) {
+    fun ownsAnalysis(currentRequestId: String?): Boolean =
+        analysisRequestId != null && analysisRequestId == currentRequestId
+
+    fun ownsFollowUp(currentRequestId: String?): Boolean =
+        followUpRequestId != null && followUpRequestId == currentRequestId
+}
 
 internal fun QuestionDraft?.hasContent(): Boolean =
     this != null && (text.isNotBlank() || images.isNotEmpty())

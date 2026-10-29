@@ -43,6 +43,7 @@ data class AnalysisTaskState(
 /** 追问的流式状态：正文与思考内容分轨，页面退出后仍可在返回时继续展示。 */
 data class FollowUpStreamState(
     val questionId: String,
+    val requestId: String = "",
     val sending: Boolean = true,
     val content: String = "",
     val reasoningPreview: String = "",

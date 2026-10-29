@@ -114,6 +114,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val followUpStreams: StateFlow<Map<String, FollowUpStreamState>> = _followUpStreams.asStateFlow()
 
     private val followUpJobs = mutableMapOf<String, Job>()
+    private val followUpRequestIds = mutableMapOf<String, String>()
     private val nextQuestionPreparing = AtomicBoolean(false)
 
     val followUpSendingIds: StateFlow<Set<String>> = _followUpStreams
@@ -168,30 +169,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun stopQuestionWork(
         questionId: String,
         reason: StopReason,
-        expectedRequestId: String? = null,
+        identity: WorkIdentity = WorkIdentity(),
         timeoutMs: Long = STOP_TIMEOUT_MS
     ): StopOutcome {
         val activeAnalysis = if (activeQuestionId == questionId) analysisJob else null
         val activeFollowUp = followUpJobs[questionId]
-        if (expectedRequestId != null && activeAnalysis != null && activeRequestId != expectedRequestId) {
-            return StopOutcome(false, message = "任务身份已变化，已忽略旧页面的停止请求")
-        }
-        if (activeAnalysis == null && activeFollowUp == null) {
-            return StopOutcome(true)
+        val ownsAnalysis = identity.ownsAnalysis(activeRequestId) && activeAnalysis != null
+        val ownsFollowUp = identity.ownsFollowUp(followUpRequestIds[questionId]) && activeFollowUp != null
+        if (!ownsAnalysis && !ownsFollowUp) {
+            val hasOtherWork = activeAnalysis?.isActive == true || activeFollowUp?.isActive == true
+            return StopOutcome(true, ignored = hasOtherWork)
         }
         lastStopSaveFailure = null
-        if (activeAnalysis != null && activeAnalysis.isActive) {
+        if (ownsAnalysis && activeAnalysis?.isActive == true) {
             if (pendingStopReason == null) pendingStopReason = reason
             cancelRequested = true
             _isCancelling.value = true
             activeAnalysis.cancel()
         }
-        if (activeFollowUp != null && activeFollowUp.isActive) {
+        if (ownsFollowUp && activeFollowUp?.isActive == true) {
             activeFollowUp.cancel()
         }
         val finished = withTimeoutOrNull(timeoutMs) {
-            activeAnalysis?.join()
-            activeFollowUp?.join()
+            if (ownsAnalysis) activeAnalysis?.join()
+            if (ownsFollowUp) activeFollowUp?.join()
             true
         } ?: false
         if (!finished) {
@@ -215,9 +216,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return StopOutcome(true)
     }
 
-    fun stopQuestionWorkAsync(questionId: String, reason: StopReason, expectedRequestId: String? = null) {
+    fun stopQuestionWorkAsync(questionId: String, reason: StopReason, identity: WorkIdentity = WorkIdentity()) {
         viewModelScope.launch {
-            val outcome = stopQuestionWork(questionId, reason, expectedRequestId)
+            val outcome = stopQuestionWork(questionId, reason, identity)
             if (!outcome.stopped) {
                 _analysisError.value = outcome.message ?: "停止解析失败，请重试"
             }
@@ -227,7 +228,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * 停止旧题并准备一份全新的草稿；旧首页草稿有内容时暂存，不覆盖图片。
      */
-    suspend fun prepareNextQuestion(questionId: String, expectedRequestId: String? = null): NextQuestionResult {
+    suspend fun prepareNextQuestion(questionId: String, identity: WorkIdentity = WorkIdentity()): NextQuestionResult {
         if (!nextQuestionPreparing.compareAndSet(false, true)) {
             return NextQuestionResult(false, message = "正在准备下一题，请稍候")
         }
@@ -242,9 +243,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     message = "首页已有暂存草稿，请先恢复或清空后再拍下一题"
                 )
             }
-            val outcome = stopQuestionWork(questionId, StopReason.NEXT_QUESTION, expectedRequestId)
+            val outcome = stopQuestionWork(questionId, StopReason.NEXT_QUESTION, identity)
             if (!outcome.stopped) {
                 return NextQuestionResult(false, message = outcome.message ?: "旧任务仍在停止，请重试")
+            }
+            if (outcome.ignored) {
+                return NextQuestionResult(false, message = "任务身份已变化，请返回结果页后重试")
             }
             if (current.hasContent()) {
                 _parkedDraft.value = current
@@ -1166,9 +1170,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _followUpError.value = "尚未配置 API 密钥，请先到设置中填写"
             return
         }
+        val followUpRequestId = UUID.randomUUID().toString()
+        followUpRequestIds[questionId] = followUpRequestId
         _followUpStreams.update {
             it + (questionId to FollowUpStreamState(
                 questionId = questionId,
+                requestId = followUpRequestId,
                 sending = true,
                 startedAtElapsedRealtime = SystemClock.elapsedRealtime()
             ))
@@ -1296,10 +1303,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _followUpError.value = message
             } finally {
                 _followUpStreams.update { it - questionId }
+                if (followUpRequestIds[questionId] == followUpRequestId) {
+                    followUpRequestIds.remove(questionId)
+                }
             }
         }
         followUpJobs[questionId] = job
-        job.invokeOnCompletion { followUpJobs.remove(questionId) }
+        job.invokeOnCompletion {
+            followUpJobs.remove(questionId)
+            if (followUpRequestIds[questionId] == followUpRequestId) {
+                followUpRequestIds.remove(questionId)
+            }
+        }
     }
 
     fun cancelFollowUp(questionId: String) {

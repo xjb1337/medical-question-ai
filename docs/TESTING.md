@@ -196,7 +196,7 @@ curl -sS https://api.deepseek.com/chat/completions \
 - `npm --prefix web test`：19/19 单元测试通过；浏览器 smoke 通过（`ok: true`）。
 - `aapt2 dump badging`：包名 `com.xjb.medicalquestionai`，versionCode 2、versionName 1.1.0，minSdk 26、targetSdk 35。
 - `apksigner verify`：APK Signature Scheme v2 验证通过；新旧 APK 使用同一 debug 证书 SHA-256 `77c3ca8d1a7cf0aca4718b328705bb21833976bc701dad89c11881c83ca1c861`。
-- 产物：`dist/medical-question-ai-debug.apk`，21,842,313 bytes，SHA-256 `c54e5eadc8ed535793ca9dacdcf5c3f9c885682a18d83bc7e603cad53666f747`。
+- 产物：`dist/medical-question-ai-debug.apk`，21,875,294 bytes，SHA-256 `de815fc0e748ee7764a45f190827267396911ac78a70cf965f7b093bc64c7cfe`。
 - 未执行：真实 DeepSeek Key 联调、40 题质量对照、15 题×3 次速度对照、真机 UI/相机/覆盖安装。详见 `docs/DEVICE_FEEDBACK_IMPLEMENTATION_REPORT.md`。
 
 ### 4.4 退出解析页与拍摄下一题（2026-10-29 第四轮）

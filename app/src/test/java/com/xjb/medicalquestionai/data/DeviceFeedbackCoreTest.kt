@@ -2,6 +2,7 @@ package com.xjb.medicalquestionai.data
 
 import com.xjb.medicalquestionai.LifecycleStopEvent
 import com.xjb.medicalquestionai.StopPolicy
+import com.xjb.medicalquestionai.WorkIdentity
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -650,10 +651,21 @@ class DeviceFeedbackCoreTest {
     }
 
     @Test
-    fun requestIdentityRejectsLateStopFromOldPage() {
-        assertFalse(StopPolicy.matchesRequest(activeRequestId = "new-request", expectedRequestId = "old-request"))
-        assertTrue(StopPolicy.matchesRequest(activeRequestId = "new-request", expectedRequestId = null))
-        assertTrue(StopPolicy.matchesRequest(activeRequestId = "same", expectedRequestId = "same"))
+    fun workIdentityOnlyOwnsTasksCapturedByThePage() {
+        val noWork = WorkIdentity()
+        assertFalse(noWork.ownsAnalysis("new-analysis"))
+        assertFalse(noWork.ownsFollowUp("new-follow-up"))
+        assertFalse(noWork.ownsAnalysis(""))
+
+        val oldAnalysis = WorkIdentity(analysisRequestId = "old-analysis")
+        assertFalse(oldAnalysis.ownsAnalysis("new-analysis"))
+        assertTrue(oldAnalysis.ownsAnalysis("old-analysis"))
+        assertFalse(oldAnalysis.ownsFollowUp("new-follow-up"))
+
+        val oldFollowUp = WorkIdentity(followUpRequestId = "old-follow-up")
+        assertFalse(oldFollowUp.ownsAnalysis("new-analysis"))
+        assertFalse(oldFollowUp.ownsFollowUp("new-follow-up"))
+        assertTrue(oldFollowUp.ownsFollowUp("old-follow-up"))
     }
 
     @Test

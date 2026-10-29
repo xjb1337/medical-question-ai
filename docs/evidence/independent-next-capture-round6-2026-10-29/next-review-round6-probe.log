@@ -1,0 +1,5 @@
+cameraTokenActiveBeforeOldEffectDispose=true
+cameraTokenActiveAfterOldEffectDispose=false
+staleNonNullId_cancelledNewFollowUp=true outcome=StopOutcome(stopped=true, timedOut=false, message=null)
+staleNullId_cancelledNewAnalysis=true outcome=StopOutcome(stopped=true, timedOut=false, message=null)
+staleNonNullId_cancelledNewAnalysis=false outcome=StopOutcome(stopped=false, timedOut=false, message=任务身份已变化，已忽略旧页面的停止请求)

@@ -80,6 +80,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -103,6 +104,7 @@ import com.xjb.medicalquestionai.LifecycleStopEvent
 import com.xjb.medicalquestionai.MainViewModel
 import com.xjb.medicalquestionai.StopPolicy
 import com.xjb.medicalquestionai.StopReason
+import com.xjb.medicalquestionai.WorkIdentity
 import com.xjb.medicalquestionai.data.AnalysisResult
 import com.xjb.medicalquestionai.data.FollowUp
 import com.xjb.medicalquestionai.data.ModelCatalog
@@ -167,8 +169,11 @@ fun ResultScreen(
     var attachImages by rememberSaveable(questionId) { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
     val activeRequestId = task?.takeIf { it.questionId == questionId && it.isActive }?.requestId
+    val followUpRequestId = followUpStreams[questionId]?.requestId
+    val workIdentity = WorkIdentity(activeRequestId, followUpRequestId)
+    val latestWorkIdentity = rememberUpdatedState(workIdentity)
 
-    DisposableEffect(lifecycleOwner, questionId, activeRequestId) {
+    DisposableEffect(lifecycleOwner, questionId) {
         val observer = LifecycleEventObserver { _, event ->
             val exit = when (event) {
                 Lifecycle.Event.ON_DESTROY -> LifecycleStopEvent.DESTROY
@@ -180,7 +185,7 @@ fun ResultScreen(
                 viewModel.stopQuestionWorkAsync(
                     questionId,
                     if (exit == LifecycleStopEvent.DESTROY) StopReason.PAGE_EXIT else StopReason.BACKGROUND,
-                    activeRequestId
+                    latestWorkIdentity.value
                 )
             }
         }
@@ -218,7 +223,7 @@ fun ResultScreen(
                     SimpleDateFormat("yyyy年MM月dd日 HH:mm", Locale.CHINA).format(Date(it.createdAt))
                 },
                 onBack = {
-                    viewModel.stopQuestionWorkAsync(questionId, StopReason.PAGE_EXIT, activeRequestId)
+                    viewModel.stopQuestionWorkAsync(questionId, StopReason.PAGE_EXIT, workIdentity)
                     navController.popBackStack()
                 },
                 actions = {
@@ -243,7 +248,7 @@ fun ResultScreen(
                             preparingNext = true
                             nextError = null
                             scope.launch {
-                                val outcome = viewModel.prepareNextQuestion(questionId, activeRequestId)
+                                val outcome = viewModel.prepareNextQuestion(questionId, workIdentity)
                                 if (outcome.success && outcome.sessionId != null) {
                                     preparingNext = false
                                     navController.navigate(

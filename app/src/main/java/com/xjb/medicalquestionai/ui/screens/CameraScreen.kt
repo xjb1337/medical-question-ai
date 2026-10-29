@@ -51,6 +51,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -122,10 +123,11 @@ fun CameraScreen(
 
     BackHandler { exitCamera() }
 
-    DisposableEffect(lifecycleOwner, activity, captureToken) {
+    val latestCaptureToken = rememberUpdatedState(captureToken)
+    DisposableEffect(lifecycleOwner, activity) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP && activity?.isChangingConfigurations != true) {
-                viewModel.invalidateCameraCapture(captureToken)
+                viewModel.invalidateCameraCapture(latestCaptureToken.value)
                 captureToken = null
             }
         }
@@ -133,7 +135,7 @@ fun CameraScreen(
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             if (activity?.isChangingConfigurations != true) {
-                viewModel.invalidateCameraCapture(captureToken)
+                viewModel.invalidateCameraCapture(latestCaptureToken.value)
             }
         }
     }
