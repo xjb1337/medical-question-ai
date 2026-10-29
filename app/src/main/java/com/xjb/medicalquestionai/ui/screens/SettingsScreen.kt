@@ -64,16 +64,19 @@ import com.xjb.medicalquestionai.data.AnswerMode
 import com.xjb.medicalquestionai.data.ModelCatalog
 import com.xjb.medicalquestionai.data.ModelSpec
 import com.xjb.medicalquestionai.data.SettingsRepository
+import com.xjb.medicalquestionai.data.update.UpdateViewModel
 import com.xjb.medicalquestionai.ui.components.AppTopBar
 import com.xjb.medicalquestionai.ui.components.CollapsibleSection
 import com.xjb.medicalquestionai.ui.components.InfoBanner
 import com.xjb.medicalquestionai.ui.components.SectionCard
+import com.xjb.medicalquestionai.ui.components.UpdateSection
 import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(
     viewModel: MainViewModel,
-    navController: NavController
+    navController: NavController,
+    updateViewModel: UpdateViewModel
 ) {
     val settings by viewModel.settings.collectAsState()
     val history by viewModel.history.collectAsState()
@@ -540,6 +543,8 @@ fun SettingsScreen(
                     Text(localError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
             }
+
+            UpdateSection(updateViewModel = updateViewModel)
 
             SectionCard(title = "关于") {
                 Text(

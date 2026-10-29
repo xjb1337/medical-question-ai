@@ -11,6 +11,8 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -22,6 +24,9 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.xjb.medicalquestionai.MainViewModel
+import com.xjb.medicalquestionai.data.update.UpdateViewModel
+import com.xjb.medicalquestionai.ui.components.UpdateAvailablePrompt
+import com.xjb.medicalquestionai.ui.components.UpdateProgressDialog
 import com.xjb.medicalquestionai.ui.screens.CameraScreen
 import com.xjb.medicalquestionai.ui.screens.HistoryScreen
 import com.xjb.medicalquestionai.ui.screens.NewQuestionScreen
@@ -41,11 +46,19 @@ private val bottomDestinations = listOf(
 )
 
 @Composable
-fun MedicalQuestionApp(viewModel: MainViewModel = viewModel()) {
+fun MedicalQuestionApp(
+    viewModel: MainViewModel = viewModel(),
+    updateViewModel: UpdateViewModel = viewModel()
+) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val showBottomBar = currentRoute == "home" || currentRoute == "history" || currentRoute == "settings"
+    val updateState by updateViewModel.state.collectAsState()
+    val isAnalyzing by viewModel.isAnalyzing.collectAsState()
+    LaunchedEffect(currentRoute) {
+        if (currentRoute == "home" && !isAnalyzing) updateViewModel.autoCheckIfDue()
+    }
 
     Scaffold(
         bottomBar = {
@@ -103,7 +116,11 @@ fun MedicalQuestionApp(viewModel: MainViewModel = viewModel()) {
                 HistoryScreen(viewModel = viewModel, navController = navController)
             }
             composable("settings") {
-                SettingsScreen(viewModel = viewModel, navController = navController)
+                SettingsScreen(
+                    viewModel = viewModel,
+                    navController = navController,
+                    updateViewModel = updateViewModel
+                )
             }
             composable(
                 route = "result/{questionId}",
@@ -115,6 +132,19 @@ fun MedicalQuestionApp(viewModel: MainViewModel = viewModel()) {
                     questionId = entry.arguments?.getString("questionId").orEmpty()
                 )
             }
+        }
+
+        if (currentRoute == "home" && !isAnalyzing) {
+            UpdateAvailablePrompt(
+                state = updateState,
+                onDownload = updateViewModel::download,
+                onDismiss = updateViewModel::dismissPrompt
+            )
+            UpdateProgressDialog(
+                state = updateState,
+                updateViewModel = updateViewModel,
+                onDismiss = {}
+            )
         }
     }
 }

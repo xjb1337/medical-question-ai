@@ -4,6 +4,10 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val appVersionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 3
+val appVersionName = (project.findProperty("versionName") as String?) ?: "1.2.0"
+val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
+
 android {
     namespace = "com.xjb.medicalquestionai"
     compileSdk = 35
@@ -12,16 +16,31 @@ android {
         applicationId = "com.xjb.medicalquestionai"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+        buildConfigField("String", "UPDATE_REPOSITORY", "\"xjb1337/medical-question-ai\"")
+    }
+
+    signingConfigs {
+        if (releaseStoreFile != null) {
+            create("release") {
+                storeFile = file(releaseStoreFile)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (releaseStoreFile != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

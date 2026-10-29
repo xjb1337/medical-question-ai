@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <cache-path name="capture_cache" path="captures/" />
+    <cache-path name="update_cache" path="updates/" />
     <files-path name="question_images" path="question_images/" />
 </paths>

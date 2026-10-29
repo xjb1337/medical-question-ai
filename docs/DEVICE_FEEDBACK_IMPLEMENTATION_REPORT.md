@@ -8,8 +8,8 @@
 - 开始提交/结束提交：开始 `4b6f3ee`（2026-10-28 23:15:48 +08:00）；本轮 NC-01～NC-03 修复及第六轮 NC-01 回归/NC-02 身份语义修复提交见 `git log -1`，审查者可按 `git show --stat HEAD` 核对。
 - 开始工作区状态及保留改动：开始时 `docs/DEVICE_FEEDBACK_PLAN_2026-10-29.md` 与 `docs/DEVICE_FEEDBACK_REPORT_TEMPLATE.md` 为未跟踪文件，其余工作区干净；实施后保留全部业务代码、测试、文档、APK 和 `docs/evidence/` 证据，不清理、不覆盖旧验收报告。
 - DeepSeek 官方文档复核日期、页面和相对方案变化：未复核（沿用方案第 1 节 2026-10-29 的历史结论，页面为 `api-docs.deepseek.com` 的模型列表/思考模式说明；本次未重新联网抓取，未确认相对变化）。正式模型名为 `deepseek-flash`（文字+图片）与 `deepseek-v4-pro`（仅文字）。
-- Android 版本/build：`versionCode 2`、`versionName 1.1.0`，debug 构建；包名 `com.xjb.medicalquestionai`，minSdk 26、targetSdk 35。
-- APK 绝对路径 / SHA-256：`E:\souti\repo\dist\medical-question-ai-debug.apk`；`de815fc0e748ee7764a45f190827267396911ac78a70cf965f7b093bc64c7cfe`（21,875,294 bytes）。旧版归档于 `dist/archive/medical-question-ai-debug-v1.0.0-20261028.apk`，SHA-256 `9da7a2aa7908811af2ced7a01979e4c4058610d6e10b8b445b3493b448a058f3`。
+- Android 版本/build：`versionCode 3`、`versionName 1.2.0`，debug 构建（引导更新用）；包名 `com.xjb.medicalquestionai`，minSdk 26、targetSdk 35。
+- APK 绝对路径 / SHA-256：`E:\souti\repo\dist\medical-question-ai-debug.apk` 与 `dist\medical-question-ai-update-guide.apk`，`1818eea30285ae5648325c9120078b77eaf8cb80cd71d47093fb0f18a102aa87`（21,940,535 bytes）。旧版归档于 `dist/archive/medical-question-ai-debug-v1.0.0-20261028.apk`，SHA-256 `9da7a2aa7908811af2ced7a01979e4c4058610d6e10b8b445b3493b448a058f3`。
 - 真机型号 / Android 版本 / 屏幕宽度 / 字体缩放：无设备，未执行。
 - 真实接口 / mock / 演示分别使用在哪些检查：真实接口未使用（无 Key）；单元测试使用纯 JVM 逻辑与固定 JSON/SSE 字节；Web 测试使用本地 mock DeepSeek 和浏览器 headless 环境；演示模式未作为验收证据。
 
@@ -66,13 +66,13 @@
 
 | 命令 | 实际执行时间 | 退出状态/统计 | 报告位置 | 未覆盖内容 |
 | --- | --- | --- | --- | --- |
-| `./gradlew :app:testDebugUnitTest` | 2026-10-29 22:15 +08:00（NC-01～NC-03 最终重跑） | BUILD SUCCESSFUL；64 tests / 0 failures / 0 errors / 0 skipped（47 `DeviceFeedbackCoreTest` + 4 `ImageEditPolicyTest` + 7 `ModelsTest` + 4 `SettingsValidationTest` + 2 `CaptureDraftPolicyTest`） | `app/build/reports/tests/testDebugUnitTest/index.html`；`app/build/test-results/testDebugUnitTest/*.xml`；`docs/evidence/2026-10-29-android-final.log`（仅构建日志） | 纯 JVM，无设备/网络 |
-| `./gradlew :app:lintDebug` | 2026-10-29 22:15 +08:00 | BUILD SUCCESSFUL；0 errors / 22 warnings（18 个 `GradleDependency` + 4 个 `ApplySharedPref`，统计来自 `app/build/reports/lint-results-debug.xml`） | `app/build/reports/lint-results-debug.html`、`app/build/reports/lint-results-debug.xml`；`docs/evidence/2026-10-29-android-final.log`（仅构建日志） | 静态检查，不证明 UI |
-| `./gradlew :app:assembleDebug` | 2026-10-29 22:15 +08:00 | BUILD SUCCESSFUL；APK 21,875,294 bytes | `dist/medical-question-ai-debug.apk` | 未安装运行 |
+| `./gradlew :app:testDebugUnitTest` | 2026-10-29 22:55 +08:00（应用内更新最终重跑） | BUILD SUCCESSFUL；69 tests / 0 failures / 0 errors / 0 skipped（47 `DeviceFeedbackCoreTest` + 4 `ImageEditPolicyTest` + 7 `ModelsTest` + 4 `SettingsValidationTest` + 2 `CaptureDraftPolicyTest` + 5 `UpdateCoreTest`） | `app/build/reports/tests/testDebugUnitTest/index.html`；`app/build/test-results/testDebugUnitTest/*.xml`；`docs/evidence/2026-10-29-android-final.log`（仅构建日志） | 纯 JVM，无设备/网络 |
+| `./gradlew :app:lintDebug` | 2026-10-29 23:08 +08:00 | BUILD SUCCESSFUL；0 errors / 22 warnings（18 个 `GradleDependency` + 4 个 `ApplySharedPref`，统计来自 `app/build/reports/lint-results-debug.xml`） | `app/build/reports/lint-results-debug.html`、`app/build/reports/lint-results-debug.xml`；`docs/evidence/2026-10-29-android-final.log`（仅构建日志） | 静态检查，不证明 UI |
+| `./gradlew :app:assembleDebug` | 2026-10-29 23:08 +08:00 | BUILD SUCCESSFUL；引导更新 APK 21,940,535 bytes；候选版本 APK 21,458,738 bytes | `dist/medical-question-ai-debug.apk`、`dist/medical-question-ai-update-guide.apk`、`dist/medical-question-ai-update-candidate.apk` | 未安装运行 |
 | `./gradlew :app:assembleDebugAndroidTest` | 2026-10-29 22:15 +08:00 | BUILD SUCCESSFUL（测试 APK 编译） | `app/build/outputs/apk/androidTest/` | 未执行 instrumented 测试 |
 | `./gradlew :app:connectedDebugAndroidTest` | 未执行 | `adb devices` 无设备 | — | 无设备 |
 | `npm --prefix web test` | 2026-10-29 21:09 +08:00 | 19/19 单元测试通过；browser smoke `ok: true` | `docs/evidence/2026-10-29-web-final.log` | mock 上游，非真实 DeepSeek |
-| `cmp` / `sha256sum`（build→dist） | 2026-10-29 22:16 +08:00 | 两文件逐字节一致；21,875,294 bytes；SHA-256 `de815fc0…` | `docs/evidence/2026-10-29-apk-correspondence.log` | 只证明产物对应，不证明真机安装 |
+| `cmp` / `sha256sum`（build→dist） | 2026-10-29 23:08 +08:00 | guide/candidate 均逐字节一致；guide 21,940,535 bytes SHA-256 `1818eea30285ae5648325c9120078b77eaf8cb80cd71d47093fb0f18a102aa87`；candidate 21,458,738 bytes SHA-256 `c7baddfebcfc4bcc337d78622f772ed4f29dda4c8184955d3c2297b41b836f33` | `docs/evidence/2026-10-29-apk-correspondence.log` | 只证明产物对应，不证明真机安装或实际更新 |
 | `git diff --check` | 2026-10-29 22:15 +08:00 | 退出 0（仅 CRLF 提示） | `docs/evidence/2026-10-29-git-diff-check.log` | 不检查运行行为 |
 
 新增针对性测试：`DeviceFeedbackCoreTest`（模型/迁移/模式请求参数/SSE/预览 JSON/解析边界）、`SettingsValidationTest`（URL）、`ModelsTest`（旧 JSON 兼容）、`ImageEditPolicyTest`（裁剪）、`CaptureDraftPolicyTest`（连续下一题不覆盖暂存草稿）。测试结果 XML：`app/build/test-results/testDebugUnitTest/*.xml`。取消竞争、失败不覆盖旧结果两项需要 MainViewModel/Android instrumentation 环境，本机无设备，报告按“未覆盖”处理，未虚列为通过。
@@ -237,3 +237,28 @@ P50 改善百分比、P95 回归、失败请求处理及未达到目标：均无
 | NC-02 P2 | `null` 被当作通配符，旧停止事件可取消新分析/新追问；空 ID 也能取消 | 新增 `WorkIdentity(analysisRequestId, followUpRequestId)`；`ResultScreen` 在退出时同时快照分析请求 ID 与追问请求 ID，`MainViewModel` 分别按非空 ID 精确匹配；`followUpRequestIds` 随任务登记/清理。无 ID 的旧事件只返回 `ignored`，不取消任何新任务 | `DeviceFeedbackCoreTest.workIdentityOnlyOwnsTasksCapturedByThePage`；生产停止函数探针未执行 |
 
 **结论**：代码与自动测试覆盖本轮方案的可测逻辑；真机生命周期、相机快门竞争和真实 API 仍未执行，不能据本报告宣称全部通过。
+
+## 14. 应用内更新实施（2026-10-29）
+
+### 14.1 实现范围
+
+- GitHub Release 更新清单：`docs/update.json`（schemaVersion/applicationId/versionCode/versionName/minSdk/apkAssetName/apkSizeBytes/apkSha256/signingCertSha256/commitSha/publishedAt/releaseNotes），`scripts/release/generate-update-json.sh` 从签名 APK 生成清单。
+- CI：`.github/workflows/release.yml`，push `main` 后执行 `testDebugUnitTest`/`lintDebug`/`assembleRelease`，用 `ANDROID_KEYSTORE_BASE64` + `ANDROID_KEYSTORE_PASSWORD`/`ANDROID_KEY_ALIAS`/`ANDROID_KEY_PASSWORD` 解码签名，校验 `apk` 与可选 `mapping.txt`，生成 update.json 并上传 GitHub Release（tag `v<versionName>`）。
+- Android 更新核心：`data/update/UpdateManifestParser.kt`、`UpdateRepository.kt`、`ApkVerifier.kt`、`UpdateInstaller.kt`、`UpdateUi.kt`、`UpdateViewModel.kt`。
+- 校验链：仓库/下载 URL 主机白名单、版本号必须大于当前、APK SHA-256 与 size 校验、`PackageManager` 读取包名/versionCode、签名证书 SHA-256 必须与已安装应用一致；全部通过才打开系统安装器。
+- 入口：设置页“应用更新”分区；首页启动静默检查（有更新且非分析中才弹窗，每 24 小时最多提示一次）；手动检查和对话框、下载进度、失败重试、安装权限引导、跳转 GitHub Release。
+- 首次安装引导：`dist/medical-question-ai-update-guide.apk`（versionCode 3 / versionName 1.2.0），旧版本用户需先安装该 guide 包，后续才可在应用内更新；`dist/medical-question-ai-update-candidate.apk`（versionCode 4 / versionName 1.2.1-test.1）用于本地覆盖安装/更新候选验证。
+
+### 14.2 本轮自动验证
+
+- Android：`:app:testDebugUnitTest` BUILD SUCCESSFUL，69/69 通过（47 `DeviceFeedbackCoreTest` + 4 `ImageEditPolicyTest` + 7 `ModelsTest` + 4 `SettingsValidationTest` + 2 `CaptureDraftPolicyTest` + 5 `UpdateCoreTest`）；`:app:lintDebug` 0 errors / 22 warnings；`:app:assembleDebug` BUILD SUCCESSFUL。
+- guide APK：21,940,535 bytes，SHA-256 `1818eea30285ae5648325c9120078b77eaf8cb80cd71d47093fb0f18a102aa87`，versionCode 3/versionName 1.2.0，debug 证书 SHA-256 `77c3ca8d1a7cf0aca4718b328705bb21833976bc701dad89c11881c83ca1c861`。
+- candidate APK：21,458,738 bytes，SHA-256 `c7baddfebcfc4bcc337d78622f772ed4f29dda4c8184955d3c2297b41b836f33`，versionCode 4/versionName 1.2.1-test.1，同一 debug 证书。
+- 未执行：GitHub 仓库 Secrets 配置、CI 真实运行、GitHub Release 发布、真机下载/安装/重启/覆盖升级/签名不一致失败路径；上述项不能列为通过。
+
+### 14.3 发布前人工步骤
+
+1. 配置 GitHub Secrets：`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`、`ANDROID_EXPECTED_CERT_SHA256`；将正式 keystore 转为 base64 写入 `ANDROID_KEYSTORE_BASE64`。
+2. 将默认 `versionCode`/`versionName` 提升到目标发布版本并合并到 `main`；CI 自动运行测试、构建签名 APK、生成 `update.json` 并发布 Release。
+3. 新用户首次安装 guide APK；旧版本用户先安装 guide APK，再在应用内检查更新。
+4. 发布后核对 `docs/update.json` 的 `sha256`/`sizeBytes` 与实际 Release 资产一致，并在真机执行下载→校验→安装→重启→再次检查更新。

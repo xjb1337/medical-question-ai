@@ -90,11 +90,13 @@ APK 输出：
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-本次交付的预构建副本位于 `dist/medical-question-ai-debug.apk`（versionCode 2 / versionName 1.1.0，21,875,294 bytes），SHA-256：
+本次交付的预构建副本位于 `dist/medical-question-ai-debug.apk`（versionCode 3 / versionName 1.2.0，21,940,535 bytes），SHA-256：
 
 ```text
-de815fc0e748ee7764a45f190827267396911ac78a70cf965f7b093bc64c7cfe
+1818eea30285ae5648325c9120078b77eaf8cb80cd71d47093fb0f18a102aa87
 ```
+
+应用内更新首次安装引导包为 `dist/medical-question-ai-update-guide.apk`（同版本/同哈希）；本地候选更新包为 `dist/medical-question-ai-update-candidate.apk`（versionCode 4 / versionName 1.2.1-test.1，SHA-256 `c7baddfebcfc4bcc337d78622f772ed4f29dda4c8184955d3c2297b41b836f33`）。
 
 旧版 APK 保留在 `dist/archive/medical-question-ai-debug-v1.0.0-20261028.apk`，用于升级对照。
 
@@ -160,6 +162,13 @@ web/                                # 零依赖网页版（Node 静态服务 + A
 - 调用 AI 时，题干文字与压缩后的图片会发送到用户配置的 API 服务商。请勿上传患者身份信息、病历原件或任何敏感个人数据。
 - 可在「设置」中关闭新解析的历史保存（未收藏的新解析不进入历史列表，收藏题始终显示）；历史页可一键清空。
 - 应用不申请存储读写权限，相册通过系统 Photo Picker / 文档选择器访问。
+
+## 应用内更新
+
+- 更新入口：设置 → 应用更新；也支持启动静默检查（有更新且当前未解析时才提示，成功检查间隔至少 6 小时，失败有退避）。
+- 更新包只从 `github.com/xjb1337/medical-question-ai/releases` 下载；下载后校验 SHA-256、size、包名、versionCode 和签名证书，全部通过才打开系统安装器。
+- 发布流程与首次安装引导见 [docs/APP_UPDATE_RELEASE_GUIDE.md](docs/APP_UPDATE_RELEASE_GUIDE.md)；CI 配置见 `.github/workflows/release.yml`。
+- 旧版本用户需先安装 `dist/medical-question-ai-update-guide.apk`（versionCode 3），之后才能在应用内升级。
 
 ## 已知限制
 

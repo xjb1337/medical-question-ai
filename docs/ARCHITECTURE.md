@@ -98,6 +98,13 @@ MainViewModel
 
 解析器容忍 Markdown 代码围栏、字段别名、字符串形式的步骤和对象形式的选项表；对明显不属于医学学习范围的输入，模型返回 `out_of_scope`，界面以“非医学题目”卡片礼貌说明，不展示把握程度。
 
+### 应用内更新
+
+- `UpdateViewModel` 在首页启动和设置页触发检查；仅在无分析任务时展示更新提示，静默提示每 24 小时最多一次。
+- `UpdateRepository` 读取 `releases/latest`，只接受非 draft/prerelease，并要求同一 Release 唯一包含 `update.json` 与 `medical-question-ai.apk`。
+- `UpdateManifestParser` 严格校验 schemaVersion/applicationId/versionCode/minSdk/apkAssetName/apkSizeBytes/apkSha256/signingCertSha256/commitSha 等字段，JSON null 不转为字符串。
+- 下载到 `cache/updates`，校验文件大小与 SHA-256；`ApkVerifier` 再核对包名、versionCode、minSdk 和签名证书是否与已安装应用一致；`UpdateInstaller` 通过 FileProvider 调系统安装器。CI 发布流程见 `docs/APP_UPDATE_RELEASE_GUIDE.md`。
+
 ## 4. 图片流水线
 
 - 系统 Photo Picker 返回 `content://` URI，不申请存储权限。
