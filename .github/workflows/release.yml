@@ -30,7 +30,7 @@ jobs:
   release:
     name: Build signed release and publish
     needs: verify
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -39,6 +39,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Verify commit is current main head
+        run: |
+          git fetch --no-tags origin main
+          MAIN_SHA=$(git rev-parse origin/main)
+          test "$MAIN_SHA" = "$GITHUB_SHA" || { echo "候选提交 $GITHUB_SHA 已不是 main 当前头 $MAIN_SHA，拒绝发布"; exit 1; }
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -61,13 +66,15 @@ jobs:
           echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
       - name: Build versioned release APK
         env:
-          VERSION_CODE: ${{ format('{0}{1}', '100000', github.run_number) }}
-          VERSION_NAME: ${{ format('1.2.0-test.{0}', github.run_number) }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
+          BASE_VERSION_CODE=100000
+          VERSION_CODE=$((BASE_VERSION_CODE + GITHUB_RUN_NUMBER))
+          if [ "$VERSION_CODE" -gt 2100000000 ]; then echo "versionCode 超出 Android 整数范围"; exit 1; fi
+          VERSION_NAME="1.2.1-test.${GITHUB_RUN_NUMBER}"
           ./gradlew assembleRelease -PversionCode="$VERSION_CODE" -PversionName="$VERSION_NAME" --stacktrace
           echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
           echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
@@ -75,6 +82,10 @@ jobs:
         env:
           APK_PATH: app/build/outputs/apk/release/app-release.apk
           EXPECTED_CERT: ${{ secrets.ANDROID_EXPECTED_CERT_SHA256 }}
+          EXPECTED_APPLICATION_ID: com.xjb.medicalquestionai
+          EXPECTED_MIN_SDK: '26'
+          EXPECTED_VERSION_CODE: ${{ env.VERSION_CODE }}
+          EXPECTED_VERSION_NAME: ${{ env.VERSION_NAME }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
           mkdir -p dist
@@ -96,11 +107,27 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION_CODE: ${{ env.VERSION_CODE }}
+          VERSION_NAME: ${{ env.VERSION_NAME }}
+          CANDIDATE_TAG: v${{ env.VERSION_NAME }}
         run: |
-          LATEST=$(gh release view --repo "${{ github.repository }}" --json assets --jq '.assets[] | select(.name=="update.json") | .url' 2>/dev/null || true)
-          if [ -n "$LATEST" ]; then
-            CURRENT=$(gh api "$LATEST" -H "Accept: application/vnd.github.raw" | python3 -c 'import json,sys; print(json.load(sys.stdin)["versionCode"])')
-            test "$VERSION_CODE" -gt "$CURRENT" || { echo "候选版本 $VERSION_CODE 不高于已发布版本 $CURRENT"; exit 1; }
+          set -euo pipefail
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}/releases"
+          TMP_DIR=$(mktemp -d)
+          trap 'rm -rf "$TMP_DIR"' EXIT
+          HTTP=$(curl -sS -o "$TMP_DIR/latest.json" -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/latest")
+          if [ "$HTTP" = "404" ]; then
+            echo "尚无已发布 Release，允许首次发布"
+          elif [ "$HTTP" != "200" ]; then
+            echo "读取最新 Release 失败（HTTP $HTTP）"; exit 1
+          else
+            LATEST_TAG=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["tag_name"])' "$TMP_DIR/latest.json")
+            gh release download "$LATEST_TAG" --repo "$GITHUB_REPOSITORY" --pattern update.json --dir "$TMP_DIR" --clobber
+            python3 scripts/release/check-release.py \
+              --latest "$TMP_DIR/update.json" \
+              --candidate-version-code "$VERSION_CODE" \
+              --candidate-tag "$CANDIDATE_TAG" \
+              --latest-tag "$LATEST_TAG" \
+              --candidate-sha "$GITHUB_SHA"
           fi
       - name: Publish Release
         env:
@@ -113,5 +140,5 @@ jobs:
           ASSETS=(dist/update.json dist/medical-question-ai.apk)
           test -f dist/mapping.txt && ASSETS+=(dist/mapping.txt)
           gh release create "$TAG" "${ASSETS[@]}" \
-            --repo "${{ github.repository }}" --title "$TAG" --notes "$NOTES" --draft
+            --repo "${{ github.repository }}" --target "$GITHUB_SHA" --title "$TAG" --notes "$NOTES" --draft
           gh release edit "$TAG" --repo "${{ github.repository }}" --draft=false --latest

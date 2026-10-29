@@ -1,0 +1,2 @@
+crossReleaseAssetsAccepted=true
+manifestBytesConsumedBeforeReject=2097595 configuredLimit=65536 result=Failed(message=读取 update.json 失败)

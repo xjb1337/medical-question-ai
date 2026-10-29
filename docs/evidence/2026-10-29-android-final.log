@@ -31,10 +31,15 @@
 > Task :app:testDebugUnitTest UP-TO-DATE
 > Task :app:preDebugAndroidTestBuild SKIPPED
 > Task :app:generateDebugAndroidTestResValues UP-TO-DATE
-> Task :app:generateDebugAndroidTestLintModel
+> Task :app:generateDebugAndroidTestLintModel UP-TO-DATE
 > Task :app:extractProguardFiles UP-TO-DATE
-> Task :app:generateDebugLintReportModel
-> Task :app:generateDebugUnitTestLintModel
+> Task :app:generateDebugLintReportModel UP-TO-DATE
+> Task :app:generateDebugUnitTestLintModel UP-TO-DATE
+> Task :app:lintAnalyzeDebug UP-TO-DATE
+> Task :app:lintAnalyzeDebugAndroidTest UP-TO-DATE
+> Task :app:lintAnalyzeDebugUnitTest UP-TO-DATE
+> Task :app:lintReportDebug UP-TO-DATE
+> Task :app:lintDebug
 > Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
 > Task :app:mergeDebugShaders UP-TO-DATE
 > Task :app:compileDebugShaders NO-SOURCE
@@ -42,18 +47,22 @@
 > Task :app:mergeDebugAssets UP-TO-DATE
 > Task :app:compressDebugAssets UP-TO-DATE
 > Task :app:desugarDebugFileDependencies UP-TO-DATE
-> Task :app:dexBuilderDebug
+> Task :app:dexBuilderDebug UP-TO-DATE
 > Task :app:mergeDebugGlobalSynthetics UP-TO-DATE
 > Task :app:mergeDebugJavaResource UP-TO-DATE
 > Task :app:checkDebugDuplicateClasses UP-TO-DATE
 > Task :app:mergeExtDexDebug UP-TO-DATE
 > Task :app:mergeLibDexDebug UP-TO-DATE
+> Task :app:mergeProjectDexDebug UP-TO-DATE
 > Task :app:mergeDebugJniLibFolders UP-TO-DATE
 > Task :app:mergeDebugNativeLibs UP-TO-DATE
 > Task :app:stripDebugDebugSymbols UP-TO-DATE
 > Task :app:validateSigningDebug UP-TO-DATE
 > Task :app:writeDebugAppMetadata UP-TO-DATE
 > Task :app:writeDebugSigningConfigVersions UP-TO-DATE
+> Task :app:packageDebug UP-TO-DATE
+> Task :app:createDebugApkListingFileRedirect UP-TO-DATE
+> Task :app:assembleDebug UP-TO-DATE
 > Task :app:processDebugAndroidTestManifest UP-TO-DATE
 > Task :app:generateDebugAndroidTestBuildConfig UP-TO-DATE
 > Task :app:checkDebugAndroidTestAarMetadata UP-TO-DATE
@@ -76,10 +85,6 @@
 > Task :app:stripDebugAndroidTestDebugSymbols NO-SOURCE
 > Task :app:validateSigningDebugAndroidTest UP-TO-DATE
 > Task :app:writeDebugAndroidTestSigningConfigVersions UP-TO-DATE
-> Task :app:mergeProjectDexDebug
-> Task :app:packageDebug
-> Task :app:createDebugApkListingFileRedirect UP-TO-DATE
-> Task :app:assembleDebug
 > Task :app:kspDebugAndroidTestKotlin
 > Task :app:compileDebugAndroidTestKotlin
 > Task :app:compileDebugAndroidTestJavaWithJavac UP-TO-DATE
@@ -91,11 +96,6 @@
 > Task :app:packageDebugAndroidTest UP-TO-DATE
 > Task :app:createDebugAndroidTestApkListingFileRedirect UP-TO-DATE
 > Task :app:assembleDebugAndroidTest UP-TO-DATE
-> Task :app:lintAnalyzeDebugAndroidTest
-> Task :app:lintAnalyzeDebugUnitTest
-> Task :app:lintAnalyzeDebug
-> Task :app:lintReportDebug UP-TO-DATE
-> Task :app:lintDebug
 
-BUILD SUCCESSFUL in 13s
-84 actionable tasks: 13 executed, 71 up-to-date
+BUILD SUCCESSFUL in 2s
+84 actionable tasks: 4 executed, 80 up-to-date

@@ -1,0 +1,23 @@
++ set -euo pipefail
++ APK_PATH=/e/souti/repo/dist/medical-question-ai-update-guide.apk
++ OUT_PATH=/e/souti/acceptance-artifacts/update-review-wrong-version.json
++ VERSION_CODE=9999
++ VERSION_NAME=9.9.9-test
++ COMMIT_SHA=cef2b30000000000000000000000000000000000
++ EXPECTED_CERT=77c3ca8d1a7cf0aca4718b328705bb21833976bc701dad89c11881c83ca1c861
+++ date -u +%Y-%m-%dT%H:%M:%SZ
++ PUBLISHED_AT=2026-10-29T15:21:16Z
++ RELEASE_NOTES='版本 9.9.9-test（build 9999）'
++ test -f /e/souti/repo/dist/medical-question-ai-update-guide.apk
+++ dirname /e/souti/acceptance-artifacts/update-review-wrong-version.json
++ mkdir -p /e/souti/acceptance-artifacts
+++ wc -c
+++ tr -d ' '
++ APK_SIZE=21940535
+++ sha256sum /e/souti/repo/dist/medical-question-ai-update-guide.apk
+++ awk '{print tolower($1)}'
++ APK_SHA=1818eea30285ae5648325c9120078b77eaf8cb80cd71d47093fb0f18a102aa87
+++ echo 77c3ca8d1a7cf0aca4718b328705bb21833976bc701dad89c11881c83ca1c861
+++ tr A-F a-f
++ CERT_SHA=77c3ca8d1a7cf0aca4718b328705bb21833976bc701dad89c11881c83ca1c861
++ python3 - /e/souti/acceptance-artifacts/update-review-wrong-version.json 9999 9.9.9-test 21940535 1818eea30285ae5648325c9120078b77eaf8cb80cd71d47093fb0f18a102aa87 77c3ca8d1a7cf0aca4718b328705bb21833976bc701dad89c11881c83ca1c861 cef2b30000000000000000000000000000000000 2026-10-29T15:21:16Z '版本 9.9.9-test（build 9999）'

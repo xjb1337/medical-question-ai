@@ -55,6 +55,7 @@ data class UpdateUiState(
     val message: String? = null,
     val lastCheckedAt: Long? = null,
     val showPrompt: Boolean = false,
+    val showProgress: Boolean = false,
     val installReady: Boolean = false,
     val downloadedFile: File? = null
 )

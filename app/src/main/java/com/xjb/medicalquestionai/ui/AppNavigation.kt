@@ -11,10 +11,14 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -56,6 +60,14 @@ fun MedicalQuestionApp(
     val showBottomBar = currentRoute == "home" || currentRoute == "history" || currentRoute == "settings"
     val updateState by updateViewModel.state.collectAsState()
     val isAnalyzing by viewModel.isAnalyzing.collectAsState()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) updateViewModel.onAppResumed()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     LaunchedEffect(currentRoute) {
         if (currentRoute == "home" && !isAnalyzing) updateViewModel.autoCheckIfDue()
     }
@@ -143,7 +155,8 @@ fun MedicalQuestionApp(
             UpdateProgressDialog(
                 state = updateState,
                 updateViewModel = updateViewModel,
-                onDismiss = {}
+                onDismiss = updateViewModel::dismissProgress,
+                canInstall = !isAnalyzing
             )
         }
     }

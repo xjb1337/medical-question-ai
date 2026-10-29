@@ -5,12 +5,15 @@ import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.xjb.medicalquestionai.BuildConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -38,6 +41,8 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
 
     private var checking = false
     private var downloading = false
+    private var downloadJob: Job? = null
+    private var activeDownloadCall: okhttp3.Call? = null
     private var dismissedVersionCode: Long? = null
 
     fun checkManually() {
@@ -111,7 +116,7 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
         val release = _state.value.update ?: return
         if (downloading) return
         downloading = true
-        viewModelScope.launch(Dispatchers.IO) {
+        downloadJob = viewModelScope.launch(Dispatchers.IO) {
             _state.update {
                 it.copy(
                     status = UpdateStatus.DOWNLOADING,
@@ -119,11 +124,18 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
                     downloadedBytes = 0L,
                     totalBytes = release.manifest.apkSizeBytes,
                     message = "正在下载更新",
-                    showPrompt = false
+                    showPrompt = false,
+                    showProgress = true,
+                    installReady = false,
+                    downloadedFile = null
                 )
             }
             try {
-                val file = repository.downloadApk(getApplication(), release) { downloaded, total ->
+                val file = repository.downloadApk(
+                    context = getApplication(),
+                    release = release,
+                    onCall = { activeDownloadCall = it }
+                ) { downloaded, total ->
                     _state.update {
                         it.copy(
                             downloadedBytes = downloaded,
@@ -133,8 +145,10 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 }
                 _state.update { it.copy(status = UpdateStatus.VERIFYING, message = "正在校验更新包") }
-                ApkVerifier.verify(getApplication(), file, release.manifest, BuildConfig.VERSION_CODE.toLong())
-                    .getOrThrow()
+                withContext(Dispatchers.IO) {
+                    ApkVerifier.verify(getApplication(), file, release.manifest, BuildConfig.VERSION_CODE.toLong())
+                        .getOrThrow()
+                }
                 _state.update {
                     it.copy(
                         status = UpdateStatus.READY_TO_INSTALL,
@@ -143,7 +157,20 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
                         totalBytes = release.manifest.apkSizeBytes,
                         message = "更新包已校验，可安装",
                         installReady = true,
-                        downloadedFile = file
+                        downloadedFile = file,
+                        showProgress = true
+                    )
+                }
+            } catch (e: CancellationException) {
+                _state.update {
+                    it.copy(
+                        status = if (it.update != null) UpdateStatus.AVAILABLE else UpdateStatus.IDLE,
+                        message = "已取消下载",
+                        progressPercent = null,
+                        downloadedBytes = 0L,
+                        installReady = false,
+                        downloadedFile = null,
+                        showProgress = false
                     )
                 }
             } catch (e: Exception) {
@@ -152,34 +179,88 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
                         status = UpdateStatus.FAILED,
                         message = e.message ?: "下载或校验失败，可重试",
                         installReady = false,
-                        downloadedFile = null
+                        downloadedFile = null,
+                        showProgress = true
                     )
                 }
             } finally {
                 downloading = false
+                activeDownloadCall = null
+                downloadJob = null
             }
         }
     }
 
-    fun install() {
+    fun cancelDownload() {
+        activeDownloadCall?.cancel()
+        downloadJob?.cancel()
+        downloadJob = null
+        downloading = false
+        _state.update {
+            it.copy(
+                status = if (it.update != null) UpdateStatus.AVAILABLE else UpdateStatus.IDLE,
+                message = "已取消下载",
+                progressPercent = null,
+                downloadedBytes = 0L,
+                installReady = false,
+                downloadedFile = null,
+                showProgress = false
+            )
+        }
+    }
+
+    fun dismissProgress() {
+        _state.update { it.copy(showProgress = false) }
+    }
+
+    fun install(hasActiveWork: Boolean = false) {
         val state = _state.value
         val file = state.downloadedFile
         val release = state.update
         if (file == null || release == null || !state.installReady) return
+        if (hasActiveWork) {
+            _state.update { it.copy(message = "当前有拍题或追问任务，完成后再安装更新", showProgress = true) }
+            return
+        }
         val context = getApplication<Application>()
         if (!UpdateInstaller.canRequestPackageInstalls(context)) {
             _state.update {
-                it.copy(status = UpdateStatus.WAITING_INSTALL_PERMISSION, message = "请允许本应用安装未知来源应用")
+                it.copy(
+                    status = UpdateStatus.WAITING_INSTALL_PERMISSION,
+                    message = "请允许本应用安装未知来源应用",
+                    showProgress = true
+                )
             }
             return
         }
         viewModelScope.launch {
             try {
-                ApkVerifier.verify(context, file, release.manifest, BuildConfig.VERSION_CODE.toLong()).getOrThrow()
+                _state.update { it.copy(status = UpdateStatus.INSTALLING, message = "正在校验并启动安装", showProgress = true) }
+                withContext(Dispatchers.IO) {
+                    ApkVerifier.verify(context, file, release.manifest, BuildConfig.VERSION_CODE.toLong()).getOrThrow()
+                }
                 _state.update { it.copy(status = UpdateStatus.INSTALLING, message = "请在系统界面完成安装") }
-                UpdateInstaller.install(context, file).getOrThrow()
+                withContext(Dispatchers.IO) {
+                    UpdateInstaller.install(context, file).getOrThrow()
+                }
             } catch (e: Exception) {
-                _state.update { it.copy(status = UpdateStatus.FAILED, message = e.message ?: "启动安装失败，可重试") }
+                _state.update {
+                    it.copy(status = UpdateStatus.FAILED, message = e.message ?: "启动安装失败，可重试", showProgress = true)
+                }
+            }
+        }
+    }
+
+    fun onAppResumed() {
+        val state = _state.value
+        if (state.status == UpdateStatus.INSTALLING && state.downloadedFile?.exists() == true) {
+            _state.update {
+                it.copy(
+                    status = UpdateStatus.READY_TO_INSTALL,
+                    message = "系统安装未完成，可重试",
+                    installReady = true,
+                    showProgress = true
+                )
             }
         }
     }
@@ -200,6 +281,15 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
     fun clearDownloadedFile() {
         val file: File? = _state.value.downloadedFile
         file?.delete()
-        _state.update { it.copy(status = UpdateStatus.IDLE, installReady = false, downloadedFile = null, progressPercent = null) }
+        _state.update {
+            it.copy(
+                status = UpdateStatus.IDLE,
+                installReady = false,
+                downloadedFile = null,
+                progressPercent = null,
+                showProgress = false,
+                message = null
+            )
+        }
     }
 }

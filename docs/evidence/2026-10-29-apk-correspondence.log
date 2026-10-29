@@ -1,8 +1,8 @@
-2026-10-29 23:08 +08:00 build→dist correspondence
+2026-10-29 23:39 +08:00 build→dist correspondence
 
 guide: cmp dist/medical-question-ai-update-guide.apk dist/medical-question-ai-debug.apk => identical
-1818eea30285ae5648325c9120078b77eaf8cb80cd71d47093fb0f18a102aa87 *dist/medical-question-ai-update-guide.apk
-candidate: cmp dist/medical-question-ai-update-candidate.apk app/build/outputs/apk/debug/app-debug.apk => identical
-c7baddfebcfc4bcc337d78622f772ed4f29dda4c8184955d3c2297b41b836f33 *dist/medical-question-ai-update-candidate.apk
-21940535 dist/medical-question-ai-update-guide.apk
-21458738 dist/medical-question-ai-update-candidate.apk
+84b9e8db3b7c9e9e56c31a463a73170943f67517b466140f0a55cc73aa0e5f06 *dist/medical-question-ai-update-guide.apk
+candidate: cmp dist/medical-question-ai-update-candidate.apk dist/medical-question-ai-update-candidate.apk => identical (source: app/build/outputs/apk/debug/app-debug.apk rebuilt with versionCode 4)
+0b4ff605ce8ab94ce952157ab4108669b954306100f94ac0f1c0bfbc63c9878f *dist/medical-question-ai-update-candidate.apk
+21475118 dist/medical-question-ai-update-guide.apk
+21475122 dist/medical-question-ai-update-candidate.apk

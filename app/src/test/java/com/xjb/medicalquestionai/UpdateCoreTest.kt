@@ -56,8 +56,8 @@ class UpdateCoreTest {
               "draft": false,
               "prerelease": false,
               "assets": [
-                {"name":"update.json","browser_download_url":"https://github.com/xjb1337/medical-question-ai/releases/download/v1.2.0/update.json"},
-                {"name":"medical-question-ai.apk","browser_download_url":"https://github.com/xjb1337/medical-question-ai/releases/download/v1.2.0/medical-question-ai.apk"}
+                {"name":"update.json","content_type":"application/json","browser_download_url":"https://github.com/xjb1337/medical-question-ai/releases/download/v1.2.0/update.json"},
+                {"name":"medical-question-ai.apk","content_type":"application/vnd.android.package-archive","browser_download_url":"https://github.com/xjb1337/medical-question-ai/releases/download/v1.2.0/medical-question-ai.apk"}
               ]
             }
             """.trimIndent()
@@ -65,6 +65,12 @@ class UpdateCoreTest {
         val selected = ReleaseAssetSelector.select(root).getOrThrow()
         assertTrue(selected.updateJsonUrl.endsWith("/update.json"))
         assertTrue(selected.apkUrl.endsWith("/medical-question-ai.apk"))
+        assertEquals("v1.2.0", selected.tagName)
+
+        val crossTag = JSONObject(root.toString())
+        crossTag.getJSONArray("assets").getJSONObject(0)
+            .put("browser_download_url", "https://github.com/xjb1337/medical-question-ai/releases/download/v1.1.0/update.json")
+        assertTrue(ReleaseAssetSelector.select(crossTag).isFailure)
 
         val duplicate = JSONObject(root.toString()).apply {
             getJSONArray("assets").put(
@@ -79,8 +85,8 @@ class UpdateCoreTest {
         val base = JSONObject(
             """
             {"tag_name":"v1.2.0","draft":false,"prerelease":false,"assets":[
-              {"name":"update.json","browser_download_url":"https://github.com/xjb1337/medical-question-ai/releases/download/v1.2.0/update.json"},
-              {"name":"medical-question-ai.apk","browser_download_url":"https://github.com/xjb1337/medical-question-ai/releases/download/v1.2.0/medical-question-ai.apk"}
+              {"name":"update.json","content_type":"application/json","browser_download_url":"https://github.com/xjb1337/medical-question-ai/releases/download/v1.2.0/update.json"},
+              {"name":"medical-question-ai.apk","content_type":"application/vnd.android.package-archive","browser_download_url":"https://github.com/xjb1337/medical-question-ai/releases/download/v1.2.0/medical-question-ai.apk"}
             ]}
             """.trimIndent()
         )

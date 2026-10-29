@@ -83,6 +83,7 @@ fun SettingsScreen(
     val isTesting by viewModel.isTestingKey.collectAsState()
     val isCheckingConnection by viewModel.isCheckingConnection.collectAsState()
     val isVerifyingModel by viewModel.isVerifyingModel.collectAsState()
+    val isAnalyzing by viewModel.isAnalyzing.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -544,7 +545,7 @@ fun SettingsScreen(
                 }
             }
 
-            UpdateSection(updateViewModel = updateViewModel)
+            UpdateSection(updateViewModel = updateViewModel, canInstall = !isAnalyzing)
 
             SectionCard(title = "关于") {
                 Text(

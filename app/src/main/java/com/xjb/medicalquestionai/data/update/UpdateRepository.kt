@@ -3,41 +3,60 @@ package com.xjb.medicalquestionai.data.update
 import android.content.Context
 import com.xjb.medicalquestionai.BuildConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.ResponseBody
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.coroutineContext
 
 object ReleaseAssetSelector {
-    private val DOWNLOAD_PREFIX = "https://github.com/${BuildConfig.UPDATE_REPOSITORY}/releases/download/"
+    private val REPOSITORY_SEGMENTS = BuildConfig.UPDATE_REPOSITORY.split("/")
 
-    data class Selected(val updateJsonUrl: String, val apkUrl: String)
+    data class Selected(val updateJsonUrl: String, val apkUrl: String, val tagName: String)
 
     fun select(root: JSONObject): Result<Selected> = runCatching {
         require(root.optBoolean("draft", false).not()) { "草稿 Release 不作为更新来源" }
         require(root.optBoolean("prerelease", false).not()) { "预发布 Release 不作为更新来源" }
-        require(!root.opt("tag_name").let { it == null || it !is String || it.isBlank() }) { "Release tag 缺失" }
+        val tag = root.opt("tag_name") as? String
+        require(!tag.isNullOrBlank()) { "Release tag 缺失" }
+        require(!tag.contains("..") && !tag.startsWith("/")) { "Release tag 非法" }
         val assets = root.optJSONArray("assets") ?: throw IllegalArgumentException("Release 资产缺失")
-        val updateUrls = mutableListOf<String>()
-        val apkUrls = mutableListOf<String>()
+        val named = mutableMapOf<String, MutableList<String>>()
         for (i in 0 until assets.length()) {
             val asset = assets.optJSONObject(i) ?: continue
             val name = asset.opt("name") as? String ?: continue
-            val url = asset.opt("browser_download_url") as? String ?: continue
-            if (!url.startsWith(DOWNLOAD_PREFIX)) continue
-            when (name) {
-                "update.json" -> updateUrls += url
-                "medical-question-ai.apk" -> apkUrls += url
+            if (name != "update.json" && name != "medical-question-ai.apk") continue
+            val type = asset.opt("content_type") as? String
+            require(!type.isNullOrBlank()) { "Release 资产类型缺失" }
+            val expectedType = if (name == "update.json") "application/json" else "application/vnd.android.package-archive"
+            require(type == expectedType || (name.endsWith(".apk") && type == "application/octet-stream")) {
+                "Release 资产类型不匹配"
             }
+            val url = asset.opt("browser_download_url") as? String
+            require(!url.isNullOrBlank()) { "Release 资产地址缺失" }
+            named.getOrPut(name) { mutableListOf() } += url
         }
+        val updateUrls = named["update.json"].orEmpty()
+        val apkUrls = named["medical-question-ai.apk"].orEmpty()
         require(updateUrls.size == 1 && apkUrls.size == 1) { "Release 必须且只能包含一个 update.json 与一个 APK" }
-        Selected(updateUrls.single(), apkUrls.single())
+        require(urlBelongsTo(rootTag = tag, assetName = "update.json", rawUrl = updateUrls.single())) { "update.json 不属于当前 Release" }
+        require(urlBelongsTo(rootTag = tag, assetName = "medical-question-ai.apk", rawUrl = apkUrls.single())) { "APK 不属于当前 Release" }
+        Selected(updateUrls.single(), apkUrls.single(), tag)
+    }
+
+    private fun urlBelongsTo(rootTag: String, assetName: String, rawUrl: String): Boolean {
+        val parsed = rawUrl.toHttpUrlOrNull() ?: return false
+        if (!parsed.isHttps || parsed.host != "github.com") return false
+        val expectedSegments = REPOSITORY_SEGMENTS + listOf("releases", "download") + rootTag.split("/") + listOf(assetName)
+        return parsed.pathSegments == expectedSegments
     }
 }
 
@@ -69,15 +88,16 @@ class UpdateRepository(
                     .header("Accept", "application/vnd.github+json")
                     .header("User-Agent", "medical-question-ai-update-check")
                     .build()
-                client.newCall(request).execute().use { response ->
+                val releaseCall = client.newCall(request)
+                coroutineContext[Job]?.invokeOnCompletion { releaseCall.cancel() }
+                releaseCall.execute().use { response ->
                     when (response.code) {
                         404 -> return@withContext UpdateCheckResult.NoRelease
                         403, 429 -> return@withContext UpdateCheckResult.Failed("检查更新过于频繁，请稍后再试")
                     }
                     if (!response.isSuccessful) return@withContext UpdateCheckResult.Failed("检查更新失败（HTTP ${response.code}）")
                     val body = response.body ?: return@withContext UpdateCheckResult.Failed("更新服务返回为空")
-                    val bytes = body.bytes()
-                    if (bytes.size > MAX_RELEASE_JSON_BYTES) return@withContext UpdateCheckResult.Failed("更新元数据过大")
+                    val bytes = readBounded(body, MAX_RELEASE_JSON_BYTES)
                     val selected = ReleaseAssetSelector.select(JSONObject(bytes.toString(Charsets.UTF_8))).getOrElse {
                         return@withContext UpdateCheckResult.Failed(it.message ?: "更新 Release 格式错误")
                     }
@@ -95,37 +115,56 @@ class UpdateRepository(
                     if (!UpdateManifestParser.isNewer(manifest.versionCode, currentVersionCode)) {
                         return@withContext UpdateCheckResult.UpToDate
                     }
-                    val tag = JSONObject(bytes.toString(Charsets.UTF_8)).optString("tag_name", "")
-                    UpdateCheckResult.Available(UpdateRelease(manifest, selected.apkUrl, tag))
+                    UpdateCheckResult.Available(UpdateRelease(manifest, selected.apkUrl, selected.tagName))
                 }
             } catch (e: Exception) {
                 UpdateCheckResult.Failed(e.message ?: "检查更新失败")
             }
         }
 
-    private fun fetchBytes(url: String): ByteArray? {
+    private suspend fun fetchBytes(url: String): ByteArray? {
         var currentUrl = url
         repeat(6) {
             val parsed = currentUrl.toHttpUrlOrNull() ?: return null
             if (!parsed.isHttps || parsed.host !in TRUSTED_ASSET_HOSTS) return null
             val request = Request.Builder().url(parsed).header("User-Agent", "medical-question-ai-update-check").build()
-            client.newCall(request).execute().use { response ->
+            val call = client.newCall(request)
+            coroutineContext[Job]?.invokeOnCompletion { call.cancel() }
+            call.execute().use { response ->
                 if (response.isRedirect) {
                     currentUrl = response.header("Location") ?: return null
                     return@repeat
                 }
                 if (!response.isSuccessful) return null
                 val body = response.body ?: return null
-                val bytes = body.bytes()
-                return if (bytes.size <= UpdateManifestParser.MAX_METADATA_BYTES) bytes else null
+                return readBounded(body, UpdateManifestParser.MAX_METADATA_BYTES.toLong())
             }
         }
         return null
     }
 
+    private fun readBounded(body: ResponseBody, limit: Long): ByteArray {
+        val declared = body.contentLength()
+        if (declared > limit) throw IllegalArgumentException("更新元数据过大")
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(8 * 1024)
+        var total = 0L
+        body.byteStream().use { input ->
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                total += read
+                if (total > limit) throw IllegalArgumentException("更新元数据过大")
+                output.write(buffer, 0, read)
+            }
+        }
+        return output.toByteArray()
+    }
+
     suspend fun downloadApk(
         context: Context,
         release: UpdateRelease,
+        onCall: (okhttp3.Call?) -> Unit = {},
         onProgress: (downloaded: Long, total: Long?) -> Unit
     ): File = withContext(Dispatchers.IO) {
         require(release.manifest.apkSizeBytes in 1..UpdateManifestParser.MAX_APK_BYTES) { "更新包大小非法" }
@@ -142,7 +181,10 @@ class UpdateRepository(
                 require(url.isHttps) { "更新下载必须使用 HTTPS" }
                 require(url.host in TRUSTED_ASSET_HOSTS) { "更新下载域名不受信任" }
                 val request = Request.Builder().url(url).header("User-Agent", "medical-question-ai-update-download").build()
-                client.newCall(request).execute().use { response ->
+                val call = client.newCall(request)
+                onCall(call)
+                coroutineContext[Job]?.invokeOnCompletion { call.cancel() }
+                call.execute().use { response ->
                     if (response.isRedirect) {
                         val location = response.header("Location") ?: throw IllegalStateException("更新下载重定向缺少地址")
                         redirects++
@@ -183,7 +225,8 @@ class UpdateRepository(
             }
             completedFile!!
         } finally {
-            if (!finalFile.exists() && partFile.exists()) partFile.delete()
+            onCall(null)
+            if (partFile.exists()) partFile.delete()
         }
     }
 }
