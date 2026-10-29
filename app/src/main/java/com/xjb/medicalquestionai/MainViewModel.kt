@@ -32,6 +32,7 @@ import com.xjb.medicalquestionai.data.SecureKeyStore
 import com.xjb.medicalquestionai.data.SettingsRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -47,6 +48,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -61,8 +63,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val settings: StateFlow<AppSettings> = settingsRepository.settings
 
-    private val _draft = MutableStateFlow(QuestionDraft())
+    private val _draft = MutableStateFlow(QuestionDraft(sessionId = UUID.randomUUID().toString()))
     val draft: StateFlow<QuestionDraft> = _draft.asStateFlow()
+
+    private val _parkedDraft = MutableStateFlow<QuestionDraft?>(null)
+    val parkedDraft: StateFlow<QuestionDraft?> = _parkedDraft.asStateFlow()
 
     private val _isImporting = MutableStateFlow(false)
     val isImporting: StateFlow<Boolean> = _isImporting.asStateFlow()
@@ -109,6 +114,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val followUpStreams: StateFlow<Map<String, FollowUpStreamState>> = _followUpStreams.asStateFlow()
 
     private val followUpJobs = mutableMapOf<String, Job>()
+    private val nextQuestionPreparing = AtomicBoolean(false)
 
     val followUpSendingIds: StateFlow<Set<String>> = _followUpStreams
         .map { streams -> streams.filterValues { it.sending }.keys }
@@ -141,6 +147,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var activeRequestId: String? = null
     private var activeQuestionId: String? = null
     private var cancelRequested = false
+    private var pendingStopReason: StopReason? = null
+    private var lastStopSaveFailure: String? = null
 
     init {
         // 进程被杀后，数据库里遗留的 analyzing/receiving/validating 不能继续显示为“正在解析”。
@@ -153,6 +161,118 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun followUps(questionId: String, answerRevision: Long): Flow<List<FollowUp>> =
         followUpRepository.observeForQuestion(questionId, answerRevision)
+
+    /**
+     * 只停止当前题目的分析与追问。重复调用幂等；等待有界，超时不会假装已经停止。
+     */
+    suspend fun stopQuestionWork(
+        questionId: String,
+        reason: StopReason,
+        expectedRequestId: String? = null,
+        timeoutMs: Long = STOP_TIMEOUT_MS
+    ): StopOutcome {
+        val activeAnalysis = if (activeQuestionId == questionId) analysisJob else null
+        val activeFollowUp = followUpJobs[questionId]
+        if (expectedRequestId != null && activeAnalysis != null && activeRequestId != expectedRequestId) {
+            return StopOutcome(false, message = "任务身份已变化，已忽略旧页面的停止请求")
+        }
+        if (activeAnalysis == null && activeFollowUp == null) {
+            return StopOutcome(true)
+        }
+        lastStopSaveFailure = null
+        if (activeAnalysis != null && activeAnalysis.isActive) {
+            if (pendingStopReason == null) pendingStopReason = reason
+            cancelRequested = true
+            _isCancelling.value = true
+            activeAnalysis.cancel()
+        }
+        if (activeFollowUp != null && activeFollowUp.isActive) {
+            activeFollowUp.cancel()
+        }
+        val finished = withTimeoutOrNull(timeoutMs) {
+            activeAnalysis?.join()
+            activeFollowUp?.join()
+            true
+        } ?: false
+        if (!finished) {
+            return StopOutcome(
+                stopped = false,
+                timedOut = true,
+                message = "旧任务仍在停止，请重试"
+            )
+        }
+        lastStopSaveFailure?.let { failure ->
+            return StopOutcome(
+                stopped = false,
+                message = "解析已停止，但未完成状态保存失败：$failure。请检查存储空间后重试"
+            )
+        }
+        if (!_isAnalyzing.value && activeQuestionId == null) {
+            pendingStopReason = null
+            cancelRequested = false
+            _isCancelling.value = false
+        }
+        return StopOutcome(true)
+    }
+
+    fun stopQuestionWorkAsync(questionId: String, reason: StopReason, expectedRequestId: String? = null) {
+        viewModelScope.launch {
+            val outcome = stopQuestionWork(questionId, reason, expectedRequestId)
+            if (!outcome.stopped) {
+                _analysisError.value = outcome.message ?: "停止解析失败，请重试"
+            }
+        }
+    }
+
+    /**
+     * 停止旧题并准备一份全新的草稿；旧首页草稿有内容时暂存，不覆盖图片。
+     */
+    suspend fun prepareNextQuestion(questionId: String, expectedRequestId: String? = null): NextQuestionResult {
+        if (!nextQuestionPreparing.compareAndSet(false, true)) {
+            return NextQuestionResult(false, message = "正在准备下一题，请稍候")
+        }
+        try {
+            if (_isImporting.value) {
+                return NextQuestionResult(false, message = "图片仍在处理中，请稍后再试")
+            }
+            val current = _draft.value
+            if (!canParkDraft(current, _parkedDraft.value)) {
+                return NextQuestionResult(
+                    false,
+                    message = "首页已有暂存草稿，请先恢复或清空后再拍下一题"
+                )
+            }
+            val outcome = stopQuestionWork(questionId, StopReason.NEXT_QUESTION, expectedRequestId)
+            if (!outcome.stopped) {
+                return NextQuestionResult(false, message = outcome.message ?: "旧任务仍在停止，请重试")
+            }
+            if (current.hasContent()) {
+                _parkedDraft.value = current
+            }
+            val sessionId = UUID.randomUUID().toString()
+            _draft.value = QuestionDraft(sessionId = sessionId)
+            draftImageSource = null
+            _analysisError.value = null
+            _draftNotice.value = null
+            return NextQuestionResult(true, sessionId = sessionId)
+        } finally {
+            nextQuestionPreparing.set(false)
+        }
+    }
+
+    /** 恢复被“拍摄下一题”暂存的草稿；当前草稿会互换保存，避免丢图片。 */
+    fun restoreParkedDraft(): Boolean {
+        if (_isImporting.value) return false
+        val parked = _parkedDraft.value ?: return false
+        val current = _draft.value
+        _parkedDraft.value = current.takeIf { it.text.isNotBlank() || it.images.isNotEmpty() }
+        _draft.value = parked
+        return true
+    }
+
+    fun clearParkedDraft() {
+        _parkedDraft.value = null
+    }
 
     fun updateQuestionType(type: QuestionType) {
         _draft.value = _draft.value.copy(questionType = type)
@@ -174,6 +294,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         draftImageSource = "gallery"
+        val sessionId = _draft.value.sessionId
         _isImporting.value = true
         viewModelScope.launch {
             var failed = 0
@@ -184,6 +305,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } catch (e: Exception) {
                     failed++
                 }
+            }
+            if (_draft.value.sessionId != sessionId) {
+                imported.forEach { imageStore.delete(it.path) }
+                _isImporting.value = false
+                return@launch
             }
             _draft.value = _draft.value.copy(
                 images = _draft.value.images + imported,
@@ -198,9 +324,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun addCameraImage(uri: Uri, captureFile: java.io.File, onComplete: () -> Unit) {
-        if (_isImporting.value) return
+    private val activeCameraTokens = mutableSetOf<String>()
+
+    fun beginCameraCapture(): String =
+        UUID.randomUUID().toString().also { activeCameraTokens += it }
+
+    fun invalidateCameraCapture(token: String?) {
+        if (token != null) activeCameraTokens.remove(token)
+    }
+
+    private fun isCameraCaptureActive(token: String): Boolean = token in activeCameraTokens
+
+    fun addCameraImage(
+        uri: Uri,
+        captureFile: java.io.File,
+        sessionId: String,
+        captureToken: String,
+        onComplete: () -> Unit
+    ) {
+        if (!isCameraCaptureActive(captureToken)) {
+            imageStore.deleteCapture(captureFile)
+            return
+        }
+        if (_isImporting.value) {
+            activeCameraTokens.remove(captureToken)
+            imageStore.deleteCapture(captureFile)
+            return
+        }
+        if (_draft.value.sessionId != sessionId) {
+            activeCameraTokens.remove(captureToken)
+            imageStore.deleteCapture(captureFile)
+            _draftNotice.value = "这份拍摄结果属于已离开的草稿，已丢弃"
+            return
+        }
         if (_draft.value.images.size >= ImageStore.MAX_IMAGES) {
+            activeCameraTokens.remove(captureToken)
+            imageStore.deleteCapture(captureFile)
             _draftNotice.value = "最多添加 ${ImageStore.MAX_IMAGES} 张图片"
             return
         }
@@ -209,14 +368,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val image = imageStore.importImage(uri)
+                if (!isCameraCaptureActive(captureToken) || _draft.value.sessionId != sessionId) {
+                    imageStore.delete(image.path)
+                    if (_draft.value.sessionId != sessionId) {
+                        _draftNotice.value = "这份拍摄结果属于已离开的草稿，已丢弃"
+                    }
+                    return@launch
+                }
                 _draft.value = _draft.value.copy(
                     images = _draft.value.images + image,
                     privacyConfirmed = false
                 )
+                activeCameraTokens.remove(captureToken)
                 onComplete()
             } catch (e: Exception) {
                 _draftNotice.value = "照片读取失败：${e.message ?: "请重新拍摄"}"
             } finally {
+                activeCameraTokens.remove(captureToken)
                 imageStore.deleteCapture(captureFile)
                 _isImporting.value = false
             }
@@ -367,7 +535,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _isAnalyzing.value = false
                 return@launch
             }
-            _draft.value = QuestionDraft()
+            _draft.value = QuestionDraft(sessionId = UUID.randomUUID().toString())
             draftImageSource = null
             onNavigate(questionId)
             runAnalysis(question, mode, clickedAt = clickedAt)
@@ -417,6 +585,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             errorMessage = null,
             durationMs = 0
         )
+        var lastCheckpointAt = 0L
         if (previous == null) {
             try {
                 repository.update(current)
@@ -524,6 +693,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     is com.xjb.medicalquestionai.data.AnalysisEvent.Preview -> {
                         _analysisTask.update { it?.copy(preview = event.preview) }
+                        val checkpoint = event.preview.toResult()
+                        val checkpointAt = SystemClock.elapsedRealtime()
+                        if (previous == null &&
+                            (checkpoint.answer.isNotEmpty() ||
+                                checkpoint.answerText.isNotBlank() ||
+                                checkpoint.recognizedQuestion.isNotBlank()) &&
+                            checkpointAt - lastCheckpointAt >= CHECKPOINT_INTERVAL_MS
+                        ) {
+                            lastCheckpointAt = checkpointAt
+                            runCatching {
+                                repository.updateCheckpoint(question.id, checkpoint.toJson())
+                            }
+                        }
                     }
                     is com.xjb.medicalquestionai.data.AnalysisEvent.Reasoning -> {
                         _analysisTask.update { current ->
@@ -568,7 +750,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             )
                         )
                         val saveFailure = try {
-                            repository.update(provisional)
+                            // 结果已进入最终提交阶段：取消请求也要先完成这一笔不可分割的本地写入。
+                            withContext(NonCancellable) { repository.update(provisional) }
                             null
                         } catch (e: Exception) {
                             e
@@ -609,7 +792,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 )
                             )
                             val finalSaveFailure = try {
-                                repository.update(finalQuestion)
+                                withContext(NonCancellable) { repository.update(finalQuestion) }
                                 null
                             } catch (e: Exception) {
                                 e
@@ -628,7 +811,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     )
                                 )
                                 val settledFailure = try {
-                                    repository.update(settled)
+                                    withContext(NonCancellable) { repository.update(settled) }
                                     null
                                 } catch (e: Exception) {
                                     e
@@ -721,22 +904,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         } catch (e: CancellationException) {
             if (activeRequestId == requestId) {
-                val cancelledByUser = cancelRequested
+                val reason = pendingStopReason
+                val cancelledByUser = reason == StopReason.USER
+                val cancelledByExit = reason != null && !cancelledByUser
                 val duration = SystemClock.elapsedRealtime() - startedAt
-                logMetrics(if (cancelledByUser) "cancelled" else "interrupted", duration)
+                val stopMessage = when (reason) {
+                    StopReason.PAGE_EXIT -> "已离开页面，解析已停止。返回后不会自动继续，可重新解析。"
+                    StopReason.BACKGROUND -> "应用已进入后台，解析已停止。返回后可重新解析。"
+                    StopReason.NEXT_QUESTION -> "已停止旧题解析，准备拍摄下一题。"
+                    StopReason.USER, null -> if (cancelledByUser) {
+                        "已取消解析，可回到原题重新解析"
+                    } else {
+                        "解析被中断，请重新解析"
+                    }
+                }
+                val checkpoint = _analysisTask.value?.preview
+                    ?.takeIf { it.hasUsefulContent }
+                    ?.toResult()
+                logMetrics(if (cancelledByUser || cancelledByExit) "cancelled" else "interrupted", duration)
                 withContext(NonCancellable) {
                     if (previous == null) {
-                        runCatching {
+                        try {
                             repository.update(
                                 current.copy(
-                                    status = if (cancelledByUser) "cancelled" else "interrupted",
-                                    errorMessage = if (cancelledByUser) {
-                                        "已取消解析，可回到原题重新解析"
-                                    } else {
-                                        "解析被中断，请重新解析"
-                                    }
+                                    status = if (cancelledByUser || cancelledByExit) "cancelled" else "interrupted",
+                                    errorMessage = stopMessage,
+                                    durationMs = duration,
+                                    checkpoint = checkpoint
                                 )
                             )
+                        } catch (saveError: Exception) {
+                            lastStopSaveFailure = saveError.message ?: "本地存储不可用"
                         }
                     } else {
                         // 重答被取消/中断：旧完成记录及其元数据保持原样。
@@ -744,16 +942,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
                 updateTaskStatus(
-                    if (cancelledByUser) AnalysisTaskStatus.CANCELLED else AnalysisTaskStatus.INTERRUPTED,
+                    if (cancelledByUser || cancelledByExit) AnalysisTaskStatus.CANCELLED else AnalysisTaskStatus.INTERRUPTED,
                     titles = titles,
-                    error = if (cancelledByUser) "已取消" else "已中断",
+                    error = when (reason) {
+                        StopReason.PAGE_EXIT -> "已离开页面，已停止"
+                        StopReason.BACKGROUND -> "已进入后台，已停止"
+                        StopReason.NEXT_QUESTION -> "已停止旧题，准备下一题"
+                        StopReason.USER -> "已取消"
+                        null -> if (cancelledByUser) "已取消" else "已中断"
+                    },
                     failedIndex = currentStageIndex()
                 )
+                _analysisError.value = if (cancelledByUser) stopMessage else null
                 stopElapsedTicker()
                 _isAnalyzing.value = false
                 _isCancelling.value = false
                 activeRequestId = null
                 activeQuestionId = null
+                pendingStopReason = null
+                cancelRequested = false
             }
             throw e
         } catch (e: Exception) {
@@ -783,6 +990,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun cancelAnalysis() {
         if (!_isAnalyzing.value) return
+        if (pendingStopReason == null) pendingStopReason = StopReason.USER
         cancelRequested = true
         _isCancelling.value = true
         analysisJob?.cancel()
@@ -979,6 +1187,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (question.isAnswerStale) {
                     throw ApiException("题目已修改，旧答案的追问不会继续。请先重新解析。")
                 }
+                if (question.result == null) {
+                    throw ApiException("当前只有未完成预览，不能作为追问上下文。请先重新解析。")
+                }
                 answerRevision = question.answerRevision
                 val userItem = FollowUp(
                     id = UUID.randomUUID().toString(),
@@ -1056,9 +1267,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     id = UUID.randomUUID().toString(),
                                     questionId = questionId,
                                     role = "assistant",
-                                    content = "$partial\n\n（已停止生成）",
+                                    content = "$partial\n\n（已停止生成，内容未完成）",
                                     createdAt = System.currentTimeMillis(),
                                     usage = usage,
+                                    failed = true,
                                     answerRevision = answerRevision
                                 )
                             )
@@ -1382,6 +1594,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
         private const val MAX_REASONING_PREVIEW = 4000
+        private const val CHECKPOINT_INTERVAL_MS = 500L
         private const val HISTORY_STOP_TIMEOUT_MS = 5_000L
+        private const val STOP_TIMEOUT_MS = 4_000L
     }
 }

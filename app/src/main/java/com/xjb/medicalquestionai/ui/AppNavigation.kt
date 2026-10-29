@@ -79,8 +79,25 @@ fun MedicalQuestionApp(viewModel: MainViewModel = viewModel()) {
             composable("home") {
                 NewQuestionScreen(viewModel = viewModel, navController = navController)
             }
-            composable("camera") {
-                CameraScreen(viewModel = viewModel, navController = navController)
+            composable(
+                route = "camera?source={source}&sessionId={sessionId}",
+                arguments = listOf(
+                    navArgument("source") {
+                        type = NavType.StringType
+                        defaultValue = "home"
+                    },
+                    navArgument("sessionId") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                    }
+                )
+            ) { entry ->
+                CameraScreen(
+                    viewModel = viewModel,
+                    navController = navController,
+                    source = entry.arguments?.getString("source").orEmpty(),
+                    sessionId = entry.arguments?.getString("sessionId").orEmpty()
+                )
             }
             composable("history") {
                 HistoryScreen(viewModel = viewModel, navController = navController)

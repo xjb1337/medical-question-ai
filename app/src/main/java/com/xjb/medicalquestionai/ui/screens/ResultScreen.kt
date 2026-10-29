@@ -1,5 +1,8 @@
 package com.xjb.medicalquestionai.ui.screens
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
 import com.xjb.medicalquestionai.hasRepeatedJsonNullPrefix
@@ -20,7 +23,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -34,6 +39,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -65,6 +71,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -80,16 +87,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.xjb.medicalquestionai.AnalysisTaskState
 import com.xjb.medicalquestionai.AnalysisTaskStatus
 import com.xjb.medicalquestionai.FollowUpStreamState
+import com.xjb.medicalquestionai.LifecycleStopEvent
 import com.xjb.medicalquestionai.MainViewModel
+import com.xjb.medicalquestionai.StopPolicy
+import com.xjb.medicalquestionai.StopReason
 import com.xjb.medicalquestionai.data.AnalysisResult
 import com.xjb.medicalquestionai.data.FollowUp
 import com.xjb.medicalquestionai.data.ModelCatalog
@@ -148,8 +161,32 @@ fun ResultScreen(
     var editSaving by remember { mutableStateOf(false) }
     var editError by remember { mutableStateOf<String?>(null) }
     var addingImages by remember { mutableStateOf(false) }
+    var preparingNext by remember { mutableStateOf(false) }
+    var nextError by remember { mutableStateOf<String?>(null) }
     var followUpInput by rememberSaveable(questionId) { mutableStateOf("") }
     var attachImages by rememberSaveable(questionId) { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val activeRequestId = task?.takeIf { it.questionId == questionId && it.isActive }?.requestId
+
+    DisposableEffect(lifecycleOwner, questionId, activeRequestId) {
+        val observer = LifecycleEventObserver { _, event ->
+            val exit = when (event) {
+                Lifecycle.Event.ON_DESTROY -> LifecycleStopEvent.DESTROY
+                Lifecycle.Event.ON_STOP -> LifecycleStopEvent.STOP
+                else -> LifecycleStopEvent.OTHER
+            }
+            val changing = context.findActivity()?.isChangingConfigurations == true
+            if (StopPolicy.shouldStopOnLifecycle(exit, changing)) {
+                viewModel.stopQuestionWorkAsync(
+                    questionId,
+                    if (exit == LifecycleStopEvent.DESTROY) StopReason.PAGE_EXIT else StopReason.BACKGROUND,
+                    activeRequestId
+                )
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(9)
     ) { uris ->
@@ -169,13 +206,7 @@ fun ResultScreen(
     val runningPreview = running?.preview
     val runningPreviewResult = runningPreview?.toResult()
     val previewHasAnswer = runningPreviewResult?.hasAnswerPreview() == true
-    val canFollowUp = question != null && !question.isAnswerStale && (
-        question.result != null ||
-            question.status == "completed" ||
-            question.status == "failed" ||
-            question.status == "cancelled" ||
-            question.status == "interrupted"
-        )
+    val canFollowUp = question?.result != null && !question.isAnswerStale
     val sendingFollowUp = followUpStreams[questionId]?.sending == true || questionId in sendingIds
     val followUpStream = followUpStreams[questionId]
 
@@ -186,7 +217,10 @@ fun ResultScreen(
                 subtitle = question?.let {
                     SimpleDateFormat("yyyy年MM月dd日 HH:mm", Locale.CHINA).format(Date(it.createdAt))
                 },
-                onBack = { navController.popBackStack() },
+                onBack = {
+                    viewModel.stopQuestionWorkAsync(questionId, StopReason.PAGE_EXIT, activeRequestId)
+                    navController.popBackStack()
+                },
                 actions = {
                     if (question != null) {
                         IconButton(onClick = { viewModel.toggleFavorite(questionId) }) {
@@ -201,7 +235,31 @@ fun ResultScreen(
         },
         bottomBar = {
             if (question != null) {
-                FollowUpInputBar(
+                Column {
+                    NextQuestionButton(
+                        preparing = preparingNext,
+                        onClick = {
+                            if (preparingNext) return@NextQuestionButton
+                            preparingNext = true
+                            nextError = null
+                            scope.launch {
+                                val outcome = viewModel.prepareNextQuestion(questionId, activeRequestId)
+                                if (outcome.success && outcome.sessionId != null) {
+                                    preparingNext = false
+                                    navController.navigate(
+                                        "camera?source=next_question&sessionId=${outcome.sessionId}"
+                                    ) {
+                                        popUpTo("result/{questionId}") { inclusive = true }
+                                        launchSingleTop = true
+                                    }
+                                } else {
+                                    preparingNext = false
+                                    nextError = outcome.message ?: "准备下一题失败，请重试"
+                                }
+                            }
+                        }
+                    )
+                    FollowUpInputBar(
                     value = followUpInput,
                     onValueChange = { followUpInput = it },
                     sending = sendingFollowUp,
@@ -219,7 +277,8 @@ fun ResultScreen(
                         }
                     },
                     onStop = { viewModel.cancelFollowUp(questionId) }
-                )
+                    )
+                }
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -280,6 +339,9 @@ fun ResultScreen(
                                 )
                             }
                         }
+                        if (nextError != null) {
+                            item { ErrorBanner(nextError!!) }
+                        }
                         val banner = resolveStatusBanner(q, taskFailed, taskCancelled, taskInterrupted, running == null)
                         if (banner != null && running == null && result == null) {
                             item {
@@ -289,6 +351,20 @@ fun ResultScreen(
                                     message = banner.message,
                                     onRetry = { viewModel.retryAnalysis(questionId) {} }
                                 )
+                            }
+                        }
+                        if (result != null && q.checkpoint != null) {
+                            item {
+                                InfoBanner("本次重新解析未完成，下面保留的是上一次完整答案；未完成预览不作为正式答案，也不能用于追问。")
+                            }
+                        }
+                        if (result == null && q.checkpoint != null) {
+                            item {
+                                InfoBanner("未完成预览：离开页面时解析已停止，以下内容不是正式答案，不能追问、复制或分享。可点击“重新解析”重新请求。")
+                            }
+                            item { AnalysisAnswerCard(result = q.checkpoint, compact = true) }
+                            if (q.imagePaths.isNotEmpty()) {
+                                item { QuestionImagesRow(q.imagePaths) }
                             }
                         }
                         if (result != null) {
@@ -1110,6 +1186,29 @@ private fun FollowUpBubble(item: FollowUp) {
             }
         }
     }
+}
+
+@Composable
+private fun NextQuestionButton(preparing: Boolean, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        enabled = !preparing,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .navigationBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Icon(Icons.Outlined.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(if (preparing) "正在准备下一题…" else "拍摄下一题")
+    }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 @Composable

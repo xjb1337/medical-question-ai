@@ -1,5 +1,7 @@
 package com.xjb.medicalquestionai.data
 
+import com.xjb.medicalquestionai.LifecycleStopEvent
+import com.xjb.medicalquestionai.StopPolicy
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -636,5 +638,30 @@ class DeviceFeedbackCoreTest {
         )
         val trimmed = QuestionAnalyzer.trimFollowUpHistory(previous)
         assertEquals(listOf("u2", "a2"), trimmed.map { it.id })
+    }
+
+    @Test
+    fun lifecycleStopPolicyDoesNotStopOnRotationOrPermissionDialogs() {
+        assertFalse(StopPolicy.shouldStopOnLifecycle(LifecycleStopEvent.STOP, changingConfigurations = true))
+        assertFalse(StopPolicy.shouldStopOnLifecycle(LifecycleStopEvent.DESTROY, changingConfigurations = true))
+        assertFalse(StopPolicy.shouldStopOnLifecycle(LifecycleStopEvent.OTHER, changingConfigurations = false))
+        assertTrue(StopPolicy.shouldStopOnLifecycle(LifecycleStopEvent.STOP, changingConfigurations = false))
+        assertTrue(StopPolicy.shouldStopOnLifecycle(LifecycleStopEvent.DESTROY, changingConfigurations = false))
+    }
+
+    @Test
+    fun requestIdentityRejectsLateStopFromOldPage() {
+        assertFalse(StopPolicy.matchesRequest(activeRequestId = "new-request", expectedRequestId = "old-request"))
+        assertTrue(StopPolicy.matchesRequest(activeRequestId = "new-request", expectedRequestId = null))
+        assertTrue(StopPolicy.matchesRequest(activeRequestId = "same", expectedRequestId = "same"))
+    }
+
+    @Test
+    fun nextQuestionDraftStartsWithNoImagesOrText() {
+        val draft = QuestionDraft(sessionId = "next-session")
+        assertTrue(draft.images.isEmpty())
+        assertTrue(draft.text.isBlank())
+        assertEquals(QuestionType.AUTO, draft.questionType)
+        assertTrue(draft.sessionId.isNotBlank())
     }
 }

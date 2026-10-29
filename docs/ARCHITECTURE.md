@@ -43,18 +43,26 @@ MainViewModel
 
 ### Question / FollowUp
 
-`QuestionEntity` 保存题目主记录；`FollowUpEntity` 通过 `questionId` 关联追问，按 `createdAt` 升序读取。删除题目时会先删除其追问与本地图片，再删除主记录。数据库当前为 version 7：`MIGRATION_1_2` 创建追问表，`MIGRATION_2_3` 增加 `isEphemeral` 列，`MIGRATION_3_4` 增加 `mode`、`durationMs`、`promptVersion`，`MIGRATION_4_5` 增加实际请求使用的 `baseUrl` 快照，`MIGRATION_5_6` 增加答案输入版本 `inputRevision`/`answerInputRevision`，`MIGRATION_6_7` 增加追问答案版本 `answerRevision`；不使用破坏性迁移，后续版本升级需继续提供显式迁移。
+`QuestionEntity` 保存题目主记录；`FollowUpEntity` 通过 `questionId` 关联追问，按 `createdAt` 升序读取。删除题目时会先删除其追问与本地图片，再删除主记录。数据库当前为 version 8：`MIGRATION_1_2` 创建追问表，`MIGRATION_2_3` 增加 `isEphemeral` 列，`MIGRATION_3_4` 增加 `mode`、`durationMs`、`promptVersion`，`MIGRATION_4_5` 增加实际请求使用的 `baseUrl` 快照，`MIGRATION_5_6` 增加答案输入版本 `inputRevision`/`answerInputRevision`，`MIGRATION_6_7` 增加追问答案版本 `answerRevision`，`MIGRATION_7_8` 增加未完成预览 `checkpointJson`（nullable）；不使用破坏性迁移，后续版本升级需继续提供显式迁移。
 
 ## 3. 一次解析的完整流程
 
-1. `NewQuestionScreen` 收集题型、文字、图片、隐私确认和做题模式。
-2. `MainViewModel.startAnalysis()` 校验：至少一张图或一段文字、最多 9 张图、必须确认隐私、带图时必须使用支持图片的模型。
+1. `NewQuestionScreen` 收集题型、文字、图片和做题模式；按 2026-10-29 用户要求不再逐题勾选隐私。
+2. `MainViewModel.startAnalysis()` 校验：至少一张图或一段文字、最多 9 张图、带图时必须使用支持图片的模型；隐私说明保留在设置页，不再阻断提交。
 3. 先插入状态为 `analyzing` 的 `Question`，同时固定 `model`、`baseUrl`、`mode`、`promptVersion` 请求快照；默认进入历史，关闭「保存解析历史」时标记为临时记录。
 4. `QuestionAnalyzer.analyzeStream()` 生成按模式裁剪的系统提示词与用户提示词，并把 `thinking` / `reasoning_effort` / `max_tokens` 显式写入请求。
 5. `ImageStore.readBase64()` 读取压缩后的 JPEG，控制单次请求总大小不超过 18 MB。
 6. `DeepSeekClient.stream()` 通过 OkHttp 异步调用 `POST {baseUrl}/chat/completions`（`stream: true`），`SseParser` 增量处理 UTF-8 分片、CRLF、注释、`[DONE]`；`PreviewJsonParser` 从增量 JSON 中提取答案预览。
 7. 取消通过 `call.cancel()` 中断连接；`MainViewModel` 用请求 ID 隔离事件，取消/失败只更新当前任务，不覆盖已有完成结果。
 8. `QuestionAnalyzer.parseResult()` 解析 JSON、规范化题型、补充警告；完成后在同一事务快照上写回 `completed`、实际模型、模式、耗时、prompt 版本并更新结果页状态。
+
+### 退出解析页与拍摄下一题
+
+- 解析任务按 `questionId` 绑定；结果页 `DisposableEffect` + `LifecycleEventObserver` 在返回、`ON_STOP`/`ON_DESTROY`（非配置变更）时调用 `stopQuestionWork()`，取消该题分析协程和追问协程。
+- 取消后通过 `NonCancellable` 落库：已有完整 `result` 保留；本次未完成内容写入 nullable `checkpointJson`，状态 `interrupted`。结果页只把 checkpoint 标为“未完成预览”，不自动重试，也不允许复制/分享/追问。
+- 旋转和权限弹窗不触发停止：`StopPolicy.shouldStopOnLifecycle` 排除 `isChangingConfigurations` 的 `ON_STOP`/`ON_DESTROY`。
+- 结果页底部固定“拍摄下一题”；`prepareNextQuestion()` 先有界等待旧任务停止，再创建独立 `sessionId` 草稿并进入新题相机，避免旧答案页和串图。
+- 进程被杀后的 `analyzing/receiving/validating` 在 ViewModel 初始化时统一标记为 `interrupted`，checkpoint 保留供预览。
 
 ### 模型、模式与设置迁移
 
@@ -103,7 +111,7 @@ MainViewModel
 
 - API Key：`EncryptedSharedPreferences` + Android Keystore 派生密钥，AES-256-GCM。
 - 不记录请求头、API Key 或完整图片到日志。
-- 分析前必须勾选隐私确认；界面明确提示不要上传患者身份信息。
+- 按 2026-10-29 用户要求不再逐题勾选隐私确认；设置页与首页提示不要上传患者身份信息。
 - Android 网络仅允许 HTTPS：自定义 Base URL 在设置页和 `DeepSeekClient` 两处校验，HTTP 地址会被拒绝；不配置明文流量例外。
 - 网页版为独立实现，API Key 默认明文存于浏览器 localStorage，请求经本地 Node 代理转发；其边界不在 Android APK 的安全承诺内，详见 `docs/PRIVACY.md`。
 - 导出/分享只包含文字答案，不包含本地图片路径。

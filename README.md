@@ -26,6 +26,8 @@ npm start
 - **官方模型**：`deepseek-flash`（支持文字与图片）和 `deepseek-v4-pro`（仅文字）；旧版 `deepseek-chat` / `deepseek-reasoner` 等设置会幂等迁移，旧追问和本地数据保留。
 - **三档思考模式**：快速（关闭思考）/ 标准（low）/ 详细（high），请求显式携带 `thinking` 与 `reasoning_effort`，不依赖服务端默认值。
 - **流式解析与取消**：SSE 增量接收，生成中显示答案预览与阶段进度，可随时取消；取消/失败不会覆盖已有完整结果。
+- **退出即停与拍摄下一题**：离开解析页、切后台或锁屏会停止当前题解析/追问并保留已完成答案；未完成内容标记为预览。结果页底部固定“拍摄下一题”，生成中也可用，新题使用独立草稿，不继承旧文字/图片。
+- **不再逐题勾选隐私**：新题直接解析，隐私说明保留在设置页；图片仍只发送到用户配置的接口。
 - **结构化解析**：
   - 识别后的题干
   - 逐图观察与不确定点
@@ -91,7 +93,7 @@ app/build/outputs/apk/debug/app-debug.apk
 本次交付的预构建副本位于 `dist/medical-question-ai-debug.apk`（versionCode 2 / versionName 1.1.0），SHA-256：
 
 ```text
-a14450b30a71a93ffc45e93e03caac1eb05ad9ca6502b33fdf0f56e48555b7cf
+c54e5eadc8ed535793ca9dacdcf5c3f9c885682a18d83bc7e603cad53666f747
 ```
 
 旧版 APK 保留在 `dist/archive/medical-question-ai-debug-v1.0.0-20261028.apk`，用于升级对照。

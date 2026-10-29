@@ -30,7 +30,9 @@ data class QuestionDraft(
     val questionType: QuestionType = QuestionType.AUTO,
     val text: String = "",
     val images: List<DraftImage> = emptyList(),
-    val privacyConfirmed: Boolean = false
+    val privacyConfirmed: Boolean = false,
+    /** 草稿/相机会话身份；迟到的拍照回调不得写入其他草稿。 */
+    val sessionId: String = ""
 )
 
 data class ReasoningStep(
@@ -352,10 +354,15 @@ data class Question(
     /** 当前展示答案对应的输入版本；旧记录均为 0，与 inputRevision 相同。 */
     val answerInputRevision: Long = 0,
     /** 答案版本：每次成功生成新答案递增，用于隔离旧追问。 */
-    val answerRevision: Long = 0
+    val answerRevision: Long = 0,
+    /** 离开页面时保存的未完成预览；不能作为正式答案、追问上下文或分享内容。 */
+    val checkpoint: AnalysisResult? = null
 ) {
     val isAnswerStale: Boolean
         get() = result != null && answerInputRevision != inputRevision
+
+    val hasCheckpoint: Boolean
+        get() = result == null && checkpoint != null
 
     val modeLabel: String
         get() = AnswerMode.fromStorage(mode).label

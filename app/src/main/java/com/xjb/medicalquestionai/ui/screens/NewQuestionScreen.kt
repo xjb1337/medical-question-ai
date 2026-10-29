@@ -108,6 +108,7 @@ fun NewQuestionScreen(
     val isImporting by viewModel.isImporting.collectAsState()
     val analysisError by viewModel.analysisError.collectAsState()
     val notice by viewModel.draftNotice.collectAsState()
+    val parkedDraft by viewModel.parkedDraft.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var editingImageId by remember { mutableStateOf<String?>(null) }
     var textExpanded by rememberSaveable { mutableStateOf(false) }
@@ -213,8 +214,36 @@ fun NewQuestionScreen(
             item {
                 CameraHeroCard(
                     enabled = draft.images.size < ImageStore.MAX_IMAGES && !analyzing && !isImporting,
-                    onClick = { navController.navigate("camera") }
+                    onClick = {
+                        navController.navigate("camera?source=home&sessionId=${draft.sessionId}")
+                    }
                 )
+            }
+
+            if (parkedDraft != null) {
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "已暂存上一份草稿，图片和文字仍在。",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(onClick = { viewModel.restoreParkedDraft() }) {
+                                Text("恢复草稿")
+                            }
+                        }
+                    }
+                }
             }
 
             if (analysisError != null) {

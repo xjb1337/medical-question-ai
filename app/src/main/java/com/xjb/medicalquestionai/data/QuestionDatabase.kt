@@ -40,7 +40,8 @@ data class QuestionEntity(
     @ColumnInfo(defaultValue = "''") val baseUrl: String = "",
     @ColumnInfo(defaultValue = "0") val inputRevision: Long = 0,
     @ColumnInfo(defaultValue = "0") val answerInputRevision: Long = 0,
-    @ColumnInfo(defaultValue = "0") val answerRevision: Long = 0
+    @ColumnInfo(defaultValue = "0") val answerRevision: Long = 0,
+    val checkpointJson: String? = null
 )
 
 @Entity(tableName = "follow_ups")
@@ -77,6 +78,9 @@ interface QuestionDao {
     @Update
     suspend fun update(entity: QuestionEntity)
 
+    @Query("UPDATE questions SET checkpointJson = :json WHERE id = :id")
+    suspend fun updateCheckpoint(id: String, json: String?)
+
     @Query("DELETE FROM questions WHERE id = :id")
     suspend fun deleteById(id: String)
 
@@ -107,7 +111,7 @@ interface FollowUpDao {
 
 @Database(
     entities = [QuestionEntity::class, FollowUpEntity::class],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -175,13 +179,22 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `questions` ADD COLUMN `checkpointJson` TEXT")
+            }
+        }
+
         fun get(context: Context): AppDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 AppDatabase::class.java,
                 "medical_question.db"
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(
+                    MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
+                    MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
+                )
                 .build()
                 .also { instance = it }
         }
@@ -202,6 +215,8 @@ class QuestionRepository(private val dao: QuestionDao) {
     suspend fun insert(question: Question) = dao.insert(question.toEntity())
 
     suspend fun update(question: Question) = dao.update(question.toEntity())
+
+    suspend fun updateCheckpoint(id: String, json: String?) = dao.updateCheckpoint(id, json)
 
     suspend fun delete(id: String) = dao.deleteById(id)
 
@@ -278,7 +293,8 @@ fun QuestionEntity.toDomain(): Question = Question(
     baseUrl = baseUrl,
     inputRevision = inputRevision,
     answerInputRevision = answerInputRevision,
-    answerRevision = answerRevision
+    answerRevision = answerRevision,
+    checkpoint = checkpointJson?.let { AnalysisResult.fromJson(it) }
 )
 
 fun Question.toEntity(): QuestionEntity = QuestionEntity(
@@ -306,5 +322,6 @@ fun Question.toEntity(): QuestionEntity = QuestionEntity(
     baseUrl = baseUrl,
     inputRevision = inputRevision,
     answerInputRevision = answerInputRevision,
-    answerRevision = answerRevision
+    answerRevision = answerRevision,
+    checkpointJson = checkpoint?.toJson()
 )

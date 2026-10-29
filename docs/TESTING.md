@@ -8,9 +8,10 @@
 ./gradlew testDebugUnitTest
 ```
 
-当前共 59 个 JVM 单元测试（4 个测试类，全部通过）：
+当前共 64 个 JVM 单元测试（5 个测试类，全部通过）：
 
-- `DeviceFeedbackCoreTest`（44）：设置迁移幂等、自定义代理不误迁移、模型能力保护、三档 `thinking`/`max_tokens` 请求参数、SSE UTF-8/CRLF/注释/多行/`[DONE]` 边界、无效 `[DONE]` 前置事件、预览 JSON 完整字段/截断/转义、选择题答案校验、`finish_reason` 严格结束校验、错误分类、追问历史整轮裁剪预算、答案输入版本过期判定、F1–F8 严格预览/最终答案语义与题型冲突、R2 单字符串多选项/预览一致性/追问版本/null 污染用例、R3 非法预览降级和连续 null 前缀隔离用例。
+- `CaptureDraftPolicyTest`（2）：连续“拍摄下一题”时已有暂存草稿不被非空当前草稿覆盖；空白草稿不视为有内容。
+- `DeviceFeedbackCoreTest`（47）：设置迁移幂等、自定义代理不误迁移、模型能力保护、三档 `thinking`/`max_tokens` 请求参数、SSE UTF-8/CRLF/注释/多行/`[DONE]` 边界、无效 `[DONE]` 前置事件、预览 JSON 完整字段/截断/转义、选择题答案校验、`finish_reason` 严格结束校验、错误分类、追问历史整轮裁剪预算、答案输入版本过期判定、F1–F8 严格预览/最终答案语义与题型冲突、R2 单字符串多选项/预览一致性/追问版本/null 污染用例、R3 非法预览降级和连续 null 前缀隔离用例。
 - `ModelsTest`（7）：`AnalysisResult` 的 JSON 序列化/反序列化往返、旧版字段别名兼容（`type`、`question`、`input_tokens` 等）、空答案的待确认状态、填空题 `answer_text` 不误判为缺失答案、题型存储值与中文标签、纯图片题目的历史列表兜底文案。
 - `SettingsValidationTest`（4）：HTTPS Base URL 校验、首尾空白/斜杠规范化、拒绝 HTTP、拒绝伪造主机名。
 - `ImageEditPolicyTest`（4）：裁剪「保留原图」时插在原图之后，原图对象与路径不变。
@@ -189,20 +190,27 @@ curl -sS https://api.deepseek.com/chat/completions \
 
 环境：Windows、JDK 17.0.10、Gradle 8.9、AGP 8.7.3、Android SDK 35 / Build-Tools 35.0.0、Node.js 25.8.1。
 
-- `./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest`：BUILD SUCCESSFUL；59/59 单元测试通过（单元测试重跑日志 `docs/evidence/2026-10-29-android-final.log`）。
+- `./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest`：BUILD SUCCESSFUL；64/64 单元测试通过（单元测试重跑日志 `docs/evidence/2026-10-29-android-final.log`）。
 - Lint：0 errors、22 warnings（18 个 `GradleDependency` 依赖版本提示 + 4 个 `ApplySharedPref`）。
 - 设备：`adb devices` 无设备；`connectedDebugAndroidTest` 未执行，不能记为真机功能通过。
 - `npm --prefix web test`：19/19 单元测试通过；浏览器 smoke 通过（`ok: true`）。
 - `aapt2 dump badging`：包名 `com.xjb.medicalquestionai`，versionCode 2、versionName 1.1.0，minSdk 26、targetSdk 35。
 - `apksigner verify`：APK Signature Scheme v2 验证通过；新旧 APK 使用同一 debug 证书 SHA-256 `77c3ca8d1a7cf0aca4718b328705bb21833976bc701dad89c11881c83ca1c861`。
-- 产物：`dist/medical-question-ai-debug.apk`，SHA-256 `a14450b30a71a93ffc45e93e03caac1eb05ad9ca6502b33fdf0f56e48555b7cf`。
+- 产物：`dist/medical-question-ai-debug.apk`，21,842,313 bytes，SHA-256 `c54e5eadc8ed535793ca9dacdcf5c3f9c885682a18d83bc7e603cad53666f747`。
 - 未执行：真实 DeepSeek Key 联调、40 题质量对照、15 题×3 次速度对照、真机 UI/相机/覆盖安装。详见 `docs/DEVICE_FEEDBACK_IMPLEMENTATION_REPORT.md`。
+
+### 4.4 退出解析页与拍摄下一题（2026-10-29 第四轮）
+
+- JVM：`StopPolicy` 生命周期判定、旧请求身份校验、草稿 sessionId/暂存草稿不覆盖策略包含在 64 项测试中；checkpoint 落库路径为代码审查与构建验证。
+- 自动验证命令与结果同 4.3；Lint 0 errors / 22 warnings。
+- 未执行：真机返回/后台/锁屏/旋转/权限弹窗、相机取消、连点、16 项交互验收、`connectedDebugAndroidTest`、旧库升级实测。详见 `docs/DEVICE_FEEDBACK_IMPLEMENTATION_REPORT.md` 第 13 节。
+- 行为约定：离开结果页停止当前题解析和追问，保留已完成答案；未完成预览标注为“未完成预览”，不自动重试；结果页底部固定“拍摄下一题”，新题使用独立 session，不继承旧文字/图片。
 
 ## 5. 回归重点
 
 1. 图片导入：先 `inJustDecodeBounds` 读取尺寸，再按采样率解码；空流、损坏图片、超大图片都应转成 `ImageImportException`，不能拖垮整个导入流程。
 2. 裁剪保留原图：新增裁剪图应插在原图之后，原图 id/path 不变；替换裁剪才更新原路径的宽高与文件大小。相关纯逻辑在 `ImageEditPolicy`，必须保留单元测试。
-3. Room 版本升级：当前数据库版本为 7，包含 `MIGRATION_1_2`（追问表）、`MIGRATION_2_3`（`questions.isEphemeral`）、`MIGRATION_3_4`（`mode`/`durationMs`/`promptVersion`）、`MIGRATION_4_5`（`baseUrl` 快照）、`MIGRATION_5_6`（答案输入版本 `inputRevision`/`answerInputRevision`，默认 0）和 `MIGRATION_6_7`（追问答案版本 `answerRevision`，默认 0）；升级时必须提供 Migration，禁止直接 `fallbackToDestructiveMigration()` 上线。
+3. Room 版本升级：当前数据库版本为 8，包含 `MIGRATION_1_2`（追问表）、`MIGRATION_2_3`（`questions.isEphemeral`）、`MIGRATION_3_4`（`mode`/`durationMs`/`promptVersion`）、`MIGRATION_4_5`（`baseUrl` 快照）、`MIGRATION_5_6`（答案输入版本 `inputRevision`/`answerInputRevision`，默认 0）、`MIGRATION_6_7`（追问答案版本 `answerRevision`，默认 0）和 `MIGRATION_7_8`（未完成预览 `checkpointJson`，nullable）；升级时必须提供 Migration，禁止直接 `fallbackToDestructiveMigration()` 上线。
 4. 图片文件生命周期：删除题目、重答替换图片、清空历史时都要删除对应文件，避免私有目录膨胀。
 5. JSON 契约变化：新增字段必须保持可选；旧记录反序列化不能崩溃。
 6. 大图内存：低端机连续导入 9 张 4000px 图片时不应 OOM。

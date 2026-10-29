@@ -1,7 +1,11 @@
 package com.xjb.medicalquestionai.ui.screens
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
@@ -47,6 +51,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,6 +63,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import com.xjb.medicalquestionai.MainViewModel
 import com.xjb.medicalquestionai.data.CaptureTarget
@@ -68,13 +75,16 @@ import com.xjb.medicalquestionai.ui.components.ErrorBanner
 @Composable
 fun CameraScreen(
     viewModel: MainViewModel,
-    navController: NavController
+    navController: NavController,
+    source: String,
+    sessionId: String
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val isImporting by viewModel.isImporting.collectAsState()
     val draft by viewModel.draft.collectAsState()
     val notice by viewModel.draftNotice.collectAsState()
+    val effectiveSessionId = sessionId.ifBlank { draft.sessionId }
     val snackbarHostState = remember { SnackbarHostState() }
     val previewView = remember {
         PreviewView(context).apply {
@@ -94,6 +104,39 @@ fun CameraScreen(
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var camera by remember { mutableStateOf<Camera?>(null) }
     var torchOn by remember { mutableStateOf(false) }
+    var captureToken by rememberSaveable { mutableStateOf<String?>(null) }
+    val activity = context.findActivityOrNull()
+
+    fun exitCamera() {
+        viewModel.invalidateCameraCapture(captureToken)
+        captureToken = null
+        if (source == "next_question") {
+            navController.navigate("home") {
+                popUpTo("home") { inclusive = false }
+                launchSingleTop = true
+            }
+        } else {
+            navController.popBackStack()
+        }
+    }
+
+    BackHandler { exitCamera() }
+
+    DisposableEffect(lifecycleOwner, activity, captureToken) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && activity?.isChangingConfigurations != true) {
+                viewModel.invalidateCameraCapture(captureToken)
+                captureToken = null
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            if (activity?.isChangingConfigurations != true) {
+                viewModel.invalidateCameraCapture(captureToken)
+            }
+        }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -164,19 +207,26 @@ fun CameraScreen(
                 return
             }
         isCapturing = true
+        val token = viewModel.beginCameraCapture()
+        captureToken = token
         val outputOptions = ImageCapture.OutputFileOptions.Builder(target.file).build()
         capture.takePicture(
             outputOptions,
             ContextCompat.getMainExecutor(context),
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                    viewModel.addCameraImage(target.uri, target.file) {
-                        navController.popBackStack()
+                    viewModel.addCameraImage(target.uri, target.file, effectiveSessionId, token) {
+                        navController.navigate("home") {
+                            popUpTo("home") { inclusive = false }
+                            launchSingleTop = true
+                        }
                     }
                     isCapturing = false
                 }
 
                 override fun onError(exception: ImageCaptureException) {
+                    viewModel.invalidateCameraCapture(token)
+                    if (captureToken == token) captureToken = null
                     viewModel.deleteCapture(target.file)
                     cameraError = "拍照失败：${exception.message ?: "请重试"}"
                     isCapturing = false
@@ -186,7 +236,12 @@ fun CameraScreen(
     }
 
     Scaffold(
-        topBar = { AppTopBar(title = "拍摄题目", onBack = { navController.popBackStack() }) },
+        topBar = {
+            AppTopBar(
+                title = if (source == "next_question") "拍摄下一题" else "拍摄题目",
+                onBack = { exitCamera() }
+            )
+        },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
@@ -325,4 +380,10 @@ fun CameraScreen(
             Spacer(Modifier.height(14.dp))
         }
     }
+}
+
+private tailrec fun Context.findActivityOrNull(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivityOrNull()
+    else -> null
 }

@@ -5,11 +5,11 @@
 ## 1. 版本与范围
 
 - 实施日期/时区：2026-10-29，Asia/Shanghai。
-- 开始提交/结束提交：开始 `4b6f3ee`（2026-10-28 23:15:48 +08:00）；结束时提交：本轮 R2 修复提交（以 `git log -1 --oneline` 为准）。
+- 开始提交/结束提交：开始 `4b6f3ee`（2026-10-28 23:15:48 +08:00）；本轮 NC-01～NC-03 修复提交见 `git log -1`，审查者可按 `git show --stat HEAD` 核对。
 - 开始工作区状态及保留改动：开始时 `docs/DEVICE_FEEDBACK_PLAN_2026-10-29.md` 与 `docs/DEVICE_FEEDBACK_REPORT_TEMPLATE.md` 为未跟踪文件，其余工作区干净；实施后保留全部业务代码、测试、文档、APK 和 `docs/evidence/` 证据，不清理、不覆盖旧验收报告。
 - DeepSeek 官方文档复核日期、页面和相对方案变化：未复核（沿用方案第 1 节 2026-10-29 的历史结论，页面为 `api-docs.deepseek.com` 的模型列表/思考模式说明；本次未重新联网抓取，未确认相对变化）。正式模型名为 `deepseek-flash`（文字+图片）与 `deepseek-v4-pro`（仅文字）。
 - Android 版本/build：`versionCode 2`、`versionName 1.1.0`，debug 构建；包名 `com.xjb.medicalquestionai`，minSdk 26、targetSdk 35。
-- APK 绝对路径 / SHA-256：`E:\souti\repo\dist\medical-question-ai-debug.apk`；`a14450b30a71a93ffc45e93e03caac1eb05ad9ca6502b33fdf0f56e48555b7cf`（21,827,839 bytes）。旧版归档于 `dist/archive/medical-question-ai-debug-v1.0.0-20261028.apk`，SHA-256 `9da7a2aa7908811af2ced7a01979e4c4058610d6e10b8b445b3493b448a058f3`。
+- APK 绝对路径 / SHA-256：`E:\souti\repo\dist\medical-question-ai-debug.apk`；`c54e5eadc8ed535793ca9dacdcf5c3f9c885682a18d83bc7e603cad53666f747`（21,842,313 bytes）。旧版归档于 `dist/archive/medical-question-ai-debug-v1.0.0-20261028.apk`，SHA-256 `9da7a2aa7908811af2ced7a01979e4c4058610d6e10b8b445b3493b448a058f3`。
 - 真机型号 / Android 版本 / 屏幕宽度 / 字体缩放：无设备，未执行。
 - 真实接口 / mock / 演示分别使用在哪些检查：真实接口未使用（无 Key）；单元测试使用纯 JVM 逻辑与固定 JSON/SSE 字节；Web 测试使用本地 mock DeepSeek 和浏览器 headless 环境；演示模式未作为验收证据。
 
@@ -66,16 +66,16 @@
 
 | 命令 | 实际执行时间 | 退出状态/统计 | 报告位置 | 未覆盖内容 |
 | --- | --- | --- | --- | --- |
-| `./gradlew :app:testDebugUnitTest` | 2026-10-29 19:43 +08:00（R3 最终重跑） | BUILD SUCCESSFUL；59 tests / 0 failures / 0 errors / 0 skipped（44 `DeviceFeedbackCoreTest` + 4 `ImageEditPolicyTest` + 7 `ModelsTest` + 4 `SettingsValidationTest`） | `app/build/reports/tests/testDebugUnitTest/index.html`；`app/build/test-results/testDebugUnitTest/*.xml`；`docs/evidence/2026-10-29-android-final.log`（仅构建日志） | 纯 JVM，无设备/网络 |
-| `./gradlew :app:lintDebug` | 2026-10-29 19:43 +08:00 | BUILD SUCCESSFUL；0 errors / 22 warnings（18 个 `GradleDependency` + 4 个 `ApplySharedPref`，统计来自 `app/build/reports/lint-results-debug.xml`） | `app/build/reports/lint-results-debug.html`、`app/build/reports/lint-results-debug.xml`；`docs/evidence/2026-10-29-android-final.log`（仅构建日志） | 静态检查，不证明 UI |
-| `./gradlew :app:assembleDebug` | 2026-10-29 19:43 +08:00 | BUILD SUCCESSFUL；APK 21,827,839 bytes | `dist/medical-question-ai-debug.apk` | 未安装运行 |
-| `./gradlew :app:assembleDebugAndroidTest` | 2026-10-29 19:43 +08:00 | BUILD SUCCESSFUL（测试 APK 编译） | `app/build/outputs/apk/androidTest/` | 未执行 instrumented 测试 |
+| `./gradlew :app:testDebugUnitTest` | 2026-10-29 21:45 +08:00（NC-01～NC-03 最终重跑） | BUILD SUCCESSFUL；64 tests / 0 failures / 0 errors / 0 skipped（47 `DeviceFeedbackCoreTest` + 4 `ImageEditPolicyTest` + 7 `ModelsTest` + 4 `SettingsValidationTest` + 2 `CaptureDraftPolicyTest`） | `app/build/reports/tests/testDebugUnitTest/index.html`；`app/build/test-results/testDebugUnitTest/*.xml`；`docs/evidence/2026-10-29-android-final.log`（仅构建日志） | 纯 JVM，无设备/网络 |
+| `./gradlew :app:lintDebug` | 2026-10-29 21:45 +08:00 | BUILD SUCCESSFUL；0 errors / 22 warnings（18 个 `GradleDependency` + 4 个 `ApplySharedPref`，统计来自 `app/build/reports/lint-results-debug.xml`） | `app/build/reports/lint-results-debug.html`、`app/build/reports/lint-results-debug.xml`；`docs/evidence/2026-10-29-android-final.log`（仅构建日志） | 静态检查，不证明 UI |
+| `./gradlew :app:assembleDebug` | 2026-10-29 21:45 +08:00 | BUILD SUCCESSFUL；APK 21,842,313 bytes | `dist/medical-question-ai-debug.apk` | 未安装运行 |
+| `./gradlew :app:assembleDebugAndroidTest` | 2026-10-29 21:45 +08:00 | BUILD SUCCESSFUL（测试 APK 编译） | `app/build/outputs/apk/androidTest/` | 未执行 instrumented 测试 |
 | `./gradlew :app:connectedDebugAndroidTest` | 未执行 | `adb devices` 无设备 | — | 无设备 |
-| `npm --prefix web test` | 2026-10-29 18:44 +08:00 | 19/19 单元测试通过；browser smoke `ok: true` | `docs/evidence/2026-10-29-web-final.log` | mock 上游，非真实 DeepSeek |
-| `cmp` / `sha256sum`（build→dist） | 2026-10-29 19:43 +08:00 | 两文件逐字节一致；21,827,839 bytes；SHA-256 `a14450b3…` | `docs/evidence/2026-10-29-apk-correspondence.log` | 只证明产物对应，不证明真机安装 |
-| `git diff --check` | 2026-10-29 19:43 +08:00 | 退出 0（仅 CRLF 提示） | `docs/evidence/2026-10-29-git-diff-check.log` | 不检查运行行为 |
+| `npm --prefix web test` | 2026-10-29 21:09 +08:00 | 19/19 单元测试通过；browser smoke `ok: true` | `docs/evidence/2026-10-29-web-final.log` | mock 上游，非真实 DeepSeek |
+| `cmp` / `sha256sum`（build→dist） | 2026-10-29 21:46 +08:00 | 两文件逐字节一致；21,842,313 bytes；SHA-256 `c54e5ead…` | `docs/evidence/2026-10-29-apk-correspondence.log` | 只证明产物对应，不证明真机安装 |
+| `git diff --check` | 2026-10-29 21:45 +08:00 | 退出 0（仅 CRLF 提示） | `docs/evidence/2026-10-29-git-diff-check.log` | 不检查运行行为 |
 
-新增针对性测试：`DeviceFeedbackCoreTest`（模型/迁移/模式请求参数/SSE/预览 JSON/解析边界）、`SettingsValidationTest`（URL）、`ModelsTest`（旧 JSON 兼容）、`ImageEditPolicyTest`（裁剪）。测试结果 XML：`app/build/test-results/testDebugUnitTest/*.xml`。取消竞争、失败不覆盖旧结果两项需要 MainViewModel/Android instrumentation 环境，本机无设备，报告按“未覆盖”处理，未虚列为通过。
+新增针对性测试：`DeviceFeedbackCoreTest`（模型/迁移/模式请求参数/SSE/预览 JSON/解析边界）、`SettingsValidationTest`（URL）、`ModelsTest`（旧 JSON 兼容）、`ImageEditPolicyTest`（裁剪）、`CaptureDraftPolicyTest`（连续下一题不覆盖暂存草稿）。测试结果 XML：`app/build/test-results/testDebugUnitTest/*.xml`。取消竞争、失败不覆盖旧结果两项需要 MainViewModel/Android instrumentation 环境，本机无设备，报告按“未覆盖”处理，未虚列为通过。
 
 ## 5. 质量对照
 
@@ -121,7 +121,7 @@ P50 改善百分比、P95 回归、失败请求处理及未达到目标：均无
 - 手机显示版本和被安装 APK 哈希对应关系：未安装到手机；静态核验结果：
   - `aapt2 dump badging`：`package: name='com.xjb.medicalquestionai' versionCode='2' versionName='1.1.0'`，`minSdkVersion:'26'`，`targetSdkVersion:'35'`（`docs/evidence/2026-10-29-apk-badging.txt`）
   - `apksigner verify --print-certs`：APK Signature Scheme v2 通过；新旧 APK 证书 SHA-256 均为 `77c3ca8d1a7cf0aca4718b328705bb21833976bc701dad89c11881c83ca1c861`（`docs/evidence/2026-10-29-apk-signature.txt`）
-  - 新 APK SHA-256：`a14450b30a71a93ffc45e93e03caac1eb05ad9ca6502b33fdf0f56e48555b7cf`
+  - 新 APK SHA-256：`c54e5eadc8ed535793ca9dacdcf5c3f9c885682a18d83bc7e603cad53666f747`
 
 ## 8. 已知问题及待验收
 
@@ -188,3 +188,45 @@ P50 改善百分比、P95 回归、失败请求处理及未达到目标：均无
 | R3-03 | 已有 `nullnull…正文` 污染追问仍进入上下文 | `hasRepeatedJsonNullPrefix` 识别开头连续两个以上 `null`（含纯重复 null）；追问上下文裁剪、UI 展示和发送历史都使用该判定；正常 `null hypothesis` 不会被误伤 | `DeviceFeedbackCoreTest.pollutedNullPrefixHistoryIsIsolatedButNormalNullWordIsKept` |
 
 **第三轮最终自动验证**：Android 59/59 JVM 测试通过，Lint 0 errors / 22 warnings；Web 19/19 单元测试和浏览器 smoke 通过；APK 21,827,839 bytes，SHA-256 `a14450b30a71a93ffc45e93e03caac1eb05ad9ca6502b33fdf0f56e48555b7cf`。交付包由本仓库最终 `assembleDebug` 输出直接复制，`cmp` 逐字节一致（见 `docs/evidence/2026-10-29-apk-correspondence.log`）；独立重建若出现不同字节，应优先比较源码提交、构建命令、版本与签名，而不是仅凭哈希判断代码版本。
+
+## 13. 退出解析页与拍摄下一题（2026-10-29 第四轮方案）
+
+> 对应 `docs/RESULT_EXIT_AND_NEXT_CAPTURE_PLAN_2026-10-29.md`。本轮只完成代码、JVM 测试和构建；无设备，真机生命周期、相机和 16 项交互验收未执行。
+
+### 13.1 行为实现
+
+| 编号 | 行为 | 实现结果 | 证据/限制 |
+| --- | --- | --- | --- |
+| N01 | 纯文字/图片题开始后立即顶部返回 | `ResultScreen` 的 `DisposableEffect`/`LifecycleEventObserver` 调用题目级 `stopQuestionWork`；分析协程取消后在 `NonCancellable` 中落 `interrupted`，不删除旧 `result`；输入图片仍保存在 `question.imagePaths` | 代码审查、`StopPolicy` 单测；真机返回路径未执行 |
+| N02 | 已有答案预览但详情仍生成，系统返回/返回手势 | 停止时把当前 `AnalysisPreview.toResult()` 写入 `checkpointJson`；重开显示“未完成预览”，不进入正式答案、复制分享或追问上下文；不自动重发 | `markInterrupted` 初始化路径；真机返回手势未执行 |
+| N03 | 正式结果已保存后返回 | 无活动任务时 `stopQuestionWork` 直接返回成功，不写取消/失败状态；已完成 `result`、收藏、模型/用量/耗时不变，无“取消成功”提示 | 代码审查；真机未执行 |
+| N04 | 重答中返回（输入未改/已改） | 重答期间数据库保留旧 `completed` 记录；停止只标记本次请求，旧结果不覆盖；已修改输入保持 `isAnswerStale` 并继续显示“答案待更新”，不混入半成品 | `staleAnswerTracksInputRevision` 单测；真机未执行 |
+| N05 | 追问等待/已有部分正文时离开 | 追问协程按 `questionId` 取消；已插入的用户文字保留，部分回复标记失败/未完成；重开不自动重发 | `followUpJobs` 取消路径审查；真机未执行 |
+| N06 | 切后台/锁屏；旋转/重组/权限弹窗 | `StopPolicy.shouldStopOnLifecycle` 仅在非配置变更的 `ON_STOP`/`ON_DESTROY` 停止；权限弹窗不产生 Activity stop；旋转不触发停止 | `DeviceFeedbackCoreTest.lifecycleStopPolicyDoesNotStopOnRotationOrPermissionDialogs`；真机未执行 |
+| N07 | 网络迟到增量/finish/DB 提交边界离开 | `activeRequestId`/`expectedRequestId` 校验迟到事件；最终写入用 `NonCancellable`；首笔写 `saving`、最终写 `saved`，失败落 `failed`，不残留永久 `saving` | `requestIdentityRejectsLateStopFromOldPage`；并发真机未执行 |
+| N08 | 生成中点拍摄下一题，双击/连续点 | `nextQuestionPreparing` 为 `AtomicBoolean`；UI `preparingNext` 禁用按钮；并发点击只有一个成功，旧任务停止后只导航一次相机 | 代码审查；无 UI 自动化 |
+| N09 | 正式完成后点下一题并拍照 | `prepareNextQuestion` 生成新 `sessionId` 草稿并导航 `camera?source=next&sessionId=...`；拍完回首页新题确认页，旧题图片/答案/ID 不变 | 代码审查；相机未执行 |
+| N10 | 相机取消、拒绝权限、导入失败 | 新题流程只重置草稿并导航，不插入 `Question`；相机取消/权限拒绝回首页确认页；导入失败显示错误，不产生空历史、不追加旧题 | 代码审查；相机未执行 |
+| N11 | 相机/压缩回调延迟时返回或开启另一个草稿 | `addCameraImage(uri, file, sessionId, captureToken)` 同时校验会话和拍摄令牌；退出/返回/进入后台会 invalidate 令牌，迟到回调在导入前后都检查令牌，丢弃图片和临时文件且不执行导航 | `CaptureDraftPolicyTest` 覆盖草稿保留策略；相机真机路径未执行 |
+| N12 | 首页已有草稿，再从历史题拍下一题 | `_parkedDraft` 只保留一份既有草稿；当前草稿也有内容时 `prepareNextQuestion` 明确拒绝并提示“先恢复或清空”，不静默覆盖；恢复草稿时与当前草稿互换保存 | `CaptureDraftPolicyTest.parkedDraftIsNeverSilentlyReplacedByAnotherNonEmptyDraft`；无设备 |
+| N13 | 连续完成三道题、三次拍下一题，再系统返回 | `AppNavigation` 使用 `popUpTo("result/{questionId}") { inclusive = true }` 再进相机；结果页每次新 ID，不重复开相机或重发旧任务 | 代码审查；真机未执行 |
+| N14 | 360/412dp、深浅色、1.3× 字体、键盘及长追问 | `NextQuestionButton` 使用 `navigationBarsPadding`、`heightIn(min=48.dp)`、Material 主题色；底部追问栏同样处理系统安全区；文案单行可读 | 编译通过；真机视觉未执行 |
+| N15 | 停止保存失败、取消超时、新草稿准备失败 | `stopQuestionWork` 用 `withTimeoutOrNull(2s)`，超时返回 `timedOut`；`prepareNextQuestion` 返回错误并保留旧任务，不导航；错误在结果页 banner 展示 | 代码审查；无设备 |
+| N16 | 原版数据升级、进程在生成中被终止后重开 | DB v8 `MIGRATION_7_8` 增加 nullable `checkpointJson`；解析中每 500ms 落一次检查点；初始化把遗留 `analyzing/receiving/validating` 标为 `interrupted` 并保留 checkpoint，不自动联网 | 编译通过；instrumented 迁移未执行 |
+
+### 13.2 本轮自动验证
+
+- Android：`./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest` BUILD SUCCESSFUL（2026-10-29 21:45 +08:00）；64/64 JVM 测试通过（47 `DeviceFeedbackCoreTest` + 4 `ImageEditPolicyTest` + 7 `ModelsTest` + 4 `SettingsValidationTest` + 2 `CaptureDraftPolicyTest`），Lint 0 errors / 22 warnings。
+- Web：`npm test` 19/19 单元测试通过，浏览器 smoke 通过（`followUpsClearedOnEdit: true`）。
+- APK：`dist/medical-question-ai-debug.apk` 21,842,313 bytes，SHA-256 `c54e5eadc8ed535793ca9dacdcf5c3f9c885682a18d83bc7e603cad53666f747`；与 `app/build/outputs/apk/debug/app-debug.apk` 逐字节一致。
+- 未执行：真机返回/后台/锁屏/旋转/权限弹窗、相机取消、连点、16 项交互验收、`connectedDebugAndroidTest`、旧库升级实测、真实 API 和性能对照。
+
+### 13.3 第五轮复核修复（NC-01～NC-03）
+
+| 编号 | 问题 | 修复 | 证据/限制 |
+| --- | --- | --- | --- |
+| NC-01 P1 | 相机迟到回调仍可能加图并跳首页 | 拍照开始生成 `captureToken`；顶部返回、系统返回、`ON_STOP` 和页面销毁（非配置变更）都会 invalidate；`addCameraImage` 在导入前、导入后和 `onComplete` 前检查令牌，失效时删除临时/已导入文件且不导航 | 代码审查 + 生命周期编译；真机相机未执行 |
+| NC-02 P2 | 退出路径未传 `expectedRequestId` | `ResultScreen` 从当前活动 `AnalysisTaskState.requestId` 取值，顶部返回、生命周期退出和“拍摄下一题”均传入 `stopQuestionWorkAsync`/`prepareNextQuestion`；请求身份不匹配时不会停掉同题新请求 | `DeviceFeedbackCoreTest.requestIdentityRejectsLateStopFromOldPage`；真机竞争未执行 |
+| NC-03 P2 | 连续两次“拍摄下一题”覆盖暂存草稿 | 新增 `canParkDraft`：当前草稿与已有暂存草稿都非空时拒绝并提示先恢复/清空，不覆盖、不删除图片；空草稿可继续进入下一题 | `CaptureDraftPolicyTest`；无设备 |
+
+**结论**：代码与自动测试覆盖本轮方案的可测逻辑；真机生命周期和相机路径仍需独立验收，不能据本报告宣称 16 项全部通过。
