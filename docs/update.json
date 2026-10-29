@@ -6,9 +6,9 @@
   "minSdk": 26,
   "apkAssetName": "medical-question-ai.apk",
   "apkSizeBytes": 21475122,
-  "apkSha256": "0b4ff605ce8ab94ce952157ab4108669b954306100f94ac0f1c0bfbc63c9878f",
+  "apkSha256": "62674c833cb97ddaccc7479122db501da160210c6649e8a5b957fa6086e6f67d",
   "signingCertSha256": "77c3ca8d1a7cf0aca4718b328705bb21833976bc701dad89c11881c83ca1c861",
-  "commitSha": "8cecfae091497dc1b3845cb1b516f17d21e92866",
-  "publishedAt": "2026-10-29T15:41:47Z",
+  "commitSha": "3bca6496809e16a5a78c7d94079797e028ef4ffa",
+  "publishedAt": "2026-10-29T16:23:25Z",
   "releaseNotes": "版本 1.2.1-test.1（build 4）"
 }
