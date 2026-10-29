@@ -121,7 +121,7 @@ P50 改善百分比、P95 回归、失败请求处理及未达到目标：均无
 - 手机显示版本和被安装 APK 哈希对应关系：未安装到手机；静态核验结果：
   - `aapt2 dump badging`：`package: name='com.xjb.medicalquestionai' versionCode='2' versionName='1.1.0'`，`minSdkVersion:'26'`，`targetSdkVersion:'35'`（`docs/evidence/2026-10-29-apk-badging.txt`）
   - `apksigner verify --print-certs`：APK Signature Scheme v2 通过；新旧 APK 证书 SHA-256 均为 `77c3ca8d1a7cf0aca4718b328705bb21833976bc701dad89c11881c83ca1c861`（`docs/evidence/2026-10-29-apk-signature.txt`）
-  - 新 APK SHA-256：`de815fc0e748ee7764a45f190827267396911ac78a70cf965f7b093bc64c7cfe`
+  - 新 APK SHA-256：`1818eea30285ae5648325c9120078b77eaf8cb80cd71d47093fb0f18a102aa87`（guide，21,940,535 bytes）
 
 ## 8. 已知问题及待验收
 
@@ -131,7 +131,7 @@ P50 改善百分比、P95 回归、失败请求处理及未达到目标：均无
 4. 旧模型迁移只做 JVM 单测和代码审查；真机升级（尤其自定义代理、旧数据库、旧 SharedPreferences 共存）未验证。
 5. 后端 Node 代理的 Web smoke 仅覆盖非流式 mock/UI；SSE 逐块转发、真实上游的背压、断连取消、长响应超时未验证。
 6. 无旧版同设备基线：旧 APK 虽归档，但不能证明同手机、同网络、同服务时段下的速度差异。
-7. 本次未创建 git 提交（用户未要求）；交付为工作区改动，审查者需按 `git diff` 核对。
+7. 本轮实现提交为 `95a8963`（应用内更新功能与发布自动化），更新清单提交见 `git log -1`；审查者可按 `git show --stat 95a8963` 核对。真机安装、跨版本覆盖升级和 GitHub Actions 实跑仍未执行。
 
 最终声明：本报告为实施者交接，独立验收结论由审查者另行给出。
 
