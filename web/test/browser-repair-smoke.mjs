@@ -52,6 +52,55 @@ async function waitHttp(url, timeout = 20000) {
   throw new Error(`timeout waiting for ${url}`);
 }
 
+function waitForExit(child, timeoutMs) {
+  return new Promise((resolvePromise) => {
+    if (!child || child.exitCode !== null) {
+      resolvePromise(true);
+      return;
+    }
+    let settled = false;
+    const finish = (exited) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.removeListener("exit", onExit);
+      resolvePromise(exited);
+    };
+    const onExit = () => finish(true);
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    child.once("exit", onExit);
+  });
+}
+
+async function stopBrowser(chrome) {
+  if (!chrome) return;
+  if (await waitForExit(chrome, 0)) return;
+  try { chrome.kill("SIGTERM"); } catch {}
+  if (await waitForExit(chrome, 5000)) return;
+  if (process.platform === "win32") {
+    try { execFileSync("taskkill", ["/PID", String(chrome.pid), "/T", "/F"], { stdio: "ignore" }); } catch {}
+  } else {
+    try { chrome.kill("SIGKILL"); } catch {}
+  }
+  await waitForExit(chrome, 5000);
+}
+
+async function removeDirWithRetry(dir, attempts = 12) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      lastError = error;
+      const retryable = ["EBUSY", "EPERM", "ENOTEMPTY", "EACCES"].includes(error?.code);
+      if (!retryable || attempt === attempts) throw error;
+      await sleep(100 * attempt);
+    }
+  }
+  if (lastError) throw lastError;
+}
+
 function startMockDeepSeek() {
   const analysis = {
     status: "answered",
@@ -365,6 +414,8 @@ const web = spawn(process.execPath, [join(WEB_DIR, "server.mjs")], {
 });
 let chrome;
 const profileDir = mkdtempSync(join(tmpdir(), "medical-web-test-"));
+let testError;
+let result;
 try {
   await waitHttp(`${BASE}api/health`);
   const chromePath = chromeCandidates().find((candidate) => existsSync(candidate));
@@ -373,16 +424,42 @@ try {
     "--headless=new", "--disable-gpu", "--no-sandbox",
     `--remote-debugging-port=${CDP_PORT}`, `--user-data-dir=${profileDir}`, "about:blank"
   ], { stdio: "ignore" });
-  const result = await runBrowserChecks();
+  result = await runBrowserChecks();
   console.log(JSON.stringify({ ok: true, ...result }, null, 2));
-} finally {
-  if (chrome) {
-    try { chrome.kill("SIGKILL"); } catch {}
-    if (process.platform === "win32") {
-      try { execFileSync("taskkill", ["/PID", String(chrome.pid), "/T", "/F"], { stdio: "ignore" }); } catch {}
-    }
-  }
+} catch (error) {
+  testError = error;
+}
+
+const cleanupErrors = [];
+try {
+  await stopBrowser(chrome);
+} catch (error) {
+  cleanupErrors.push(error);
+}
+try {
   web.kill("SIGKILL");
+  await waitForExit(web, 3000);
+} catch (error) {
+  cleanupErrors.push(error);
+}
+try {
   await new Promise((resolvePromise) => mock.close(resolvePromise));
-  rmSync(profileDir, { recursive: true, force: true });
+} catch (error) {
+  cleanupErrors.push(error);
+}
+try {
+  await removeDirWithRetry(profileDir);
+} catch (error) {
+  cleanupErrors.push(error);
+}
+
+if (testError) {
+  if (cleanupErrors.length > 0) {
+    testError.message += `\n[browser cleanup failed] ${cleanupErrors.map((error) => error?.message || error).join("; ")}`;
+    if (testError.cause === undefined) testError.cause = cleanupErrors[0];
+  }
+  throw testError;
+}
+if (cleanupErrors.length > 0) {
+  throw new AggregateError(cleanupErrors, `browser test cleanup failed: ${cleanupErrors.map((error) => error?.message || error).join("; ")}`);
 }
