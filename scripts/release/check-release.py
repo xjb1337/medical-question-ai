@@ -17,6 +17,7 @@ def main() -> None:
     parser.add_argument("--candidate-tag", required=True)
     parser.add_argument("--latest-tag", required=True)
     parser.add_argument("--candidate-sha", required=True)
+    parser.add_argument("--existing-tag-sha", default="")
     args = parser.parse_args()
 
     try:
@@ -36,6 +37,8 @@ def main() -> None:
         fail("候选 Release tag 与已发布 tag 相同")
     if not args.candidate_sha.strip():
         fail("候选提交 SHA 为空")
+    if args.existing_tag_sha.strip():
+        fail(f"候选 tag 已存在，拒绝复用: {args.candidate_tag}")
 
     print(
         f"check-release: ok candidate={args.candidate_version_code} "

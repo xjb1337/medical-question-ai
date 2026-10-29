@@ -93,10 +93,10 @@ app/build/outputs/apk/debug/app-debug.apk
 本次交付的预构建副本位于 `dist/medical-question-ai-debug.apk`（versionCode 3 / versionName 1.2.0，21,475,118 bytes），SHA-256：
 
 ```text
-84b9e8db3b7c9e9e56c31a463a73170943f67517b466140f0a55cc73aa0e5f06
+6399fb0caed1a09c1bca4a082accab8e279cd88eaf485ff5e276bd991da8e64a
 ```
 
-应用内更新首次安装引导包为 `dist/medical-question-ai-update-guide.apk`（同版本/同哈希）；本地候选更新包为 `dist/medical-question-ai-update-candidate.apk`（versionCode 4 / versionName 1.2.1-test.1，21,475,122 bytes，SHA-256 `0b4ff605ce8ab94ce952157ab4108669b954306100f94ac0f1c0bfbc63c9878f`）。
+应用内更新首次安装引导包为 `dist/medical-question-ai-update-guide.apk`（同版本/同哈希）；本地候选更新包为 `dist/medical-question-ai-update-candidate.apk`（versionCode 4 / versionName 1.2.1-test.1，21,475,122 bytes，SHA-256 `62674c833cb97ddaccc7479122db501da160210c6649e8a5b957fa6086e6f67d`）。
 
 旧版 APK 保留在 `dist/archive/medical-question-ai-debug-v1.0.0-20261028.apk`，用于升级对照。
 

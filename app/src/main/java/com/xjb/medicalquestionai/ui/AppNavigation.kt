@@ -60,6 +60,8 @@ fun MedicalQuestionApp(
     val showBottomBar = currentRoute == "home" || currentRoute == "history" || currentRoute == "settings"
     val updateState by updateViewModel.state.collectAsState()
     val isAnalyzing by viewModel.isAnalyzing.collectAsState()
+    val followUpSendingIds by viewModel.followUpSendingIds.collectAsState()
+    val hasActiveWork = isAnalyzing || followUpSendingIds.isNotEmpty()
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -68,8 +70,8 @@ fun MedicalQuestionApp(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    LaunchedEffect(currentRoute) {
-        if (currentRoute == "home" && !isAnalyzing) updateViewModel.autoCheckIfDue()
+    LaunchedEffect(currentRoute, hasActiveWork) {
+        if (currentRoute == "home" && !hasActiveWork) updateViewModel.autoCheckIfDue()
     }
 
     Scaffold(
@@ -146,7 +148,7 @@ fun MedicalQuestionApp(
             }
         }
 
-        if (currentRoute == "home" && !isAnalyzing) {
+        if (currentRoute == "home" && !hasActiveWork) {
             UpdateAvailablePrompt(
                 state = updateState,
                 onDownload = updateViewModel::download,
@@ -156,7 +158,7 @@ fun MedicalQuestionApp(
                 state = updateState,
                 updateViewModel = updateViewModel,
                 onDismiss = updateViewModel::dismissProgress,
-                canInstall = !isAnalyzing
+                canInstall = !hasActiveWork
             )
         }
     }

@@ -1,0 +1,5 @@
+newJobStillActive=true
+downloadJobReferenceClearedByOldFinally=true
+activeCallReferenceClearedByOldFinally=true
+downloadingFlagWhileNewJobActive=false
+uiStatusWhileNewJobActive=FAILED

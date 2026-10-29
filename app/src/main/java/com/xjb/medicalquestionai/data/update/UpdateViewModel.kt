@@ -43,6 +43,8 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
     private var downloading = false
     private var downloadJob: Job? = null
     private var activeDownloadCall: okhttp3.Call? = null
+    private var downloadToken = 0L
+    private var activeDownloadToken: Long? = null
     private var dismissedVersionCode: Long? = null
 
     fun checkManually() {
@@ -115,6 +117,8 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
     fun download() {
         val release = _state.value.update ?: return
         if (downloading) return
+        val token = ++downloadToken
+        activeDownloadToken = token
         downloading = true
         downloadJob = viewModelScope.launch(Dispatchers.IO) {
             _state.update {
@@ -134,68 +138,87 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
                 val file = repository.downloadApk(
                     context = getApplication(),
                     release = release,
-                    onCall = { activeDownloadCall = it }
+                    downloadId = "task-$token",
+                    onCall = { call -> if (activeDownloadToken == token) activeDownloadCall = call }
                 ) { downloaded, total ->
-                    _state.update {
-                        it.copy(
-                            downloadedBytes = downloaded,
-                            totalBytes = total ?: release.manifest.apkSizeBytes,
-                            progressPercent = if (total != null && total > 0) ((downloaded * 100) / total).toInt() else null
-                        )
+                    if (activeDownloadToken == token) {
+                        _state.update {
+                            it.copy(
+                                downloadedBytes = downloaded,
+                                totalBytes = total ?: release.manifest.apkSizeBytes,
+                                progressPercent = if (total != null && total > 0) ((downloaded * 100) / total).toInt() else null
+                            )
+                        }
                     }
                 }
-                _state.update { it.copy(status = UpdateStatus.VERIFYING, message = "正在校验更新包") }
+                if (activeDownloadToken == token) {
+                    _state.update { it.copy(status = UpdateStatus.VERIFYING, message = "正在校验更新包") }
+                }
                 withContext(Dispatchers.IO) {
                     ApkVerifier.verify(getApplication(), file, release.manifest, BuildConfig.VERSION_CODE.toLong())
                         .getOrThrow()
                 }
-                _state.update {
-                    it.copy(
-                        status = UpdateStatus.READY_TO_INSTALL,
-                        progressPercent = 100,
-                        downloadedBytes = release.manifest.apkSizeBytes,
-                        totalBytes = release.manifest.apkSizeBytes,
-                        message = "更新包已校验，可安装",
-                        installReady = true,
-                        downloadedFile = file,
-                        showProgress = true
-                    )
+                if (activeDownloadToken == token) {
+                    _state.update {
+                        it.copy(
+                            status = UpdateStatus.READY_TO_INSTALL,
+                            progressPercent = 100,
+                            downloadedBytes = release.manifest.apkSizeBytes,
+                            totalBytes = release.manifest.apkSizeBytes,
+                            message = "更新包已校验，可安装",
+                            installReady = true,
+                            downloadedFile = file,
+                            showProgress = true
+                        )
+                    }
                 }
             } catch (e: CancellationException) {
-                _state.update {
-                    it.copy(
-                        status = if (it.update != null) UpdateStatus.AVAILABLE else UpdateStatus.IDLE,
-                        message = "已取消下载",
-                        progressPercent = null,
-                        downloadedBytes = 0L,
-                        installReady = false,
-                        downloadedFile = null,
-                        showProgress = false
-                    )
+                if (activeDownloadToken == token) {
+                    _state.update {
+                        it.copy(
+                            status = if (it.update != null) UpdateStatus.AVAILABLE else UpdateStatus.IDLE,
+                            message = "已取消下载",
+                            progressPercent = null,
+                            downloadedBytes = 0L,
+                            installReady = false,
+                            downloadedFile = null,
+                            showProgress = false
+                        )
+                    }
                 }
             } catch (e: Exception) {
-                _state.update {
-                    it.copy(
-                        status = UpdateStatus.FAILED,
-                        message = e.message ?: "下载或校验失败，可重试",
-                        installReady = false,
-                        downloadedFile = null,
-                        showProgress = true
-                    )
+                if (activeDownloadToken == token) {
+                    _state.update {
+                        it.copy(
+                            status = UpdateStatus.FAILED,
+                            message = e.message ?: "下载或校验失败，可重试",
+                            installReady = false,
+                            downloadedFile = null,
+                            showProgress = true
+                        )
+                    }
                 }
             } finally {
-                downloading = false
-                activeDownloadCall = null
-                downloadJob = null
+                if (activeDownloadToken == token) {
+                    downloading = false
+                    activeDownloadCall = null
+                    downloadJob = null
+                    activeDownloadToken = null
+                }
             }
         }
     }
 
     fun cancelDownload() {
+        val token = activeDownloadToken ?: return
         activeDownloadCall?.cancel()
         downloadJob?.cancel()
-        downloadJob = null
-        downloading = false
+        if (activeDownloadToken == token) {
+            activeDownloadToken = null
+            downloading = false
+            downloadJob = null
+            activeDownloadCall = null
+        }
         _state.update {
             it.copy(
                 status = if (it.update != null) UpdateStatus.AVAILABLE else UpdateStatus.IDLE,

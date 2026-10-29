@@ -1,0 +1,2 @@
+crossReleaseAssetsAccepted=false
+manifestBytesConsumedBeforeReject=73728 configuredLimit=65536 result=Failed(message=更新元数据过大)

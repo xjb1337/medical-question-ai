@@ -9,7 +9,7 @@
 - 开始工作区状态及保留改动：开始时 `docs/DEVICE_FEEDBACK_PLAN_2026-10-29.md` 与 `docs/DEVICE_FEEDBACK_REPORT_TEMPLATE.md` 为未跟踪文件，其余工作区干净；实施后保留全部业务代码、测试、文档、APK 和 `docs/evidence/` 证据，不清理、不覆盖旧验收报告。
 - DeepSeek 官方文档复核日期、页面和相对方案变化：未复核（沿用方案第 1 节 2026-10-29 的历史结论，页面为 `api-docs.deepseek.com` 的模型列表/思考模式说明；本次未重新联网抓取，未确认相对变化）。正式模型名为 `deepseek-flash`（文字+图片）与 `deepseek-v4-pro`（仅文字）。
 - Android 版本/build：`versionCode 3`、`versionName 1.2.0`，debug 构建（引导更新用）；包名 `com.xjb.medicalquestionai`，minSdk 26、targetSdk 35。
-- APK 绝对路径 / SHA-256：`E:\souti\repo\dist\medical-question-ai-debug.apk` 与 `dist\medical-question-ai-update-guide.apk`，`84b9e8db3b7c9e9e56c31a463a73170943f67517b466140f0a55cc73aa0e5f06`（21,475,118 bytes）；候选包 `dist\medical-question-ai-update-candidate.apk`，`0b4ff605ce8ab94ce952157ab4108669b954306100f94ac0f1c0bfbc63c9878f`（21,475,122 bytes）。旧版归档于 `dist/archive/medical-question-ai-debug-v1.0.0-20261028.apk`，SHA-256 `9da7a2aa7908811af2ced7a01979e4c4058610d6e10b8b445b3493b448a058f3`。
+- APK 绝对路径 / SHA-256：`E:\souti\repo\dist\medical-question-ai-debug.apk` 与 `dist\medical-question-ai-update-guide.apk`，`6399fb0caed1a09c1bca4a082accab8e279cd88eaf485ff5e276bd991da8e64a`（21,475,118 bytes）；候选包 `dist\medical-question-ai-update-candidate.apk`，`62674c833cb97ddaccc7479122db501da160210c6649e8a5b957fa6086e6f67d`（21,475,122 bytes）。旧版归档于 `dist/archive/medical-question-ai-debug-v1.0.0-20261028.apk`，SHA-256 `9da7a2aa7908811af2ced7a01979e4c4058610d6e10b8b445b3493b448a058f3`。
 - 真机型号 / Android 版本 / 屏幕宽度 / 字体缩放：无设备，未执行。
 - 真实接口 / mock / 演示分别使用在哪些检查：真实接口未使用（无 Key）；单元测试使用纯 JVM 逻辑与固定 JSON/SSE 字节；Web 测试使用本地 mock DeepSeek 和浏览器 headless 环境；演示模式未作为验收证据。
 
@@ -72,7 +72,7 @@
 | `./gradlew :app:assembleDebugAndroidTest` | 2026-10-29 22:15 +08:00 | BUILD SUCCESSFUL（测试 APK 编译） | `app/build/outputs/apk/androidTest/` | 未执行 instrumented 测试 |
 | `./gradlew :app:connectedDebugAndroidTest` | 未执行 | `adb devices` 无设备 | — | 无设备 |
 | `npm --prefix web test` | 2026-10-29 21:09 +08:00 | 19/19 单元测试通过；browser smoke `ok: true` | `docs/evidence/2026-10-29-web-final.log` | mock 上游，非真实 DeepSeek |
-| `cmp` / `sha256sum`（build→dist） | 2026-10-29 23:39 +08:00 | guide/candidate 均逐字节一致；guide 21,475,118 bytes SHA-256 `84b9e8db3b7c9e9e56c31a463a73170943f67517b466140f0a55cc73aa0e5f06`；candidate 21,475,122 bytes SHA-256 `0b4ff605ce8ab94ce952157ab4108669b954306100f94ac0f1c0bfbc63c9878f` | `docs/evidence/2026-10-29-apk-correspondence.log` | 只证明产物对应，不证明真机安装或实际更新 |
+| `cmp` / `sha256sum`（build→dist） | 2026-10-29 23:39 +08:00 | guide/candidate 均逐字节一致；guide 21,475,118 bytes SHA-256 `6399fb0caed1a09c1bca4a082accab8e279cd88eaf485ff5e276bd991da8e64a`；candidate 21,475,122 bytes SHA-256 `62674c833cb97ddaccc7479122db501da160210c6649e8a5b957fa6086e6f67d` | `docs/evidence/2026-10-29-apk-correspondence.log` | 只证明产物对应，不证明真机安装或实际更新 |
 | `git diff --check` | 2026-10-29 22:15 +08:00 | 退出 0（仅 CRLF 提示） | `docs/evidence/2026-10-29-git-diff-check.log` | 不检查运行行为 |
 
 新增针对性测试：`DeviceFeedbackCoreTest`（模型/迁移/模式请求参数/SSE/预览 JSON/解析边界）、`SettingsValidationTest`（URL）、`ModelsTest`（旧 JSON 兼容）、`ImageEditPolicyTest`（裁剪）、`CaptureDraftPolicyTest`（连续下一题不覆盖暂存草稿）。测试结果 XML：`app/build/test-results/testDebugUnitTest/*.xml`。取消竞争、失败不覆盖旧结果两项需要 MainViewModel/Android instrumentation 环境，本机无设备，报告按“未覆盖”处理，未虚列为通过。
@@ -121,7 +121,7 @@ P50 改善百分比、P95 回归、失败请求处理及未达到目标：均无
 - 手机显示版本和被安装 APK 哈希对应关系：未安装到手机；静态核验结果：
   - `aapt2 dump badging`：`package: name='com.xjb.medicalquestionai' versionCode='2' versionName='1.1.0'`，`minSdkVersion:'26'`，`targetSdkVersion:'35'`（`docs/evidence/2026-10-29-apk-badging.txt`）
   - `apksigner verify --print-certs`：APK Signature Scheme v2 通过；新旧 APK 证书 SHA-256 均为 `77c3ca8d1a7cf0aca4718b328705bb21833976bc701dad89c11881c83ca1c861`（`docs/evidence/2026-10-29-apk-signature.txt`）
-  - 新 APK SHA-256：`84b9e8db3b7c9e9e56c31a463a73170943f67517b466140f0a55cc73aa0e5f06`（guide，21,475,118 bytes）
+  - 新 APK SHA-256：`6399fb0caed1a09c1bca4a082accab8e279cd88eaf485ff5e276bd991da8e64a`（guide，21,475,118 bytes）
 
 ## 8. 已知问题及待验收
 
@@ -252,8 +252,8 @@ P50 改善百分比、P95 回归、失败请求处理及未达到目标：均无
 ### 14.2 本轮自动验证
 
 - Android：`:app:testDebugUnitTest` BUILD SUCCESSFUL，69/69 通过（47 `DeviceFeedbackCoreTest` + 4 `ImageEditPolicyTest` + 7 `ModelsTest` + 4 `SettingsValidationTest` + 2 `CaptureDraftPolicyTest` + 5 `UpdateCoreTest`）；`:app:lintDebug` 0 errors / 22 warnings；`:app:assembleDebug` BUILD SUCCESSFUL。
-- guide APK：21,475,118 bytes，SHA-256 `84b9e8db3b7c9e9e56c31a463a73170943f67517b466140f0a55cc73aa0e5f06`，versionCode 3/versionName 1.2.0，debug 证书 SHA-256 `77c3ca8d1a7cf0aca4718b328705bb21833976bc701dad89c11881c83ca1c861`。
-- candidate APK：21,475,122 bytes，SHA-256 `0b4ff605ce8ab94ce952157ab4108669b954306100f94ac0f1c0bfbc63c9878f`，versionCode 4/versionName 1.2.1-test.1，同一 debug 证书。
+- guide APK：21,475,118 bytes，SHA-256 `6399fb0caed1a09c1bca4a082accab8e279cd88eaf485ff5e276bd991da8e64a`，versionCode 3/versionName 1.2.0，debug 证书 SHA-256 `77c3ca8d1a7cf0aca4718b328705bb21833976bc701dad89c11881c83ca1c861`。
+- candidate APK：21,475,122 bytes，SHA-256 `62674c833cb97ddaccc7479122db501da160210c6649e8a5b957fa6086e6f67d`，versionCode 4/versionName 1.2.1-test.1，同一 debug 证书。
 - 未执行：GitHub 仓库 Secrets 配置、CI 真实运行、GitHub Release 发布、真机下载/安装/重启/覆盖升级/签名不一致失败路径；上述项不能列为通过。
 
 ### 14.3 发布前人工步骤
@@ -274,3 +274,15 @@ P50 改善百分比、P95 回归、失败请求处理及未达到目标：均无
 | UP-05 P2：元数据上限在读取前生效 | `UpdateRepository.readBounded` 先检查 `contentLength`，再按 8 KiB 分块累计，超过 `MAX_METADATA_BYTES` 即抛错；`UpdateManifestParser` 同时限制 64 KiB；APK 下载上限 150 MiB | 代码审查 + 构建；恶意超大响应未做网络探针 |
 
 **未执行项不变**：真实 GitHub Release、真实 CI、真机下载/安装/重启、真实大响应拦截未执行，不能据本节宣称这些路径已通过。
+
+### 15. 第二轮独立验收修复（U2-01～U2-03）
+
+| 验收项 | 修复 | 自动证据 / 未执行 |
+| --- | --- | --- |
+| U2-01 P1：取消下载后立即重试竞态 | `UpdateViewModel` 为每次下载分配递增 `downloadToken`；旧任务的进度、状态和 `finally` 清理只在 `activeDownloadToken == 本次 token` 时生效；`cancelDownload()` 立即释放 token、`downloading`、旧的 `Call`/`Job` 并回到 `AVAILABLE`，旧任务不能清空新任务引用或覆盖新状态；`downloadApk` 为每次任务使用独立 `.part` 文件 | 代码审查 + `:app:testDebugUnitTest` 通过；下载取消/重试真实网络时序未执行 |
+| U2-02 P1：发布脚本 SDK 工具多路径失败 | `scripts/release/generate-update-json.sh` 的 `find_tool` 先用 `command -v`；未命中时从 `ANDROID_HOME`/`ANDROID_SDK_ROOT`/`local.properties` 的 build-tools 目录按版本取唯一路径，并检查 `AAPT`/`APKSIGNER` 可执行后再调用 | `bash -n scripts/release/generate-update-json.sh` 通过；`python -m py_compile scripts/release/check-release.py` 通过；真实多 SDK 路径 CI 未执行 |
+| U2-03 P2：发布前身份校验 | `release.yml` 在 build job 与 release job 均 `git fetch` 并校验 `HEAD` 是 `origin/main` 祖先；发布前读取 latest release 并再次执行 `check-release.py`，校验候选 versionCode 严格递增、候选 tag 不复用、已有 tag 的 commit 等于 `GITHUB_SHA`；`gh release create --target "$GITHUB_SHA"` 绑定构建提交 | Python 脚本正/反例本地通过；GitHub Actions/真实 Release 未执行 |
+
+本轮自动验证补充：Android `:app:testDebugUnitTest` 69/69 通过（47 `DeviceFeedbackCoreTest` + 4 `ImageEditPolicyTest` + 7 `ModelsTest` + 4 `SettingsValidationTest` + 2 `CaptureDraftPolicyTest` + 5 `UpdateCoreTest`）；`:app:lintDebug` 0 errors / 22 warnings；Web `npm test` 19/19 + browser smoke 通过。最终 guide APK 21,475,118 bytes，SHA-256 `6399fb0caed1a09c1bca4a082accab8e279cd88eaf485ff5e276bd991da8e64a`；candidate APK 21,475,122 bytes，SHA-256 `62674c833cb97ddaccc7479122db501da160210c6649e8a5b957fa6086e6f67d`；两者 versionCode/versionName 分别为 3/1.2.0 和 4/1.2.1-test.1，证书 SHA-256 `77c3ca8d1a7cf0aca4718b328705bb21833976bc701dad89c11881c83ca1c861`。
+
+**仍未执行**：真实 GitHub Actions、真实 Release 发布、真机下载/安装/重启、真实多 SDK 路径 CI 环境。上述验证不能替代这些运行时证据。

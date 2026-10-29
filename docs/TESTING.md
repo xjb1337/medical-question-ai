@@ -197,7 +197,7 @@ curl -sS https://api.deepseek.com/chat/completions \
 - `npm --prefix web test`：19/19 单元测试通过；浏览器 smoke 通过（`ok: true`）。
 - `aapt2 dump badging`：包名 `com.xjb.medicalquestionai`，versionCode 3、versionName 1.2.0，minSdk 26、targetSdk 35（guide APK；候选更新包为 versionCode 4 / 1.2.1-test.1）。
 - `apksigner verify`：APK Signature Scheme v2 验证通过；新旧 APK 使用同一 debug 证书 SHA-256 `77c3ca8d1a7cf0aca4718b328705bb21833976bc701dad89c11881c83ca1c861`。
-- 产物：`dist/medical-question-ai-debug.apk` / `dist/medical-question-ai-update-guide.apk`，21,475,118 bytes，SHA-256 `84b9e8db3b7c9e9e56c31a463a73170943f67517b466140f0a55cc73aa0e5f06`；候选包 `dist/medical-question-ai-update-candidate.apk`，21,475,122 bytes，SHA-256 `0b4ff605ce8ab94ce952157ab4108669b954306100f94ac0f1c0bfbc63c9878f`。
+- 产物：`dist/medical-question-ai-debug.apk` / `dist/medical-question-ai-update-guide.apk`，21,475,118 bytes，SHA-256 `6399fb0caed1a09c1bca4a082accab8e279cd88eaf485ff5e276bd991da8e64a`；候选包 `dist/medical-question-ai-update-candidate.apk`，21,475,122 bytes，SHA-256 `62674c833cb97ddaccc7479122db501da160210c6649e8a5b957fa6086e6f67d`。
 - 未执行：真实 DeepSeek Key 联调、40 题质量对照、15 题×3 次速度对照、真机 UI/相机/覆盖安装、GitHub Release 发布/真机应用内更新。详见 `docs/DEVICE_FEEDBACK_IMPLEMENTATION_REPORT.md`。
 
 ### 4.4 退出解析页与拍摄下一题（2026-10-29 第四轮）

@@ -164,13 +164,16 @@ class UpdateRepository(
     suspend fun downloadApk(
         context: Context,
         release: UpdateRelease,
+        downloadId: String = "default",
         onCall: (okhttp3.Call?) -> Unit = {},
         onProgress: (downloaded: Long, total: Long?) -> Unit
     ): File = withContext(Dispatchers.IO) {
         require(release.manifest.apkSizeBytes in 1..UpdateManifestParser.MAX_APK_BYTES) { "更新包大小非法" }
+        val safeId = downloadId.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val suffix = if (downloadId == "default") "" else "-$safeId"
         val dir = File(context.cacheDir, "updates").apply { mkdirs() }
-        val finalFile = File(dir, "medical-question-ai.apk")
-        val partFile = File(dir, "medical-question-ai.apk.part")
+        val finalFile = File(dir, "medical-question-ai$suffix.apk")
+        val partFile = File(dir, "medical-question-ai$suffix.apk.part")
         if (partFile.exists()) partFile.delete()
         var currentUrl = release.apkUrl
         var redirects = 0

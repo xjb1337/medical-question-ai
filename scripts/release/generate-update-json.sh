@@ -19,16 +19,23 @@ find_tool() {
     local name="$1"
     if command -v "$name" >/dev/null 2>&1; then
         command -v "$name"
-        return
+        return 0
     fi
     local local_sdk=""
     if [ -f local.properties ]; then
         local_sdk="$(sed -n 's/^sdk.dir=//p' local.properties | sed 's#\\\\#/#g')"
     fi
+    local root candidate
     for root in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "$local_sdk"; do
         [ -n "$root" ] || continue
-        find "$root/build-tools" -type f \( -name "$name" -o -name "$name.exe" -o -name "$name.bat" \) 2>/dev/null | sort -V | tail -1
+        [ -d "$root/build-tools" ] || continue
+        candidate="$(find "$root/build-tools" -type f \( -name "$name" -o -name "$name.exe" -o -name "$name.bat" \) 2>/dev/null | sort -V | tail -1)"
+        if [ -n "$candidate" ] && [ -f "$candidate" ]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
     done
+    return 1
 }
 
 AAPT="$(find_tool aapt)"

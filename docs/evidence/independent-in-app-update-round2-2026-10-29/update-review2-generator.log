@@ -1,0 +1,80 @@
++ set -euo pipefail
++ APK_PATH=/e/souti/repo/dist/medical-question-ai-update-guide.apk
++ OUT_PATH=/e/souti/acceptance-artifacts/update-review2-output.json
++ EXPECTED_VERSION_CODE=3
++ EXPECTED_VERSION_NAME=1.2.0
++ COMMIT_SHA=8cecfae000000000000000000000000000000000
++ EXPECTED_CERT=77c3ca8d1a7cf0aca4718b328705bb21833976bc701dad89c11881c83ca1c861
++ EXPECTED_APPLICATION_ID=com.xjb.medicalquestionai
++ EXPECTED_MIN_SDK=26
+++ date -u +%Y-%m-%dT%H:%M:%SZ
++ PUBLISHED_AT=2026-10-29T16:01:40Z
++ RELEASE_NOTES='版本 1.2.0（build 3）'
++ test -f /e/souti/repo/dist/medical-question-ai-update-guide.apk
+++ dirname /e/souti/acceptance-artifacts/update-review2-output.json
++ mkdir -p /e/souti/acceptance-artifacts
+++ find_tool aapt
+++ local name=aapt
+++ command -v aapt
+++ local local_sdk=
+++ '[' -f local.properties ']'
++++ sed -n 's/^sdk.dir=//p' local.properties
++++ sed 's#\\\\#/#g'
+++ local_sdk=E:/android-sdk/android-sdk
+++ for root in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "$local_sdk"
+++ '[' -n /e/android-sdk/android-sdk ']'
+++ find /e/android-sdk/android-sdk/build-tools -type f '(' -name aapt -o -name aapt.exe -o -name aapt.bat ')'
+++ sort -V
+++ tail -1
+++ for root in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "$local_sdk"
+++ '[' -n /e/android-sdk/android-sdk ']'
+++ find /e/android-sdk/android-sdk/build-tools -type f '(' -name aapt -o -name aapt.exe -o -name aapt.bat ')'
+++ sort -V
+++ tail -1
+++ for root in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "$local_sdk"
+++ '[' -n E:/android-sdk/android-sdk ']'
+++ find E:/android-sdk/android-sdk/build-tools -type f '(' -name aapt -o -name aapt.exe -o -name aapt.bat ')'
+++ sort -V
+++ tail -1
++ AAPT='/e/android-sdk/android-sdk/build-tools/35.0.0/aapt.exe
+/e/android-sdk/android-sdk/build-tools/35.0.0/aapt.exe
+E:/android-sdk/android-sdk/build-tools/35.0.0/aapt.exe'
+++ find_tool apksigner
+++ local name=apksigner
+++ command -v apksigner
+++ local local_sdk=
+++ '[' -f local.properties ']'
++++ sed -n 's/^sdk.dir=//p' local.properties
++++ sed 's#\\\\#/#g'
+++ local_sdk=E:/android-sdk/android-sdk
+++ for root in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "$local_sdk"
+++ '[' -n /e/android-sdk/android-sdk ']'
+++ find /e/android-sdk/android-sdk/build-tools -type f '(' -name apksigner -o -name apksigner.exe -o -name apksigner.bat ')'
+++ sort -V
+++ tail -1
+++ for root in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "$local_sdk"
+++ '[' -n /e/android-sdk/android-sdk ']'
+++ find /e/android-sdk/android-sdk/build-tools -type f '(' -name apksigner -o -name apksigner.exe -o -name apksigner.bat ')'
+++ sort -V
+++ tail -1
+++ for root in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "$local_sdk"
+++ '[' -n E:/android-sdk/android-sdk ']'
+++ find E:/android-sdk/android-sdk/build-tools -type f '(' -name apksigner -o -name apksigner.exe -o -name apksigner.bat ')'
+++ sort -V
+++ tail -1
++ APKSIGNER='/e/android-sdk/android-sdk/build-tools/35.0.0/apksigner.bat
+/e/android-sdk/android-sdk/build-tools/35.0.0/apksigner.bat
+E:/android-sdk/android-sdk/build-tools/35.0.0/apksigner.bat'
++ test -n '/e/android-sdk/android-sdk/build-tools/35.0.0/aapt.exe
+/e/android-sdk/android-sdk/build-tools/35.0.0/aapt.exe
+E:/android-sdk/android-sdk/build-tools/35.0.0/aapt.exe'
++ test -n '/e/android-sdk/android-sdk/build-tools/35.0.0/apksigner.bat
+/e/android-sdk/android-sdk/build-tools/35.0.0/apksigner.bat
+E:/android-sdk/android-sdk/build-tools/35.0.0/apksigner.bat'
+++ '/e/android-sdk/android-sdk/build-tools/35.0.0/aapt.exe
+/e/android-sdk/android-sdk/build-tools/35.0.0/aapt.exe
+E:/android-sdk/android-sdk/build-tools/35.0.0/aapt.exe' dump badging /e/souti/repo/dist/medical-question-ai-update-guide.apk
+/e/souti/repo/scripts/release/generate-update-json.sh: line 39: /e/android-sdk/android-sdk/build-tools/35.0.0/aapt.exe
+/e/android-sdk/android-sdk/build-tools/35.0.0/aapt.exe
+E:/android-sdk/android-sdk/build-tools/35.0.0/aapt.exe: No such file or directory
++ BADGING=

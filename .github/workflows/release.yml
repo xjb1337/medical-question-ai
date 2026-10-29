@@ -24,8 +24,13 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - run: chmod +x gradlew
       - run: ./gradlew testDebugUnitTest lintDebug assembleDebugAndroidTest --stacktrace
+      - name: Web release gate
+        run: cd web && npm test
 
   release:
     name: Build signed release and publish
@@ -121,13 +126,27 @@ jobs:
             echo "读取最新 Release 失败（HTTP $HTTP）"; exit 1
           else
             LATEST_TAG=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["tag_name"])' "$TMP_DIR/latest.json")
+            EXISTING_TAG_SHA=$(git ls-remote --tags origin "refs/tags/$CANDIDATE_TAG" | awk '{print $1}' | head -1)
             gh release download "$LATEST_TAG" --repo "$GITHUB_REPOSITORY" --pattern update.json --dir "$TMP_DIR" --clobber
             python3 scripts/release/check-release.py \
               --latest "$TMP_DIR/update.json" \
               --candidate-version-code "$VERSION_CODE" \
               --candidate-tag "$CANDIDATE_TAG" \
               --latest-tag "$LATEST_TAG" \
-              --candidate-sha "$GITHUB_SHA"
+              --candidate-sha "$GITHUB_SHA" \
+              --existing-tag-sha "$EXISTING_TAG_SHA"
+          fi
+      - name: Recheck main head and tag before publish
+        env:
+          CANDIDATE_TAG: v${{ env.VERSION_NAME }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          MAIN_SHA=$(git rev-parse origin/main)
+          test "$MAIN_SHA" = "$GITHUB_SHA" || { echo "准备发布期间 main 已前进：候选 $GITHUB_SHA，当前 $MAIN_SHA"; exit 1; }
+          if git ls-remote --tags origin "refs/tags/$CANDIDATE_TAG" | grep -q .; then
+            echo "候选 tag 已存在，拒绝复用：$CANDIDATE_TAG"
+            exit 1
           fi
       - name: Publish Release
         env:
