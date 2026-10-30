@@ -16,6 +16,7 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,6 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -241,6 +243,7 @@ fun CameraScreen(
         topBar = {
             AppTopBar(
                 title = if (source == "next_question") "拍摄下一题" else "拍摄题目",
+                subtitle = "对准题干与选项，保持清晰完整",
                 onBack = { exitCamera() }
             )
         },
@@ -273,6 +276,26 @@ fun CameraScreen(
                     factory = { previewView },
                     modifier = Modifier.fillMaxSize()
                 )
+                if (hasPermission) {
+                    // Composition guide only: the captured image remains uncropped.
+                    Canvas(Modifier.fillMaxSize().padding(28.dp)) {
+                        val left = 0f
+                        val right = size.width
+                        val top = size.height * 0.2f
+                        val bottom = size.height * 0.8f
+                        val arm = 24.dp.toPx()
+                        val stroke = 3.dp.toPx()
+                        listOf(Offset(left, top), Offset(right, top), Offset(left, bottom), Offset(right, bottom))
+                            .forEach { corner ->
+                                val dx = if (corner.x == left) arm else -arm
+                                val dy = if (corner.y == top) arm else -arm
+                                drawLine(Color.White.copy(alpha = 0.85f), corner,
+                                    Offset(corner.x + dx, corner.y), stroke)
+                                drawLine(Color.White.copy(alpha = 0.85f), corner,
+                                    Offset(corner.x, corner.y + dy), stroke)
+                            }
+                    }
+                }
                 if (!hasPermission) {
                     Column(
                         modifier = Modifier

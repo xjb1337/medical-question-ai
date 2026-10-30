@@ -73,6 +73,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -80,6 +81,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
@@ -140,14 +142,14 @@ fun NewQuestionScreen(
     Scaffold(
         topBar = {
             AppTopBar(
-                title = "医学拍题助手",
-                subtitle = "拍下题目，先把答案讲清楚"
+                title = "医学拍题",
+                subtitle = "把每一道题，学明白"
             )
         },
         bottomBar = {
             Surface(
-                tonalElevation = 3.dp,
-                shadowElevation = 8.dp,
+                tonalElevation = 0.dp,
+                shadowElevation = 2.dp,
                 color = MaterialTheme.colorScheme.surface
             ) {
                 Column(
@@ -156,7 +158,8 @@ fun NewQuestionScreen(
                         .imePadding()
                         .padding(horizontal = 16.dp, vertical = 10.dp)
                 ) {
-                    if (submitBlockedReason != null && !analyzing) {
+                    if (submitBlockedReason != null && !analyzing &&
+                        (draft.text.isNotBlank() || draft.images.isNotEmpty())) {
                         Text(
                             submitBlockedReason,
                             style = MaterialTheme.typography.bodySmall,
@@ -188,12 +191,13 @@ fun NewQuestionScreen(
                             Spacer(Modifier.width(10.dp))
                             Text("正在解析…")
                         } else {
-                            Text("开始解析", style = MaterialTheme.typography.titleMedium)
+                            Text(if (draft.text.isBlank() && draft.images.isEmpty()) "添加题目后开始解析" else "开始解析",
+                                style = MaterialTheme.typography.titleMedium)
                         }
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "解析由 AI 生成，请结合教材与课程讲义核对",
+                        "AI 辅助学习 · 请结合教材核对",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.align(Alignment.CenterHorizontally)
@@ -208,12 +212,13 @@ fun NewQuestionScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
                 CameraHeroCard(
                     enabled = draft.images.size < ImageStore.MAX_IMAGES && !analyzing && !isImporting,
+                    compact = draft.images.isNotEmpty(),
                     onClick = {
                         navController.navigate("camera?source=home&sessionId=${draft.sessionId}")
                     }
@@ -253,7 +258,7 @@ fun NewQuestionScreen(
             }
 
             item {
-                SectionCard(title = "从相册添加图片（可选）") {
+                SectionCard(title = "题目图片") {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         TextButton(
                             onClick = {
@@ -263,7 +268,7 @@ fun NewQuestionScreen(
                         ) {
                             Icon(Icons.Outlined.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("从相册选择")
+                            Text("相册导入")
                         }
                         Spacer(Modifier.weight(1f))
                         Text(
@@ -275,7 +280,7 @@ fun NewQuestionScreen(
                     if (draft.images.isEmpty()) {
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "还没有题目图片。拍照或从相册选择；只输入文字也可以解析。",
+                            "支持多图，点按图片可裁剪、旋转和排序。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -342,7 +347,7 @@ fun NewQuestionScreen(
 
             item {
                 SectionCard(
-                    title = "补充文字（可选）",
+                    title = "文字题目",
                     trailing = {
                         TextButton(onClick = { textExpanded = !textExpanded }) {
                             Text(if (textExpanded) "收起" else "展开")
@@ -369,7 +374,7 @@ fun NewQuestionScreen(
                         )
                     } else {
                         Text(
-                            draft.text.ifBlank { "题干太长、图片看不清，或需要补充符号时，可在这里输入。" },
+                            draft.text.ifBlank { "也可以粘贴题干与选项，直接开始解析。" },
                             style = MaterialTheme.typography.bodySmall,
                             color = if (draft.text.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant
                             else MaterialTheme.colorScheme.onSurface,
@@ -381,7 +386,7 @@ fun NewQuestionScreen(
             }
 
             item {
-                SectionCard(title = "题型与做题模式") {
+                SectionCard(title = "解题偏好") {
                     QuestionTypeChips(
                         selected = draft.questionType,
                         onSelected = viewModel::updateQuestionType,
@@ -419,9 +424,9 @@ fun NewQuestionScreen(
                             )
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
-                                Text("先配置 DeepSeek API 密钥", fontWeight = FontWeight.SemiBold)
+                                Text("连接你的 AI 助手", fontWeight = FontWeight.SemiBold)
                                 Text(
-                                    "密钥只保存在本机，使用 Android Keystore 加密。",
+                                    "添加 DeepSeek 密钥后即可开始解题。",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -432,26 +437,6 @@ fun NewQuestionScreen(
                 }
             }
 
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Outlined.Info,
-                        contentDescription = null,
-                        modifier = Modifier.size(14.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.width(5.dp))
-                    Text(
-                        "模型输出不保证正确，请结合课程教材核对",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
         }
     }
 
@@ -475,7 +460,31 @@ fun NewQuestionScreen(
 }
 
 @Composable
-private fun CameraHeroCard(enabled: Boolean, onClick: () -> Unit) {
+private fun CameraHeroCard(enabled: Boolean, compact: Boolean, onClick: () -> Unit) {
+    if (compact) {
+        Card(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        ) {
+            Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.CameraAlt, contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("继续拍摄", style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Text("补充局部图片，让题目信息更完整", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f))
+                }
+                Icon(Icons.AutoMirrored.Outlined.ArrowForward, contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+            }
+        }
+        return
+    }
     Card(
         onClick = onClick,
         enabled = enabled,
@@ -486,21 +495,42 @@ private fun CameraHeroCard(enabled: Boolean, onClick: () -> Unit) {
             contentColor = MaterialTheme.colorScheme.onPrimary
         )
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 34.dp, horizontal = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(Icons.Outlined.CameraAlt, contentDescription = null, modifier = Modifier.size(56.dp))
-            Spacer(Modifier.height(12.dp))
-            Text("拍照搜题", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(6.dp))
-            Text(
-                "对准题目拍摄，支持多张、旋转与裁剪",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
-            )
+        Box(Modifier.fillMaxWidth().background(Brush.linearGradient(
+            listOf(Color(0xFF087F8C), Color(0xFF145266))
+        ))) {
+            Canvas(Modifier.matchParentSize()) {
+                drawCircle(Color.White.copy(alpha = 0.05f), size.width * 0.42f,
+                    Offset(size.width, size.height * 0.1f))
+                drawCircle(Color.White.copy(alpha = 0.06f), size.width * 0.25f,
+                    Offset(size.width * 0.95f, size.height * 0.95f))
+            }
+            Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                Text("AI 医学学习助手", style = MaterialTheme.typography.labelMedium,
+                    color = Color.White.copy(alpha = 0.78f))
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("拍下题目\n读懂每一步", fontSize = 27.sp, lineHeight = 34.sp,
+                            fontWeight = FontWeight.Bold, color = Color.White)
+                        Spacer(Modifier.height(6.dp))
+                        Text("从参考答案到解题思路", style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.76f))
+                    }
+                    Surface(shape = RoundedCornerShape(24.dp), color = Color.White.copy(alpha = 0.12f)) {
+                        Icon(Icons.Outlined.CameraAlt, contentDescription = null,
+                            modifier = Modifier.padding(16.dp).size(34.dp), tint = Color.White)
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Surface(shape = RoundedCornerShape(50), color = Color.White, contentColor = Color(0xFF096573)) {
+                    Row(Modifier.padding(horizontal = 18.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text("拍照解题", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(14.dp))
+                        Icon(Icons.AutoMirrored.Outlined.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
         }
     }
 }

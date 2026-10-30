@@ -1,6 +1,7 @@
 package com.xjb.medicalquestionai.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -73,8 +74,8 @@ fun HistoryScreen(
     Scaffold(
         topBar = {
             AppTopBar(
-                title = "历史记录",
-                subtitle = if (history.isEmpty()) "解析过的题目会出现在这里" else "共 ${history.size} 道题",
+                title = "我的题库",
+                subtitle = if (history.isEmpty()) "每一次解题，都值得回顾" else "已记录 ${history.size} 道题 · 随时温习",
                 actions = {
                     if (history.isNotEmpty()) {
                         IconButton(onClick = { showClearDialog = true }) {
@@ -170,7 +171,8 @@ private fun HistoryCard(
         onClick = onClick,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = MaterialTheme.shapes.large,
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(Modifier.padding(12.dp)) {
             if (question.imagePaths.isNotEmpty()) {

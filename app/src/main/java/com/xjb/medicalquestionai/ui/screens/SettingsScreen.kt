@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Memory
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
@@ -109,7 +110,7 @@ fun SettingsScreen(
     }
 
     Scaffold(
-        topBar = { AppTopBar(title = "设置", subtitle = "密钥、模式与数据", onBack = { navController.popBackStack() }) },
+        topBar = { AppTopBar(title = "学习设置", subtitle = "按你的习惯，调整解题体验") },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
@@ -118,9 +119,25 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            Surface(
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
+                    Spacer(Modifier.width(14.dp))
+                    Column {
+                        Text("让学习更顺手", style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text("连接模型，选择你的解题节奏", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f))
+                    }
+                }
+            }
             SectionCard(title = "密钥与连接") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(

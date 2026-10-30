@@ -220,7 +220,7 @@ fun ResultScreen(
             AppTopBar(
                 title = "题目解析",
                 subtitle = question?.let {
-                    SimpleDateFormat("yyyy年MM月dd日 HH:mm", Locale.CHINA).format(Date(it.createdAt))
+                    SimpleDateFormat("MM月dd日 HH:mm", Locale.CHINA).format(Date(it.createdAt)) + " · 学懂这道题"
                 },
                 onBack = {
                     viewModel.stopQuestionWorkAsync(questionId, StopReason.PAGE_EXIT, workIdentity)
@@ -309,7 +309,7 @@ fun ResultScreen(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                            start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp
+                            start = 20.dp, end = 20.dp, top = 12.dp, bottom = 24.dp
                         ),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
@@ -389,7 +389,7 @@ fun ResultScreen(
                             item {
                                 CollapsibleSection(
                                     title = "详细解析",
-                                    subtitle = "识别题干、选项分析、解题思路、知识点、易错点与使用建议"
+                                    subtitle = "题干识别 · 选项对照 · 解题思路"
                                 ) {
                                     AnalysisDetails(result)
                                 }
@@ -948,22 +948,23 @@ private fun FollowUpInputBar(
     onStop: () -> Unit
 ) {
     Surface(
-        tonalElevation = 3.dp,
-        shadowElevation = 8.dp,
+        tonalElevation = 0.dp,
+        shadowElevation = 2.dp,
         color = MaterialTheme.colorScheme.surface
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .imePadding()
-                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             if (enabled && attachAvailable) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("附带原图", style = MaterialTheme.typography.labelMedium)
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        "默认关闭，开启会额外消耗 token",
+                        "需要查看图片时开启",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f)
@@ -980,7 +981,7 @@ private fun FollowUpInputBar(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 2.dp)
                 ) {
-                    items(listOf("为什么不是其他选项？", "解释关键概念", "这道题的鉴别点是什么？")) { quick ->
+                    items(listOf("排除其他选项", "解释关键概念", "梳理鉴别要点")) { quick ->
                         SuggestionChip(onClick = { onValueChange(quick) }, label = { Text(quick) })
                     }
                 }
@@ -1195,14 +1196,14 @@ private fun FollowUpBubble(item: FollowUp) {
 
 @Composable
 private fun NextQuestionButton(preparing: Boolean, onClick: () -> Unit) {
-    Button(
+    OutlinedButton(
         onClick = onClick,
         enabled = !preparing,
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
-            .navigationBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = 20.dp, vertical = 4.dp),
+        shape = MaterialTheme.shapes.medium
     ) {
         Icon(Icons.Outlined.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))

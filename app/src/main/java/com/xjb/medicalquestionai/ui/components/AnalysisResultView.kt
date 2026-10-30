@@ -2,6 +2,7 @@ package com.xjb.medicalquestionai.ui.components
 
 import com.xjb.medicalquestionai.toReadablePlainText
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -73,12 +74,12 @@ fun AnalysisAnswerCard(
     val container = when {
         isOutOfScope -> MaterialTheme.colorScheme.surfaceVariant
         needsConfirmation -> MaterialTheme.colorScheme.tertiaryContainer
-        else -> MaterialTheme.colorScheme.primaryContainer
+        else -> MaterialTheme.colorScheme.surface
     }
     val onContainer = when {
         isOutOfScope -> MaterialTheme.colorScheme.onSurfaceVariant
         needsConfirmation -> MaterialTheme.colorScheme.onTertiaryContainer
-        else -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.primary
     }
     val isChoice = result.questionType == "single" || result.questionType == "multiple"
     val answerStyle = when {
@@ -89,9 +90,11 @@ fun AnalysisAnswerCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = container)
+        colors = CardDefaults.cardColors(containerColor = container),
+        border = BorderStroke(1.dp, if (needsConfirmation || isOutOfScope)
+            MaterialTheme.colorScheme.outlineVariant else MaterialTheme.colorScheme.primary.copy(alpha = 0.22f))
     ) {
-        Column(Modifier.padding(if (compact) 16.dp else 20.dp)) {
+            Column(Modifier.padding(if (compact) 18.dp else 24.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     when {

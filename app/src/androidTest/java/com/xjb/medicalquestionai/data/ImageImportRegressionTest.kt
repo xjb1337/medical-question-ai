@@ -166,10 +166,11 @@ class ImageImportRegressionTest {
         assertEquals(1800, imported.height)
 
         val outputExif = ExifInterface(imported.path)
-        assertEquals(
-            ExifInterface.ORIENTATION_NORMAL,
-            outputExif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
-        )
+        // Android JPEG encoders may omit orientation or write UNDEFINED after pixel rotation.
+        // Both mean no remaining EXIF rotation; the dimensions above verify actual rotation.
+        val orientation = outputExif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_UNDEFINED)
+        assertTrue("export must not retain a rotation instruction",
+            orientation == ExifInterface.ORIENTATION_NORMAL || orientation == ExifInterface.ORIENTATION_UNDEFINED)
         assertNull("artist metadata must not leak", outputExif.getAttribute(ExifInterface.TAG_ARTIST))
         assertNull("GPS metadata must not leak", outputExif.getAttribute(ExifInterface.TAG_GPS_LATITUDE))
     }
