@@ -27,7 +27,7 @@ sealed interface UpdateCheckResult {
     data object UpToDate : UpdateCheckResult
     data object NoRelease : UpdateCheckResult
     data class Available(val release: UpdateRelease) : UpdateCheckResult
-    data class Failed(val message: String) : UpdateCheckResult
+    data class Failed(val message: String, val networkFailure: Boolean = false) : UpdateCheckResult
 }
 
 enum class UpdateStatus {

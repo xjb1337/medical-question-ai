@@ -19,16 +19,28 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class UpdateViewModel(application: Application) : AndroidViewModel(application) {
+class UpdateViewModel internal constructor(
+    application: Application,
+    private val checkRelease: suspend () -> UpdateCheckResult,
+    private val isOnline: () -> Boolean
+) : AndroidViewModel(application) {
+    constructor(application: Application) : this(
+        application,
+        { UpdateRepository().checkForUpdate(BuildConfig.VERSION_CODE.toLong(), android.os.Build.VERSION.SDK_INT) },
+        UpdateNetworkMonitor(application)::isOnline
+    )
     companion object {
         private const val PREFS = "update_preferences"
         private const val KEY_LAST_CHECK = "last_successful_check"
-        private const val KEY_LAST_ATTEMPT = "last_attempt"
-        private const val CHECK_INTERVAL_MS = 6L * 60L * 60L * 1000L
-        private const val FAILURE_BACKOFF_MS = 30L * 60L * 1000L
+        private const val KEY_LAST_ATTEMPT_DAY = "last_attempt_local_day"
+        private const val KEY_PENDING_NETWORK_DAY = "pending_network_check_day"
+        private const val KEY_RECOVERY_ATTEMPT_DAY = "network_recovery_attempt_day"
+        private const val KEY_IGNORED_VERSION = "ignored_version_code"
     }
 
     private val repository = UpdateRepository()
+    private val networkMonitor = UpdateNetworkMonitor(application)
+    internal val connectivity = networkMonitor.connectivity
     private val prefs = application.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val _state = MutableStateFlow(
         UpdateUiState(
@@ -54,28 +66,43 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
 
     fun autoCheckIfDue() {
         if (checking || downloading) return
-        if (_state.value.status == UpdateStatus.AVAILABLE || _state.value.status == UpdateStatus.READY_TO_INSTALL) return
-        val last = prefs.getLong(KEY_LAST_CHECK, 0L)
-        if (System.currentTimeMillis() - last < CHECK_INTERVAL_MS) return
-        val lastAttempt = prefs.getLong(KEY_LAST_ATTEMPT, 0L)
-        if (lastAttempt > 0L && System.currentTimeMillis() - lastAttempt < FAILURE_BACKOFF_MS) return
-        check(manual = false)
+        if (_state.value.status in setOf(
+                UpdateStatus.READY_TO_INSTALL, UpdateStatus.INSTALLING, UpdateStatus.WAITING_INSTALL_PERMISSION
+            )) return
+        val today = DailyUpdateCheckPolicy.dayKey(System.currentTimeMillis())
+        val attempt = DailyUpdateCheckPolicy.nextAttempt(
+            prefs.getString(KEY_LAST_ATTEMPT_DAY, null), prefs.getString(KEY_PENDING_NETWORK_DAY, null),
+            prefs.getString(KEY_RECOVERY_ATTEMPT_DAY, null), today, isOnline()
+        ) ?: return
+        check(manual = false, recovery = attempt == DailyUpdateCheckPolicy.Attempt.NETWORK_RECOVERY)
     }
 
-    private fun check(manual: Boolean) {
+    private fun check(manual: Boolean, recovery: Boolean = false) {
         checking = true
-        prefs.edit().putLong(KEY_LAST_ATTEMPT, System.currentTimeMillis()).apply()
+        val attemptDay = DailyUpdateCheckPolicy.dayKey(System.currentTimeMillis())
+        // Persist the attempt before any asynchronous work, including the one recovery allowance.
+        prefs.edit().putString(KEY_LAST_ATTEMPT_DAY, attemptDay).apply {
+            if (recovery) putString(KEY_RECOVERY_ATTEMPT_DAY, attemptDay)
+            remove(KEY_PENDING_NETWORK_DAY)
+        }.apply()
         viewModelScope.launch {
             _state.update { it.copy(status = UpdateStatus.CHECKING, message = null) }
-            val result = repository.checkForUpdate(
-                currentVersionCode = BuildConfig.VERSION_CODE.toLong(),
-                deviceSdk = android.os.Build.VERSION.SDK_INT
-            )
+            val startedOffline = !isOnline()
+            val result = if (startedOffline) {
+                UpdateCheckResult.Failed("当前无网络，恢复网络后自动补查", networkFailure = true)
+            } else checkRelease()
+            if (result is UpdateCheckResult.Failed && result.networkFailure && !recovery &&
+                (startedOffline || !isOnline())) {
+                prefs.edit().putString(KEY_PENDING_NETWORK_DAY, attemptDay).apply()
+            }
             val now = System.currentTimeMillis()
             when (result) {
                 is UpdateCheckResult.Available -> {
                     prefs.edit().putLong(KEY_LAST_CHECK, now).apply()
-                    val prompt = !manual && dismissedVersionCode != result.release.manifest.versionCode
+                    val prompt = !manual && DailyUpdateCheckPolicy.shouldPrompt(
+                        result.release.manifest.versionCode,
+                        prefs.getLong(KEY_IGNORED_VERSION, -1L), dismissedVersionCode
+                    )
                     _state.update {
                         it.copy(
                             status = UpdateStatus.AVAILABLE,
@@ -295,6 +322,12 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
     fun dismissPrompt() {
         dismissedVersionCode = _state.value.update?.manifest?.versionCode
         _state.update { it.copy(showPrompt = false) }
+    }
+
+    fun ignoreCurrentVersion() {
+        val version = _state.value.update?.manifest?.versionCode ?: return
+        prefs.edit().putLong(KEY_IGNORED_VERSION, version).apply()
+        dismissPrompt()
     }
 
     fun formattedLastCheckedAt(): String? = _state.value.lastCheckedAt?.let {

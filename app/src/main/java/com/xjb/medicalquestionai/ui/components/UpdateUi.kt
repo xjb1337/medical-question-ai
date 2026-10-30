@@ -41,6 +41,9 @@ fun UpdateSection(updateViewModel: UpdateViewModel, canInstall: Boolean = true) 
                 enabled = state.status != UpdateStatus.CHECKING && state.status != UpdateStatus.DOWNLOADING && state.status != UpdateStatus.VERIFYING
             ) { Text(if (state.status == UpdateStatus.CHECKING) "检查中…" else "检查更新") }
         }
+        Spacer(Modifier.height(8.dp))
+        Text("每天首次进入自动检查；断网后恢复网络补查一次，也可手动检查", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
         state.message?.let { message ->
             Spacer(Modifier.height(8.dp))
             Text(message, style = MaterialTheme.typography.bodySmall, color = statusColor(state.status))
@@ -117,6 +120,7 @@ private fun UpdateActionButtons(state: UpdateUiState, updateViewModel: UpdateVie
 fun UpdateAvailablePrompt(
     state: UpdateUiState,
     onDownload: () -> Unit,
+    onIgnoreVersion: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val release = state.update ?: return
@@ -134,7 +138,12 @@ fun UpdateAvailablePrompt(
         confirmButton = {
             Button(onClick = onDownload) { Text("下载更新") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("稍后") } }
+        dismissButton = {
+            Column(horizontalAlignment = Alignment.End) {
+                TextButton(onClick = onDismiss) { Text("稍后") }
+                TextButton(onClick = onIgnoreVersion) { Text("本版本暂不提醒") }
+            }
+        }
     )
 }
 

@@ -3,10 +3,14 @@ package com.xjb.medicalquestionai
 import android.graphics.Bitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasScrollToNodeAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -31,8 +35,44 @@ class UiRefreshSmokeTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val repository get() = QuestionRepository(AppDatabase.get(context).questionDao())
     private val sampleId = "ui-refresh-local-sample"
+    private val sampleImage get() = File(context.cacheDir, "history-viewer-test.png")
 
-    @After fun removeSample() = runBlocking { repository.delete(sampleId) }
+    @After fun removeSample(): Unit = runBlocking {
+        repository.delete(sampleId)
+        sampleImage.delete()
+    }
+
+    @Test fun historyThumbnailAndDetailBothOpenImageViewer(): Unit = runBlocking {
+        val bitmap = Bitmap.createBitmap(600, 900, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(android.graphics.Color.BLUE)
+        sampleImage.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        bitmap.recycle()
+        repository.insert(Question(
+            id = sampleId, createdAt = System.currentTimeMillis(), questionType = "single",
+            source = "gallery", questionText = "原图查看测试",
+            imagePaths = listOf(sampleImage.absolutePath, sampleImage.absolutePath),
+            status = "completed", result = AnalysisResult(questionType = "single", answer = listOf("A")),
+            model = "UI local fixture", errorMessage = null, isFavorite = false
+        ))
+        compose.onNodeWithText("题库").performClick()
+        compose.waitUntil(5_000) {
+            compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("查看原题图片"))
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("共 2 张").assertIsDisplayed()
+        compose.onNodeWithContentDescription("查看原题图片").performClick()
+        compose.onNodeWithText("原题图片 1/2").assertIsDisplayed()
+        compose.onNodeWithText("双指缩放 · 拖动查看 · 双击放大").assertIsDisplayed()
+        compose.onNodeWithContentDescription("放大").performClick()
+        compose.onNodeWithText("150%").assertIsDisplayed()
+        compose.onNodeWithContentDescription("关闭图片查看").performClick()
+        compose.onNodeWithText("我的题库").assertIsDisplayed()
+        compose.onNodeWithText("原图查看测试").performClick()
+        compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("题目图片"))[0].performScrollTo().performClick()
+        compose.onNodeWithText("原题图片 1/2").assertIsDisplayed()
+        compose.onNodeWithContentDescription("关闭图片查看").performClick()
+        compose.onNodeWithText("拍摄下一题").assertIsDisplayed()
+    }
 
     @Test fun navigationAndTextEntryRemainUsable() {
         compose.onNodeWithText("医学拍题").assertIsDisplayed()
@@ -45,7 +85,11 @@ class UiRefreshSmokeTest {
         compose.onNodeWithText("让学习更顺手").assertIsDisplayed()
         screenshot("settings")
         compose.onNodeWithText("拍题").performClick()
-        compose.onNodeWithText("展开").performScrollTo().performClick()
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("文字题目"))
+        if (compose.onAllNodes(androidx.compose.ui.test.hasText("展开")).fetchSemanticsNodes().isNotEmpty()) {
+            compose.onNodeWithText("展开").performScrollTo().performClick()
+        }
+        compose.onNode(hasSetTextAction()).performScrollTo()
         compose.onNode(hasSetTextAction()).performTextInput("UI 验证：可输入完整题干与选项")
         compose.onNodeWithText("UI 验证：可输入完整题干与选项").assertIsDisplayed()
         screenshot("text-keyboard")

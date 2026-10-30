@@ -13,6 +13,7 @@ import okhttp3.ResponseBody
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.coroutineContext
@@ -118,7 +119,7 @@ class UpdateRepository(
                     UpdateCheckResult.Available(UpdateRelease(manifest, selected.apkUrl, selected.tagName))
                 }
             } catch (e: Exception) {
-                UpdateCheckResult.Failed(e.message ?: "检查更新失败")
+                UpdateCheckResult.Failed(e.message ?: "检查更新失败", networkFailure = e is IOException)
             }
         }
 

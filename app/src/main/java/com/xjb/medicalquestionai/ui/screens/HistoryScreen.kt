@@ -2,6 +2,7 @@ package com.xjb.medicalquestionai.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material.icons.outlined.ZoomIn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -46,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -58,6 +61,7 @@ import com.xjb.medicalquestionai.ui.components.AppTopBar
 import com.xjb.medicalquestionai.ui.components.EmptyState
 import com.xjb.medicalquestionai.ui.components.HistoryStatusChip
 import com.xjb.medicalquestionai.ui.components.rememberFileImageRequest
+import com.xjb.medicalquestionai.ui.components.QuestionImageViewer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -70,6 +74,7 @@ fun HistoryScreen(
     val history by viewModel.history.collectAsState()
     val query by viewModel.historyQuery.collectAsState()
     var showClearDialog by remember { mutableStateOf(false) }
+    var viewingImages by remember { mutableStateOf<List<String>?>(null) }
 
     Scaffold(
         topBar = {
@@ -130,6 +135,7 @@ fun HistoryScreen(
                     items(history, key = { it.id }) { question ->
                         HistoryCard(
                             question = question,
+                            onViewImages = { viewingImages = question.imagePaths },
                             onClick = { navController.navigate("result/${question.id}") },
                             onToggleFavorite = { viewModel.toggleFavorite(question.id) },
                             onDelete = { viewModel.deleteQuestion(question.id) }
@@ -140,6 +146,9 @@ fun HistoryScreen(
         }
     }
 
+    viewingImages?.let { paths ->
+        QuestionImageViewer(paths = paths, onDismiss = { viewingImages = null })
+    }
     if (showClearDialog) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
@@ -159,6 +168,7 @@ fun HistoryScreen(
 @Composable
 private fun HistoryCard(
     question: Question,
+    onViewImages: () -> Unit,
     onClick: () -> Unit,
     onToggleFavorite: () -> Unit,
     onDelete: () -> Unit
@@ -176,18 +186,24 @@ private fun HistoryCard(
     ) {
         Row(Modifier.padding(12.dp)) {
             if (question.imagePaths.isNotEmpty()) {
-                AsyncImage(
-                    model = rememberFileImageRequest(question.imagePaths.first()),
-                    contentDescription = "题目缩略图",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(68.dp)
-                        .background(
-                            MaterialTheme.colorScheme.surfaceVariant,
-                            RoundedCornerShape(10.dp)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.size(68.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onViewImages)) {
+                        AsyncImage(
+                            model = rememberFileImageRequest(question.imagePaths.first()),
+                            contentDescription = "查看原题图片",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant)
                         )
-                        .clip(RoundedCornerShape(10.dp))
-                )
+                        Icon(Icons.Outlined.ZoomIn, contentDescription = null, tint = Color.White,
+                            modifier = Modifier.align(Alignment.BottomEnd)
+                                .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(topStart = 6.dp))
+                                .padding(3.dp).size(18.dp))
+                    }
+                    if (question.imagePaths.size > 1) {
+                        Text("共 ${question.imagePaths.size} 张", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
                 Spacer(Modifier.width(12.dp))
             } else {
                 Surface(

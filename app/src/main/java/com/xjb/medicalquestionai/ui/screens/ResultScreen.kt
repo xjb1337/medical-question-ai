@@ -13,6 +13,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -120,6 +121,7 @@ import com.xjb.medicalquestionai.ui.components.InfoBanner
 import com.xjb.medicalquestionai.ui.components.QuestionTypeChips
 import com.xjb.medicalquestionai.ui.components.SectionCard
 import com.xjb.medicalquestionai.ui.components.rememberFileImageRequest
+import com.xjb.medicalquestionai.ui.components.QuestionImageViewer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -817,6 +819,7 @@ private fun ResultMetaLine(question: Question) {
 
 @Composable
 private fun QuestionImagesRow(paths: List<String>) {
+    var viewingIndex by remember { mutableStateOf<Int?>(null) }
     SectionCard(title = "原题图片") {
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(paths) { path ->
@@ -827,9 +830,13 @@ private fun QuestionImagesRow(paths: List<String>) {
                     modifier = Modifier
                         .size(96.dp)
                         .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
+                        .clickable { viewingIndex = paths.indexOf(path) }
                 )
             }
         }
+    }
+    viewingIndex?.let { index ->
+        QuestionImageViewer(paths = paths, initialIndex = index, onDismiss = { viewingIndex = null })
     }
 }
 

@@ -19,6 +19,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -68,15 +72,27 @@ fun MedicalQuestionApp(
     val followUpSendingIds by viewModel.followUpSendingIds.collectAsState()
     val hasActiveWork = isAnalyzing || followUpSendingIds.isNotEmpty()
     val lifecycleOwner = LocalLifecycleOwner.current
+    var appResumed by remember(lifecycleOwner) {
+        mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+    }
+    // Register only while foregrounded; produceState disposal releases the callback.
+    val networkOnline by produceState(false, appResumed, updateViewModel) {
+        if (appResumed) updateViewModel.connectivity.collect { value = it }
+    }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) updateViewModel.onAppResumed()
+            if (event == Lifecycle.Event.ON_RESUME) {
+                appResumed = true
+                updateViewModel.onAppResumed()
+            } else if (event == Lifecycle.Event.ON_PAUSE) {
+                appResumed = false
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    LaunchedEffect(currentRoute, hasActiveWork) {
-        if (currentRoute == "home" && !hasActiveWork) updateViewModel.autoCheckIfDue()
+    LaunchedEffect(appResumed, hasActiveWork, currentRoute, networkOnline, updateState.status) {
+        if (appResumed && !hasActiveWork) updateViewModel.autoCheckIfDue()
     }
 
     Scaffold(
@@ -164,10 +180,11 @@ fun MedicalQuestionApp(
             }
         }
 
-        if (currentRoute == "home" && !hasActiveWork) {
+        if (showBottomBar && !hasActiveWork) {
             UpdateAvailablePrompt(
                 state = updateState,
                 onDownload = updateViewModel::download,
+                onIgnoreVersion = updateViewModel::ignoreCurrentVersion,
                 onDismiss = updateViewModel::dismissPrompt
             )
             UpdateProgressDialog(
