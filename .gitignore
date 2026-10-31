@@ -27,5 +27,4 @@ secrets.properties
 .externalNativeBuild/
 .cxx/
 app/release/
-web/node_modules/
 graphify-out/
