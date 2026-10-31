@@ -10,6 +10,7 @@ import com.xjb.medicalquestionai.isJsonNullLiteral
 import com.xjb.medicalquestionai.stripRepeatedJsonNullPrefix
 import com.xjb.medicalquestionai.toReadablePlainText
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -33,7 +34,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -90,12 +93,15 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.xjb.medicalquestionai.AnalysisTaskState
@@ -122,10 +128,12 @@ import com.xjb.medicalquestionai.ui.components.QuestionTypeChips
 import com.xjb.medicalquestionai.ui.components.SectionCard
 import com.xjb.medicalquestionai.ui.components.rememberFileImageRequest
 import com.xjb.medicalquestionai.ui.components.QuestionImageViewer
+import com.xjb.medicalquestionai.ui.returnFromDetail
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 private data class QuestionUiState(
@@ -139,18 +147,20 @@ fun ResultScreen(
     viewModel: MainViewModel,
     navController: NavController
 ) {
-    val flow = remember(questionId) { viewModel.questionFlow(questionId) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val flow = remember(viewModel, questionId) { viewModel.questionFlow(questionId) }
     val questionState by produceState<QuestionUiState>(
         initialValue = QuestionUiState(loading = true, question = null),
-        questionId
+        flow, lifecycleOwner
     ) {
-        flow.collect { value = QuestionUiState(loading = false, question = it) }
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            flow.collect { value = QuestionUiState(loading = false, question = it) }
+        }
     }
     val question = questionState.question
     val questionLoading = questionState.loading
     val task by viewModel.analysisTask.collectAsState()
     val isCancelling by viewModel.isCancelling.collectAsState()
-    val elapsedMs by viewModel.analysisElapsedMs.collectAsState()
     val sendingIds by viewModel.followUpSendingIds.collectAsState()
     val followUpError by viewModel.followUpError.collectAsState()
     val followUpStreams by viewModel.followUpStreams.collectAsState()
@@ -167,9 +177,9 @@ fun ResultScreen(
     var addingImages by remember { mutableStateOf(false) }
     var preparingNext by remember { mutableStateOf(false) }
     var nextError by remember { mutableStateOf<String?>(null) }
+    var leavingResult by remember { mutableStateOf(false) }
     var followUpInput by rememberSaveable(questionId) { mutableStateOf("") }
     var attachImages by rememberSaveable(questionId) { mutableStateOf(false) }
-    val lifecycleOwner = LocalLifecycleOwner.current
     val activeRequestId = task?.takeIf { it.questionId == questionId && it.isActive }?.requestId
     val followUpRequestId = followUpStreams[questionId]?.requestId
     val workIdentity = WorkIdentity(activeRequestId, followUpRequestId)
@@ -211,23 +221,41 @@ fun ResultScreen(
     val taskCancelled = task?.takeIf { it.questionId == questionId && it.status == AnalysisTaskStatus.CANCELLED }
     val taskInterrupted = task?.takeIf { it.questionId == questionId && it.status == AnalysisTaskStatus.INTERRUPTED }
     val runningPreview = running?.preview
-    val runningPreviewResult = runningPreview?.toResult()
+    val runningPreviewResult = remember(runningPreview) { runningPreview?.toResult() }
     val previewHasAnswer = runningPreviewResult?.hasAnswerPreview() == true
     val canFollowUp = question?.result != null && !question.isAnswerStale
     val sendingFollowUp = followUpStreams[questionId]?.sending == true || questionId in sendingIds
     val followUpStream = followUpStreams[questionId]
+    val messages by remember(viewModel, questionId, question?.answerRevision) {
+        viewModel.followUps(questionId, question?.answerRevision ?: 0L)
+    }.collectAsStateWithLifecycle(initialValue = emptyList())
+    val questionDate = remember(question?.createdAt) {
+        question?.let { SimpleDateFormat("MM月dd日 HH:mm", Locale.CHINA).format(Date(it.createdAt)) }
+    }
+    fun exitResult() {
+        if (leavingResult || preparingNext) return
+        leavingResult = true
+        scope.launch(Dispatchers.Main.immediate) {
+            try {
+                val outcome = viewModel.stopQuestionWork(questionId, StopReason.PAGE_EXIT, workIdentity)
+                if (outcome.stopped && !outcome.ignored) {
+                    navController.returnFromDetail()
+                } else {
+                    snackbarHostState.showSnackbar(outcome.message ?: "任务状态已变化，请重试返回")
+                }
+            } finally {
+                leavingResult = false
+            }
+        }
+    }
+    BackHandler { exitResult() }
 
     Scaffold(
         topBar = {
             AppTopBar(
                 title = "题目解析",
-                subtitle = question?.let {
-                    SimpleDateFormat("MM月dd日 HH:mm", Locale.CHINA).format(Date(it.createdAt)) + " · 学懂这道题"
-                },
-                onBack = {
-                    viewModel.stopQuestionWorkAsync(questionId, StopReason.PAGE_EXIT, workIdentity)
-                    navController.popBackStack()
-                },
+                subtitle = if (leavingResult) "正在停止任务…" else questionDate?.let { "$it · 学懂这道题" },
+                onBack = { exitResult() },
                 actions = {
                     if (question != null) {
                         IconButton(onClick = { viewModel.toggleFavorite(questionId) }) {
@@ -246,10 +274,10 @@ fun ResultScreen(
                     NextQuestionButton(
                         preparing = preparingNext,
                         onClick = {
-                            if (preparingNext) return@NextQuestionButton
+                            if (preparingNext || leavingResult) return@NextQuestionButton
                             preparingNext = true
                             nextError = null
-                            scope.launch {
+                            scope.launch(Dispatchers.Main.immediate) {
                                 val outcome = viewModel.prepareNextQuestion(questionId, workIdentity)
                                 if (outcome.success && outcome.sessionId != null) {
                                     preparingNext = false
@@ -299,7 +327,7 @@ fun ResultScreen(
             when {
                 questionLoading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 question == null -> MissingQuestionCard(
-                    onBack = { navController.popBackStack() },
+                    onBack = { exitResult() },
                     modifier = Modifier
                         .align(Alignment.Center)
                         .padding(24.dp)
@@ -309,21 +337,21 @@ fun ResultScreen(
                     val result = q.result
                     LazyColumn(
                         state = listState,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().testTag("result-list"),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
                             start = 20.dp, end = 20.dp, top = 12.dp, bottom = 24.dp
                         ),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         if (running != null && previewHasAnswer && runningPreviewResult != null) {
-                            item {
+                            item(key = "answer-preview", contentType = "answer-preview") {
                                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     AnalysisAnswerCard(result = runningPreviewResult, compact = true)
                                     if (runningPreviewResult.warnings.isNotEmpty()) {
                                         AnalysisWarningCard(runningPreviewResult.warnings)
                                     }
                                     Text(
-                                        if (!runningPreview.isComplete) {
+                                        if (runningPreview?.isComplete != true) {
                                             "以上为预览答案，模型仍在核对完整性与格式，最终结果会自动替换。"
                                         } else {
                                             "以上为预览答案，已通过格式校验，正在等待最终结果。"
@@ -335,7 +363,9 @@ fun ResultScreen(
                             }
                         }
                         if (running != null) {
-                            item {
+                            item(key = "analysis-progress", contentType = "analysis-progress") {
+                                // Timer ticks only invalidate this progress item, not the answer page.
+                                val elapsedMs by viewModel.analysisElapsedMs.collectAsState()
                                 AnalysisProgressCard(
                                     task = running,
                                     elapsedMs = elapsedMs,
@@ -347,11 +377,11 @@ fun ResultScreen(
                             }
                         }
                         if (nextError != null) {
-                            item { ErrorBanner(nextError!!) }
+                            item(key = "next-error", contentType = "error") { ErrorBanner(nextError!!) }
                         }
                         val banner = resolveStatusBanner(q, taskFailed, taskCancelled, taskInterrupted, running == null)
                         if (banner != null && running == null && result == null) {
-                            item {
+                            item(key = "status-without-answer", contentType = "status") {
                                 ResultStatusBanner(
                                     tone = banner.tone,
                                     title = banner.title,
@@ -361,34 +391,34 @@ fun ResultScreen(
                             }
                         }
                         if (result != null && q.checkpoint != null) {
-                            item {
+                            item(key = "previous-answer-notice", contentType = "notice") {
                                 InfoBanner("本次重新解析未完成，下面保留的是上一次完整答案；未完成预览不作为正式答案，也不能用于追问。")
                             }
                         }
                         if (result == null && q.checkpoint != null) {
-                            item {
+                            item(key = "checkpoint-notice", contentType = "notice") {
                                 InfoBanner("未完成预览：离开页面时解析已停止，以下内容不是正式答案，不能追问、复制或分享。可点击“重新解析”重新请求。")
                             }
-                            item { AnalysisAnswerCard(result = q.checkpoint, compact = true) }
+                            item(key = "checkpoint-answer", contentType = "answer") { AnalysisAnswerCard(result = q.checkpoint, compact = true) }
                             if (q.imagePaths.isNotEmpty()) {
-                                item { QuestionImagesRow(q.imagePaths) }
+                                item(key = "checkpoint-images", contentType = "images") { QuestionImagesRow(q.imagePaths) }
                             }
                         }
                         if (result != null) {
                             if (q.isAnswerStale) {
-                                item {
+                                item(key = "stale-answer-notice", contentType = "notice") {
                                     InfoBanner("题目已修改，当前显示的是修改前的旧答案；请点击“重新解析”生成对应新题目的答案。")
                                 }
                             }
-                            item { AnalysisAnswerCard(result = result) }
-                            item { ResultMetaLine(q) }
+                            item(key = "answer", contentType = "answer") { AnalysisAnswerCard(result = result) }
+                            item(key = "result-meta", contentType = "meta") { ResultMetaLine(q) }
                             if (result.warnings.isNotEmpty()) {
-                                item { AnalysisWarningCard(result.warnings) }
+                                item(key = "answer-warnings", contentType = "warnings") { AnalysisWarningCard(result.warnings) }
                             }
                             if (q.imagePaths.isNotEmpty()) {
-                                item { QuestionImagesRow(q.imagePaths) }
+                                item(key = "question-images", contentType = "images") { QuestionImagesRow(q.imagePaths) }
                             }
-                            item {
+                            item(key = "answer-details", contentType = "details") {
                                 CollapsibleSection(
                                     title = "详细解析",
                                     subtitle = "题干识别 · 选项对照 · 解题思路"
@@ -397,7 +427,7 @@ fun ResultScreen(
                                 }
                             }
                             if (banner != null) {
-                                item {
+                                item(key = "answer-status", contentType = "status") {
                                     ResultStatusBanner(
                                         tone = banner.tone,
                                         title = banner.title,
@@ -406,7 +436,7 @@ fun ResultScreen(
                                     )
                                 }
                             }
-                            item {
+                            item(key = "answer-actions", contentType = "actions") {
                                 ResultActions(
                                     addingImages = addingImages,
                                     onCopy = {
@@ -457,27 +487,23 @@ fun ResultScreen(
                                     onRetry = { viewModel.retryAnalysis(questionId) {} }
                                 )
                             }
-                            item {
-                                FollowUpThread(
-                                    questionId = questionId,
-                                    answerRevision = q.answerRevision,
-                                    viewModel = viewModel,
+                            followUpItems(
+                                    messages = messages,
                                     stream = followUpStream,
                                     sending = sendingFollowUp,
                                     error = followUpError,
                                     onStop = { viewModel.cancelFollowUp(questionId) },
                                     onDismissError = { viewModel.consumeFollowUpError() }
                                 )
-                            }
                         } else if (running == null && q.status == "completed") {
-                            item {
+                            item(key = "empty-result", contentType = "empty") {
                                 EmptyResultCard(
                                     retrying = taskFailed != null,
                                     onRetry = { viewModel.retryAnalysis(questionId) {} }
                                 )
                             }
                         }
-                        item { Spacer(Modifier.height(8.dp)) }
+                        item(key = "result-end", contentType = "spacer") { Spacer(Modifier.height(8.dp)) }
                     }
                     if (showJumpToBottom) {
                         FilledTonalMiniButton(
@@ -822,7 +848,7 @@ private fun QuestionImagesRow(paths: List<String>) {
     var viewingIndex by remember { mutableStateOf<Int?>(null) }
     SectionCard(title = "原题图片") {
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(paths) { path ->
+            itemsIndexed(paths, key = { index, path -> "$index:$path" }, contentType = { _, _ -> "image" }) { _, path ->
                 AsyncImage(
                     model = rememberFileImageRequest(path),
                     contentDescription = "题目图片",
@@ -988,7 +1014,7 @@ private fun FollowUpInputBar(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 2.dp)
                 ) {
-                    items(listOf("排除其他选项", "解释关键概念", "梳理鉴别要点")) { quick ->
+                    items(listOf("排除其他选项", "解释关键概念", "梳理鉴别要点"), key = { it }, contentType = { "quick-question" }) { quick ->
                         SuggestionChip(onClick = { onValueChange(quick) }, label = { Text(quick) })
                     }
                 }
@@ -1040,38 +1066,33 @@ private fun FollowUpInputBar(
     }
 }
 
-@Composable
-private fun FollowUpThread(
-    questionId: String,
-    answerRevision: Long,
-    viewModel: MainViewModel,
+private fun LazyListScope.followUpItems(
+    messages: List<FollowUp>,
     stream: FollowUpStreamState?,
     sending: Boolean,
     error: String?,
     onStop: () -> Unit,
     onDismissError: () -> Unit
 ) {
-    val messages by remember(questionId, answerRevision) {
-        viewModel.followUps(questionId, answerRevision)
-    }
-        .collectAsState(initial = emptyList())
-    SectionCard(title = "继续追问") {
+    item(key = "follow_up_header", contentType = "follow_up_header") {
+        SectionCard(title = "继续追问") {
         if (messages.isEmpty() && !sending) {
             Text(
                 "有没看懂的地方？可以围绕这道题继续问，系统会带着原题和上次解析一起回答。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                messages.forEach { item -> FollowUpBubble(item) }
-            }
         }
+        }
+    }
+    items(messages, key = { "follow_up_${it.id}" }, contentType = { "follow_up_message" }) { message ->
+        FollowUpBubble(message)
+    }
+    if (sending || stream?.sending == true) {
+        item(key = "follow_up_stream", contentType = "follow_up_stream") {
         if (stream != null && stream.sending) {
-            Spacer(Modifier.height(8.dp))
             FollowUpStreamBubble(stream = stream, onStop = onStop)
         } else if (sending) {
-            Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(8.dp))
@@ -1082,10 +1103,14 @@ private fun FollowUpThread(
                 )
             }
         }
-        if (error != null) {
-            Spacer(Modifier.height(8.dp))
+        }
+    }
+    if (error != null) {
+        item(key = "follow_up_error", contentType = "follow_up_error") {
+            Column {
             ErrorBanner(error)
             TextButton(onClick = onDismissError) { Text("知道了") }
+            }
         }
     }
 }
@@ -1093,6 +1118,7 @@ private fun FollowUpThread(
 @Composable
 private fun FollowUpStreamBubble(stream: FollowUpStreamState, onStop: () -> Unit) {
     var reasoningExpanded by rememberSaveable(stream.questionId) { mutableStateOf(false) }
+    val readableContent = remember(stream.content) { stream.content.toReadablePlainText() }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Start
@@ -1115,7 +1141,7 @@ private fun FollowUpStreamBubble(stream: FollowUpStreamState, onStop: () -> Unit
                     }
                 } else {
                     Text(
-                        stream.content.toReadablePlainText(),
+                        readableContent,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1160,6 +1186,15 @@ private fun FollowUpStreamBubble(stream: FollowUpStreamState, onStop: () -> Unit
 @Composable
 private fun FollowUpBubble(item: FollowUp) {
     val isUser = item.role == "user"
+    val readableContent = remember(item.content, isUser) {
+        when {
+            item.content.isJsonNullLiteral() -> "（本次回答为空，请重试）"
+            !isUser && item.content.hasRepeatedJsonNullPrefix() ->
+                "（这条旧回答含异常 null 前缀，已从追问上下文隔离）\n" +
+                    item.content.stripRepeatedJsonNullPrefix().toReadablePlainText()
+            else -> item.content.toReadablePlainText()
+        }
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1177,14 +1212,8 @@ private fun FollowUpBubble(item: FollowUp) {
             modifier = Modifier.widthIn(max = 320.dp)
         ) {
             Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
-                val pollutedHistory = !isUser && item.content.hasRepeatedJsonNullPrefix()
                 Text(
-                    when {
-                        item.content.isJsonNullLiteral() -> "（本次回答为空，请重试）"
-                        pollutedHistory -> "（这条旧回答含异常 null 前缀，已从追问上下文隔离）\n" +
-                            item.content.stripRepeatedJsonNullPrefix().toReadablePlainText()
-                        else -> item.content.toReadablePlainText()
-                    },
+                    readableContent,
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                 )

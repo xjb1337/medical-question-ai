@@ -41,6 +41,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.xjb.medicalquestionai.ui.openTopLevel
+import com.xjb.medicalquestionai.ui.openDetail
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,7 +74,7 @@ fun HistoryScreen(
     viewModel: MainViewModel,
     navController: NavController
 ) {
-    val history by viewModel.history.collectAsState()
+    val history by viewModel.history.collectAsStateWithLifecycle()
     val query by viewModel.historyQuery.collectAsState()
     var showClearDialog by remember { mutableStateOf(false) }
     var viewingImages by remember { mutableStateOf<List<String>?>(null) }
@@ -121,7 +124,7 @@ fun HistoryScreen(
                     else "换一个关键词试试，或者清除搜索条件。",
                     actionLabel = if (query.isBlank()) "去拍题" else "清除搜索",
                     onAction = {
-                        if (query.isBlank()) navController.navigate("home") else viewModel.setHistoryQuery("")
+                        if (query.isBlank()) navController.openTopLevel("home") else viewModel.setHistoryQuery("")
                     }
                 )
             } else {
@@ -132,11 +135,11 @@ fun HistoryScreen(
                     ),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(history, key = { it.id }) { question ->
+                    items(history, key = { it.id }, contentType = { "question" }) { question ->
                         HistoryCard(
                             question = question,
                             onViewImages = { viewingImages = question.imagePaths },
-                            onClick = { navController.navigate("result/${question.id}") },
+                            onClick = { navController.openDetail("result/${question.id}") },
                             onToggleFavorite = { viewModel.toggleFavorite(question.id) },
                             onDelete = { viewModel.deleteQuestion(question.id) }
                         )

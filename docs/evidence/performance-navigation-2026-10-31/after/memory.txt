@@ -1,0 +1,54 @@
+Applications Memory Usage (in Kilobytes):
+Uptime: 1102666 Realtime: 1102666
+
+** MEMINFO in pid 5200 [com.xjb.medicalquestionai.benchmark] **
+                   Pss  Private  Private  SwapPss     Heap     Heap     Heap
+                 Total    Dirty    Clean    Dirty     Size    Alloc     Free
+                ------   ------   ------   ------   ------   ------   ------
+  Native Heap    12941    12860        0        0    20480    14851     5628
+  Dalvik Heap     7305     7252        0        0    11436     5718     5718
+ Dalvik Other     8892     8892        0        0                           
+        Stack      468      468        0        0                           
+       Ashmem        2        0        0        0                           
+    Other dev       17        0       16        0                           
+     .so mmap     2424      156       92        0                           
+    .apk mmap      423        0       80        0                           
+    .ttf mmap      446        0      340        0                           
+    .dex mmap    25123        4    23240        0                           
+    .oat mmap     2032        0      680        0                           
+    .art mmap     2414     1436       48        0                           
+   Other mmap     5375        4     3316        0                           
+      Unknown      780      776        0        0                           
+        TOTAL    68642    31848    27812        0    31916    20569    11346
+ 
+ App Summary
+                       Pss(KB)
+                        ------
+           Java Heap:     8736
+         Native Heap:    12860
+                Code:    24592
+               Stack:      468
+            Graphics:        0
+       Private Other:    13004
+              System:     8982
+ 
+               TOTAL:    68642       TOTAL SWAP PSS:        0
+ 
+ Objects
+               Views:      187         ViewRootImpl:        1
+         AppContexts:        4           Activities:        1
+              Assets:        2        AssetManagers:        0
+       Local Binders:       13        Proxy Binders:       29
+       Parcel memory:        5         Parcel count:       22
+    Death Recipients:        0      OpenSSL Sockets:        0
+            WebViews:        0
+ 
+ SQL
+         MEMORY_USED:      363
+  PAGECACHE_OVERFLOW:       60          MALLOC_SIZE:      117
+ 
+ DATABASES
+      pgsz     dbsz   Lookaside(b)          cache  Dbname
+         4       32             64         3/35/5  /data/user/0/com.xjb.medicalquestionai.benchmark/databases/medical_question.db
+         4        8                         0/0/0    (attached) temp
+         4       32             62         2/15/3  /data/user/0/com.xjb.medicalquestionai.benchmark/databases/medical_question.db (2)

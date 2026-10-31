@@ -13,6 +13,7 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
+import androidx.camera.core.UseCase
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
@@ -74,6 +75,7 @@ import com.xjb.medicalquestionai.data.CaptureTarget
 import com.xjb.medicalquestionai.data.ImageStore
 import com.xjb.medicalquestionai.ui.components.AppTopBar
 import com.xjb.medicalquestionai.ui.components.ErrorBanner
+import com.xjb.medicalquestionai.ui.returnFromDetail
 
 @Composable
 fun CameraScreen(
@@ -119,7 +121,7 @@ fun CameraScreen(
                 launchSingleTop = true
             }
         } else {
-            navController.popBackStack()
+            navController.returnFromDetail()
         }
     }
 
@@ -157,7 +159,12 @@ fun CameraScreen(
         if (!hasPermission) return@DisposableEffect onDispose { }
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val executor = ContextCompat.getMainExecutor(context)
+        var disposed = false
+        var boundProvider: ProcessCameraProvider? = null
+        var boundUseCases = emptyArray<UseCase>()
         val listener = Runnable {
+            // The future may complete after the user has already left this page.
+            if (disposed) return@Runnable
             try {
                 val provider = cameraProviderFuture.get()
                 val preview = Preview.Builder().build().also {
@@ -166,13 +173,14 @@ fun CameraScreen(
                 val capture = ImageCapture.Builder()
                     .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
                     .build()
-                provider.unbindAll()
                 camera = provider.bindToLifecycle(
                     lifecycleOwner,
                     CameraSelector.DEFAULT_BACK_CAMERA,
                     preview,
                     capture
                 )
+                boundProvider = provider
+                boundUseCases = arrayOf(preview, capture)
                 imageCapture = capture
                 cameraError = null
             } catch (e: Exception) {
@@ -181,7 +189,9 @@ fun CameraScreen(
         }
         cameraProviderFuture.addListener(listener, executor)
         onDispose {
-            runCatching { cameraProviderFuture.get().unbindAll() }
+            disposed = true
+            // Never wait for camera initialization on the UI thread during back navigation.
+            boundProvider?.unbind(*boundUseCases)
             camera = null
             imageCapture = null
         }

@@ -1,6 +1,9 @@
 package com.xjb.medicalquestionai.ui.screens
 
 import android.content.Intent
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -50,8 +54,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -59,6 +66,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xjb.medicalquestionai.BuildConfig
 import com.xjb.medicalquestionai.MainViewModel
 import com.xjb.medicalquestionai.data.AnswerMode
@@ -68,11 +76,13 @@ import com.xjb.medicalquestionai.data.SettingsRepository
 import com.xjb.medicalquestionai.data.update.UpdateViewModel
 import com.xjb.medicalquestionai.ui.components.AppTopBar
 import com.xjb.medicalquestionai.ui.components.CollapsibleSection
+import com.xjb.medicalquestionai.ui.components.DeepSeekBindingGuide
 import com.xjb.medicalquestionai.ui.components.InfoBanner
 import com.xjb.medicalquestionai.ui.components.SectionCard
 import com.xjb.medicalquestionai.ui.components.UpdateSection
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SettingsScreen(
     viewModel: MainViewModel,
@@ -80,7 +90,7 @@ fun SettingsScreen(
     updateViewModel: UpdateViewModel
 ) {
     val settings by viewModel.settings.collectAsState()
-    val history by viewModel.history.collectAsState()
+    val historyCount by viewModel.historyCount.collectAsStateWithLifecycle()
     val isTesting by viewModel.isTestingKey.collectAsState()
     val isCheckingConnection by viewModel.isCheckingConnection.collectAsState()
     val isVerifyingModel by viewModel.isVerifyingModel.collectAsState()
@@ -100,6 +110,20 @@ fun SettingsScreen(
     var connectionOk by remember { mutableStateOf<Boolean?>(null) }
     var modelVerifyStatus by remember { mutableStateOf<String?>(null) }
     var modelVerifyOk by remember { mutableStateOf<Boolean?>(null) }
+    var exportingHistory by remember { mutableStateOf(false) }
+    // Only tutorial visibility is saveable. Never put the plaintext key into saved instance state.
+    var guideExpanded by rememberSaveable { mutableStateOf(!settings.apiKeyConfigured) }
+    var focusKeyRequested by remember { mutableStateOf(false) }
+    val keyFocusRequester = remember { FocusRequester() }
+    val keyBringIntoViewRequester = remember { BringIntoViewRequester() }
+
+    LaunchedEffect(focusKeyRequested) {
+        if (focusKeyRequested) {
+            keyBringIntoViewRequester.bringIntoView()
+            keyFocusRequester.requestFocus()
+            focusKeyRequested = false
+        }
+    }
 
     // 连接/模型测试结果只对当前密钥、地址和模型有效，设置变化后立即作废旧状态。
     LaunchedEffect(settings.apiKeyHint, settings.baseUrl, settings.model) {
@@ -118,6 +142,7 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -138,6 +163,15 @@ fun SettingsScreen(
                     }
                 }
             }
+            DeepSeekBindingGuide(
+                expanded = guideExpanded,
+                keyConfigured = settings.apiKeyConfigured,
+                onExpandedChange = { guideExpanded = it },
+                onEnterKey = {
+                    guideExpanded = false
+                    focusKeyRequested = true
+                }
+            )
             SectionCard(title = "密钥与连接") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -163,7 +197,9 @@ fun SettingsScreen(
                         connectionStatus = null
                         connectionOk = null
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth()
+                        .bringIntoViewRequester(keyBringIntoViewRequester)
+                        .focusRequester(keyFocusRequester),
                     label = { Text(if (settings.apiKeyConfigured) "输入新密钥以替换" else "粘贴 API 密钥") },
                     placeholder = { Text("sk-…") },
                     singleLine = true,
@@ -196,6 +232,7 @@ fun SettingsScreen(
                             viewModel.saveApiKey(key) { error ->
                                 if (error == null) {
                                     apiKeyInput = ""
+                                    guideExpanded = false
                                     connectionStatus = null
                                     connectionOk = null
                                     scope.launch { snackbarHostState.showSnackbar("密钥已保存，建议测试连接") }
@@ -331,7 +368,7 @@ fun SettingsScreen(
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        "密钥使用 Android Keystore 加密后保存在本机，不会写入日志或历史记录。测试连接会实际请求当前模型。",
+                        "密钥使用 Android Keystore 加密后保存在本机，不会写入日志或历史记录。检查连接只查询模型列表；验证模型会发送极短文字请求，可能产生少量 API 费用。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -408,33 +445,36 @@ fun SettingsScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = {
-                            if (history.isEmpty()) {
-                                scope.launch { snackbarHostState.showSnackbar("没有可导出的历史记录") }
-                            } else {
-                                val text = buildString {
-                                    appendLine("医学拍题助手 · 历史记录导出")
-                                    appendLine("共 ${history.size} 条")
-                                    history.forEach { question ->
-                                        appendLine()
-                                        appendLine("【${question.typeLabel}】${question.shortQuestion}")
-                                        appendLine("状态：${question.status} · ${question.modeLabel} · ${question.modelLabel}")
-                                        question.result?.let { appendLine("答案：${it.answerDisplay}") }
+                            exportingHistory = true
+                            scope.launch {
+                                try {
+                                    val text = viewModel.exportHistoryText()
+                                    if (text == null) {
+                                        snackbarHostState.showSnackbar("没有可导出的历史记录")
+                                    } else {
+                                        val intent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(Intent.EXTRA_TEXT, text)
+                                        }
+                                        context.startActivity(Intent.createChooser(intent, "导出历史记录"))
                                     }
+                                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                    throw cancelled
+                                } catch (_: Exception) {
+                                    snackbarHostState.showSnackbar("导出失败，请稍后重试")
+                                } finally {
+                                    exportingHistory = false
                                 }
-                                val intent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_TEXT, text)
-                                }
-                                context.startActivity(Intent.createChooser(intent, "导出历史记录"))
                             }
                         },
+                        enabled = !exportingHistory,
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp)
-                    ) { Text("导出历史") }
+                    ) { Text(if (exportingHistory) "正在导出…" else "导出历史") }
                     OutlinedButton(
                         onClick = { showClearDialog = true },
-                        enabled = history.isNotEmpty(),
+                        enabled = historyCount > 0,
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp)

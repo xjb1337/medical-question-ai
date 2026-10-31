@@ -31,6 +31,8 @@ import com.xjb.medicalquestionai.data.QuestionType
 import com.xjb.medicalquestionai.data.SecureKeyStore
 import com.xjb.medicalquestionai.data.SettingsRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.NonCancellable
@@ -41,6 +43,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -130,9 +135,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val history: StateFlow<List<Question>> = combine(
         repository.observeAll(),
         _historyQuery,
-        settings
-    ) { all, query, config ->
-        val visible = if (config.saveHistory) all else all.filter { it.isFavorite }
+        settings.map { it.saveHistory }.distinctUntilChanged()
+    ) { all, query, saveHistory ->
+        val visible = if (saveHistory) all else all.filter { it.isFavorite }
         if (query.isBlank()) visible else visible.filter { question ->
             question.questionText.contains(query, ignoreCase = true) ||
                 question.result?.answer?.joinToString().orEmpty().contains(query, ignoreCase = true) ||
@@ -140,7 +145,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 question.result?.recognizedQuestion.orEmpty().contains(query, ignoreCase = true) ||
                 question.result?.keyPoints?.joinToString().orEmpty().contains(query, ignoreCase = true)
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }.flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val historyCount: StateFlow<Int> = settings.map { it.saveHistory }.distinctUntilChanged()
+        .flatMapLatest { repository.observeCount(onlyFavorites = !it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    /** Export all visible records independently of the history screen's search query. */
+    suspend fun exportHistoryText(): String? = withContext(Dispatchers.Default) {
+        val keepHistory = settings.value.saveHistory
+        val records = repository.getAll().filter { !it.isEphemeral && (keepHistory || it.isFavorite) }
+        if (records.isEmpty()) return@withContext null
+        buildString {
+            appendLine("医学拍题助手 · 历史记录导出")
+            appendLine("共 ${records.size} 条")
+            records.forEach { question ->
+                appendLine()
+                appendLine("【${question.typeLabel}】${question.shortQuestion}")
+                appendLine("状态：${question.status} · ${question.modeLabel} · ${question.modelLabel}")
+                question.result?.let { appendLine("答案：${it.answerDisplay}") }
+            }
+        }
+    }
 
     private var draftImageSource: String? = null
     private var analysisJob: Job? = null
@@ -1548,7 +1576,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         elapsedJob = viewModelScope.launch {
             while (true) {
                 _analysisElapsedMs.value = SystemClock.elapsedRealtime() - startedAt
-                delay(100)
+                // The UI displays whole seconds; precise request timings are recorded separately.
+                delay(1_000)
             }
         }
     }

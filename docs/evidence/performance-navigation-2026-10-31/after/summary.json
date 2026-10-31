@@ -1,0 +1,12 @@
+{
+  "tabSwitches": 30,
+  "processColdStartMs": [
+    548,
+    498,
+    543,
+    525,
+    524
+  ],
+  "package": "com.xjb.medicalquestionai.benchmark",
+  "medianStartMs": 525
+}

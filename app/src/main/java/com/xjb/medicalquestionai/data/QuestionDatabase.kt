@@ -18,6 +18,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import android.content.Context
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Entity(tableName = "questions")
 data class QuestionEntity(
@@ -60,6 +63,9 @@ data class FollowUpEntity(
 
 @Dao
 interface QuestionDao {
+    @Query("SELECT COUNT(*) FROM questions WHERE isEphemeral = 0 AND (:onlyFavorites = 0 OR isFavorite = 1)")
+    fun observeCount(onlyFavorites: Boolean): Flow<Int>
+
     @Query("SELECT * FROM questions WHERE isEphemeral = 0 ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<QuestionEntity>>
 
@@ -202,19 +208,20 @@ abstract class AppDatabase : RoomDatabase() {
 }
 
 class QuestionRepository(private val dao: QuestionDao) {
+    fun observeCount(onlyFavorites: Boolean): Flow<Int> = dao.observeCount(onlyFavorites)
     fun observeAll(): Flow<List<Question>> = dao.observeAll().mapEntities()
 
     fun observeById(id: String): Flow<Question?> = dao.observeById(id).mapEntity()
 
-    suspend fun getById(id: String): Question? = dao.getById(id)?.toDomain()
+    suspend fun getById(id: String): Question? = withContext(Dispatchers.Default) { dao.getById(id)?.toDomain() }
 
-    suspend fun getAll(): List<Question> = dao.getAll().map { it.toDomain() }
+    suspend fun getAll(): List<Question> = withContext(Dispatchers.Default) { dao.getAll().map { it.toDomain() } }
 
     suspend fun markInterrupted() = dao.markInterrupted()
 
-    suspend fun insert(question: Question) = dao.insert(question.toEntity())
+    suspend fun insert(question: Question) = withContext(Dispatchers.Default) { dao.insert(question.toEntity()) }
 
-    suspend fun update(question: Question) = dao.update(question.toEntity())
+    suspend fun update(question: Question) = withContext(Dispatchers.Default) { dao.update(question.toEntity()) }
 
     suspend fun updateCheckpoint(id: String, json: String?) = dao.updateCheckpoint(id, json)
 
@@ -223,10 +230,10 @@ class QuestionRepository(private val dao: QuestionDao) {
     suspend fun clearAll() = dao.deleteAll()
 
     private fun Flow<List<QuestionEntity>>.mapEntities(): Flow<List<Question>> =
-        map { list -> list.map { it.toDomain() } }
+        map { list -> list.map { it.toDomain() } }.flowOn(Dispatchers.Default)
 
     private fun Flow<QuestionEntity?>.mapEntity(): Flow<Question?> =
-        map { it?.toDomain() }
+        map { it?.toDomain() }.flowOn(Dispatchers.Default)
 }
 
 class FollowUpRepository(private val dao: FollowUpDao) {
@@ -234,11 +241,13 @@ class FollowUpRepository(private val dao: FollowUpDao) {
         dao.observeForQuestion(questionId, answerRevision).map { list ->
             list.map { it.toDomain() }
                 .filterNot { it.content.isJsonNullLiteral() || it.content.hasRepeatedJsonNullPrefix() }
-        }
+        }.flowOn(Dispatchers.Default)
 
     suspend fun getForQuestion(questionId: String, answerRevision: Long): List<FollowUp> =
-        dao.getForQuestion(questionId, answerRevision).map { it.toDomain() }
-            .filterNot { it.content.isJsonNullLiteral() || it.content.hasRepeatedJsonNullPrefix() }
+        withContext(Dispatchers.Default) {
+            dao.getForQuestion(questionId, answerRevision).map { it.toDomain() }
+                .filterNot { it.content.isJsonNullLiteral() || it.content.hasRepeatedJsonNullPrefix() }
+        }
 
     suspend fun insert(followUp: FollowUp) = dao.insert(followUp.toEntity())
 

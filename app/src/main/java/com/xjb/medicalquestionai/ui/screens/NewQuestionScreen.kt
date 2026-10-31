@@ -62,6 +62,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import com.xjb.medicalquestionai.ui.openTopLevel
+import com.xjb.medicalquestionai.ui.openDetail
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -173,7 +175,7 @@ fun NewQuestionScreen(
                                 // 清理本地预览状态，确保返回首页时不会短暂看到上一题的图片或文字。
                                 editingImageId = null
                                 textExpanded = false
-                                navController.navigate("result/$questionId")
+                                navController.navigate("result/$questionId") { launchSingleTop = true }
                             }
                         },
                         modifier = Modifier
@@ -215,18 +217,18 @@ fun NewQuestionScreen(
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item {
+            item(key = "camera-entry", contentType = "camera-entry") {
                 CameraHeroCard(
                     enabled = draft.images.size < ImageStore.MAX_IMAGES && !analyzing && !isImporting,
                     compact = draft.images.isNotEmpty(),
                     onClick = {
-                        navController.navigate("camera?source=home&sessionId=${draft.sessionId}")
+                        navController.openDetail("camera?source=home&sessionId=${draft.sessionId}")
                     }
                 )
             }
 
             if (parkedDraft != null) {
-                item {
+                item(key = "parked-draft", contentType = "notice") {
                     Card(
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.secondaryContainer
@@ -252,12 +254,12 @@ fun NewQuestionScreen(
             }
 
             if (analysisError != null) {
-                item {
+                item(key = "analysis-error", contentType = "error") {
                     ErrorBanner(analysisError!!, onDismiss = viewModel::consumeAnalysisError)
                 }
             }
 
-            item {
+            item(key = "draft-images", contentType = "images") {
                 SectionCard(title = "题目图片") {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         TextButton(
@@ -287,7 +289,7 @@ fun NewQuestionScreen(
                     } else {
                         Spacer(Modifier.height(10.dp))
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            items(draft.images, key = { it.id }) { image ->
+                            items(draft.images, key = { it.id }, contentType = { "draft-image" }) { image ->
                                 DraftImagePreview(
                                     image = image,
                                     index = draft.images.indexOfFirst { it.id == image.id } + 1,
@@ -318,7 +320,7 @@ fun NewQuestionScreen(
             }
 
             if (imageUnsupported) {
-                item {
+                item(key = "unsupported-images", contentType = "notice") {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         color = MaterialTheme.colorScheme.errorContainer,
@@ -339,13 +341,13 @@ fun NewQuestionScreen(
                                     color = MaterialTheme.colorScheme.onErrorContainer
                                 )
                             }
-                            TextButton(onClick = { navController.navigate("settings") }) { Text("去切换模型") }
+                            TextButton(onClick = { navController.openTopLevel("settings") }) { Text("去切换模型") }
                         }
                     }
                 }
             }
 
-            item {
+            item(key = "draft-text", contentType = "text-input") {
                 SectionCard(
                     title = "文字题目",
                     trailing = {
@@ -385,7 +387,7 @@ fun NewQuestionScreen(
                 }
             }
 
-            item {
+            item(key = "answer-preferences", contentType = "preferences") {
                 SectionCard(title = "解题偏好") {
                     QuestionTypeChips(
                         selected = draft.questionType,
@@ -408,7 +410,7 @@ fun NewQuestionScreen(
             }
 
             if (!settings.apiKeyConfigured) {
-                item {
+                item(key = "key-binding", contentType = "notice") {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
                         shape = MaterialTheme.shapes.large
@@ -426,12 +428,12 @@ fun NewQuestionScreen(
                             Column(Modifier.weight(1f)) {
                                 Text("连接你的 AI 助手", fontWeight = FontWeight.SemiBold)
                                 Text(
-                                    "添加 DeepSeek 密钥后即可开始解题。",
+                                    "首次绑定可在设置中查看详细教程并跳转官网。",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            TextButton(onClick = { navController.navigate("settings") }) { Text("去设置") }
+                            TextButton(onClick = { navController.openTopLevel("settings") }) { Text("去绑定") }
                         }
                     }
                 }

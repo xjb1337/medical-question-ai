@@ -109,10 +109,11 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ### 3. 配置 API Key
 
 1. 打开应用「设置」。
-2. 填写 DeepSeek API Key（默认接口地址 `https://api.deepseek.com`）。
-3. 选择官方模型：`deepseek-flash` 支持文字和图片；`deepseek-v4-pro` 仅支持文字，带图时会被拦截并提示切换。自定义 Base URL 可填写代理端模型名。
-4. 选择快速 / 标准 / 详细模式；新安装默认标准，旧 `deepseek-chat` 迁移为快速、旧 `deepseek-reasoner` 迁移为详细。
-5. 点击「保存密钥」先保存到本机，再点「测试连接」确认 Key 可用，点「验证模型」确认当前模型存在；无网络时也可先保存。
+2. 尚未配置密钥时，设置页默认展开「DeepSeek 首次绑定教程」，按登录开放平台、查看余额、创建并复制 Key、返回粘贴保存、检查连接和验证模型五步操作；提供官方页面跳转，浏览器无法打开时可复制官方地址。
+3. 已有 Key 可点击「已有 API Key，直接填写」定位输入框（默认接口地址 `https://api.deepseek.com`）；保存后教程收起，也可随时重新查看。
+4. 选择官方模型：`deepseek-flash` 支持文字和图片；`deepseek-v4-pro` 仅支持文字，带图时会被拦截并提示切换。自定义 Base URL 可填写代理端模型名。
+5. 选择快速 / 标准 / 详细模式；新安装默认标准，旧 `deepseek-chat` 迁移为快速、旧 `deepseek-reasoner` 迁移为详细。
+6. 点击「保存密钥」先保存到本机，再点「检查连接」检查接口与密钥，点「验证模型」发送极短文字请求确认当前模型能生成文字（可能产生少量费用）；无网络时也可先保存。
 
 API Key 仅写入应用私有的 `EncryptedSharedPreferences`，不会写入日志、Room 数据库或导出文件。卸载应用会删除本地数据。
 
