@@ -20,6 +20,17 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import com.xjb.medicalquestionai.data.ThemeMode
 
+private val Night = Color(0xFF101B27)
+private val NightSurface = Color(0xFF182736)
+private val NightVariant = Color(0xFF223646)
+private val NightText = Color(0xFFE6EFF5)
+private val NightMuted = Color(0xFFACBFCC)
+private val NightOutline = Color(0xFF3D5363)
+private val Amber300 = Color(0xFFFCD34D)
+private val Amber900 = Color(0xFF78350F)
+private val Red300 = Color(0xFFFCA5A5)
+private val Red900 = Color(0xFF7F1D1D)
+
 private val LightColors = lightColorScheme(
     primary = Teal600,
     onPrimary = White,
@@ -151,14 +162,3 @@ fun MedicalQuestionAiTheme(
         content = content
     )
 }
-
-private val Night = Color(0xFF101B27)
-private val NightSurface = Color(0xFF182736)
-private val NightVariant = Color(0xFF223646)
-private val NightText = Color(0xFFE6EFF5)
-private val NightMuted = Color(0xFFACBFCC)
-private val NightOutline = Color(0xFF3D5363)
-private val Amber300 = Color(0xFFFCD34D)
-private val Amber900 = Color(0xFF78350F)
-private val Red300 = Color(0xFFFCA5A5)
-private val Red900 = Color(0xFF7F1D1D)
