@@ -735,7 +735,7 @@ private fun ThemeOption(
         ) {
             Icon(
                 imageVector = icon,
-                contentDescription = mode.label,
+                contentDescription = null,
                 tint = if (selected) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(22.dp)
