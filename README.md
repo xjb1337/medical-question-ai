@@ -1,22 +1,10 @@
 # 医学拍题助手
 
-面向医学课程复习的 Android 拍题与 AI 解析应用。支持拍照/相册导入、多图题目、自动识别题型、结构化解析、追问、历史记录和收藏。应用使用 DeepSeek 兼容的 Chat Completions API。Android 版 API Key 由 AndroidX Security 加密存储；网页版为便于本地测试，默认将 Key 明文保存在浏览器 localStorage，具体边界见 [web/README.md](web/README.md)。
+面向医学课程复习的 Android 拍题与 AI 解析应用。支持拍照/相册导入、多图题目、自动识别题型、结构化解析、追问、历史记录和收藏。应用使用 DeepSeek 兼容的 Chat Completions API。Android 版 API Key 由 AndroidX Security 加密存储。
 
 > 项目状态：已完成真机反馈相关改造并通过 Android 自动检查（2026-10-29）。Android 真机流程、真实接口质量与速度验收未执行（本机无可用设备、无真实 API Key）。
 >
 > 本项目仅用于个人学习与题目理解，不替代教材、临床指南或专业医疗建议。
-
-## 网页版（快速测试）
-
-仓库内附一个零依赖网页版，适合在电脑浏览器中快速验证交互和解析流程：
-
-```bash
-cd web
-npm start
-# 打开 http://127.0.0.1:4173
-```
-
-设置页开启「演示模式」即可不配置 API Key 跑通完整流程；真实解析需填写 DeepSeek API Key。详见 [web/README.md](web/README.md)。
 
 ## 功能
 
@@ -39,7 +27,7 @@ npm start
 - **编辑重答**：修改题干或图片后重新分析；失败保留旧答案与追问。
 - **结果阅读**：答案卡片置顶，解析详情默认折叠，题目图片和追问按阅读顺序排列。
 - **历史与收藏**：搜索、收藏、删除、清空；可配置是否保存历史。
-- **隐私控制**：请勿上传可识别患者身份的信息；应用不要求逐题勾选隐私确认，Android 版 API Key 使用 AndroidX Security + Android Keystore 加密，网页版存储边界见网页版说明。
+- **隐私控制**：请勿上传可识别患者身份的信息；应用不要求逐题勾选隐私确认，Android 版 API Key 使用 AndroidX Security + Android Keystore 加密，。
 - **深浅色主题**：Material 3 界面，适配手机竖屏。
 
 ## 技术栈
@@ -133,6 +121,8 @@ API Key 仅写入应用私有的 `EncryptedSharedPreferences`，不会写入日�
 app/src/main/java/com/xjb/medicalquestionai/
 ├── MainActivity.kt                 # 入口、导航壳
 ├── MainViewModel.kt                # 页面状态与业务编排
+├── HistoryCoordinator.kt            # 历史筛选与导出
+├── SettingsCoordinator.kt           # 设置持久化与连接检查
 ├── data/
 │   ├── Models.kt                   # 领域模型与 JSON 序列化
 │   ├── QuestionDatabase.kt         # Room 实体、DAO、仓库
@@ -148,13 +138,9 @@ app/src/main/java/com/xjb/medicalquestionai/
     ├── components/                 # 通用组件、解析结果视图
     ├── screens/                    # 首页、相机、结果、历史、设置
     └── theme/                      # Material 3 主题
-web/                                # 零依赖网页版（Node 静态服务 + API 代理）
-├── index.html
-├── server.mjs
-└── assets/                         # 页面、样式、IndexedDB、图片处理
 ```
 
-更详细的设计说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，测试说明见 [docs/TESTING.md](docs/TESTING.md)，网页版说明见 [web/README.md](web/README.md)。
+更详细的设计说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，测试说明见 [docs/TESTING.md](docs/TESTING.md)。
 
 ## 数据与隐私
 
@@ -176,7 +162,7 @@ web/                                # 零依赖网页版（Node 静态服务 + A
 - 医学题目识别可能出错，尤其是低清晰度图片、手写体和复杂表格；请以教材与课堂讲解为准。
 - 追问上下文会随轮次增长，长对话按预算裁剪；建议新问题新建题目。
 - 本次交付未在 Android 真机/模拟器上执行，也没有真实 DeepSeek Key，因此真机 UI、相机、覆盖安装和真实接口质量/速度数据尚未验收；详见 `docs/DEVICE_FEEDBACK_IMPLEMENTATION_REPORT.md`。
-- Android 端目前仅提供浅色/深色手机布局，未适配平板与横屏专门布局；网页版已提供响应式桌面/手机布局。
+- Android 端目前仅提供浅色/深色手机布局，未适配平板与横屏专门布局。
 - 未内置离线模型；无网络或 API 配额不足时无法解析。
 
 ## 开发

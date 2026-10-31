@@ -31,10 +31,7 @@ import com.xjb.medicalquestionai.data.QuestionType
 import com.xjb.medicalquestionai.data.SecureKeyStore
 import com.xjb.medicalquestionai.data.SettingsRepository
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -42,10 +39,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -103,14 +96,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _draftNotice = MutableStateFlow<String?>(null)
     val draftNotice: StateFlow<String?> = _draftNotice.asStateFlow()
 
-    private val _isTestingKey = MutableStateFlow(false)
-    val isTestingKey: StateFlow<Boolean> = _isTestingKey.asStateFlow()
+    private val settingsCoordinator = SettingsCoordinator(
+        settingsRepository = settingsRepository,
+        client = client,
+        settings = settingsRepository.settings,
+        scope = viewModelScope
+    )
 
-    private val _isCheckingConnection = MutableStateFlow(false)
-    val isCheckingConnection: StateFlow<Boolean> = _isCheckingConnection.asStateFlow()
-
-    private val _isVerifyingModel = MutableStateFlow(false)
-    val isVerifyingModel: StateFlow<Boolean> = _isVerifyingModel.asStateFlow()
+    val isTestingKey: StateFlow<Boolean> = settingsCoordinator.isTestingKey
+    val isCheckingConnection: StateFlow<Boolean> = settingsCoordinator.isCheckingConnection
+    val isVerifyingModel: StateFlow<Boolean> = settingsCoordinator.isVerifyingModel
 
     private val _retryingIds = MutableStateFlow<Set<String>>(emptySet())
     val retryingIds: StateFlow<Set<String>> = _retryingIds.asStateFlow()
@@ -129,46 +124,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _followUpError = MutableStateFlow<String?>(null)
     val followUpError: StateFlow<String?> = _followUpError.asStateFlow()
 
-    private val _historyQuery = MutableStateFlow("")
-    val historyQuery: StateFlow<String> = _historyQuery.asStateFlow()
+    private val historyCoordinator = HistoryCoordinator(repository, settingsRepository.settings, viewModelScope)
 
-    val history: StateFlow<List<Question>> = combine(
-        repository.observeAll(),
-        _historyQuery,
-        settings.map { it.saveHistory }.distinctUntilChanged()
-    ) { all, query, saveHistory ->
-        val visible = if (saveHistory) all else all.filter { it.isFavorite }
-        if (query.isBlank()) visible else visible.filter { question ->
-            question.questionText.contains(query, ignoreCase = true) ||
-                question.result?.answer?.joinToString().orEmpty().contains(query, ignoreCase = true) ||
-                question.result?.answerText.orEmpty().contains(query, ignoreCase = true) ||
-                question.result?.recognizedQuestion.orEmpty().contains(query, ignoreCase = true) ||
-                question.result?.keyPoints?.joinToString().orEmpty().contains(query, ignoreCase = true)
-        }
-    }.flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val historyQuery: StateFlow<String> = historyCoordinator.query
+    val history: StateFlow<List<Question>> = historyCoordinator.history
+    val historyCount: StateFlow<Int> = historyCoordinator.count
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val historyCount: StateFlow<Int> = settings.map { it.saveHistory }.distinctUntilChanged()
-        .flatMapLatest { repository.observeCount(onlyFavorites = !it) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
-
-    /** Export all visible records independently of the history screen's search query. */
-    suspend fun exportHistoryText(): String? = withContext(Dispatchers.Default) {
-        val keepHistory = settings.value.saveHistory
-        val records = repository.getAll().filter { !it.isEphemeral && (keepHistory || it.isFavorite) }
-        if (records.isEmpty()) return@withContext null
-        buildString {
-            appendLine("医学拍题助手 · 历史记录导出")
-            appendLine("共 ${records.size} 条")
-            records.forEach { question ->
-                appendLine()
-                appendLine("【${question.typeLabel}】${question.shortQuestion}")
-                appendLine("状态：${question.status} · ${question.modeLabel} · ${question.modelLabel}")
-                question.result?.let { appendLine("答案：${it.answerDisplay}") }
-            }
-        }
-    }
+    suspend fun exportHistoryText(): String? = historyCoordinator.exportText()
 
     private var draftImageSource: String? = null
     private var analysisJob: Job? = null
@@ -1422,7 +1384,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setHistoryQuery(query: String) {
-        _historyQuery.value = query
+        historyCoordinator.setQuery(query)
     }
 
     fun consumeAnalysisError() {
@@ -1434,124 +1396,49 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun saveApiKey(key: String, onDone: (String?) -> Unit) {
-        val trimmed = key.trim()
-        if (trimmed.isBlank()) {
-            onDone("请输入 API 密钥")
-            return
-        }
-        settingsRepository.saveApiKey(trimmed)
-        onDone(null)
+        settingsCoordinator.saveApiKey(key, onDone)
     }
 
     fun testSavedConnection(onDone: (String?) -> Unit) {
-        val key = settingsRepository.apiKey()
-        if (key.isNullOrBlank()) {
-            onDone("尚未保存 API 密钥")
-            return
-        }
-        if (_isTestingKey.value) return
-        _isTestingKey.value = true
-        viewModelScope.launch {
-            val error = client.verifyConnection(
-                baseUrl = settings.value.baseUrl,
-                apiKey = key,
-                model = settings.value.model
-            )
-            onDone(error)
-            _isTestingKey.value = false
-        }
+        settingsCoordinator.testSavedConnection(onDone)
     }
 
-    /** 检查连接：只请求 /models，报告接口是否可达、Key 是否可用、当前模型是否在列表中。 */
     fun checkSavedConnection(onDone: (message: String, ok: Boolean) -> Unit) {
-        val key = settingsRepository.apiKey()
-        if (key.isNullOrBlank()) {
-            onDone("尚未保存 API 密钥", false)
-            return
-        }
-        if (_isCheckingConnection.value) return
-        _isCheckingConnection.value = true
-        viewModelScope.launch {
-            try {
-                val result = client.checkConnection(
-                    baseUrl = settings.value.baseUrl,
-                    apiKey = key,
-                    model = settings.value.model
-                )
-                val message = when {
-                    !result.modelListAvailable ->
-                        "接口可达，密钥可用；接口未返回模型列表，无法确认当前模型是否存在，请点击“验证模型”确认模型可用"
-                    result.selectedModelFound ->
-                        "接口可达，密钥可用；当前模型可见"
-                    else ->
-                        "接口可达，但当前模型不在 /models 返回列表中，请检查模型名或账号权限"
-                }
-                onDone(message, result.modelListAvailable && result.selectedModelFound)
-            } catch (e: ApiException) {
-                onDone(e.message ?: "连接检查失败", false)
-            } finally {
-                _isCheckingConnection.value = false
-            }
-        }
+        settingsCoordinator.checkSavedConnection(onDone)
     }
 
-    /** 验证模型：发一次极短文字请求，确认当前模型可以真正生成内容。 */
     fun verifySavedModel(onDone: (message: String, ok: Boolean) -> Unit) {
-        val key = settingsRepository.apiKey()
-        if (key.isNullOrBlank()) {
-            onDone("尚未保存 API 密钥", false)
-            return
-        }
-        if (_isVerifyingModel.value) return
-        _isVerifyingModel.value = true
-        viewModelScope.launch {
-            val error = client.verifyModel(
-                baseUrl = settings.value.baseUrl,
-                apiKey = key,
-                model = settings.value.model
-            )
-            if (error == null) {
-                val capability = when (ModelCatalog.capability(settings.value.model)) {
-                    ModelCapability.SUPPORTED -> "支持图片"
-                    ModelCapability.UNSUPPORTED -> "仅文字"
-                    ModelCapability.UNKNOWN -> "图片能力未知"
-                }
-                onDone("模型验证通过（$capability）；图片链路仍需真机实拍验证", true)
-            } else {
-                onDone(error, false)
-            }
-            _isVerifyingModel.value = false
-        }
+        settingsCoordinator.verifySavedModel(onDone)
     }
 
     fun removeApiKey() {
-        settingsRepository.clearApiKey()
+        settingsCoordinator.removeApiKey()
     }
 
     fun saveModel(model: String) {
-        settingsRepository.saveModel(model)
+        settingsCoordinator.saveModel(model)
     }
 
     fun saveAnswerMode(mode: AnswerMode) {
-        settingsRepository.saveAnswerMode(mode)
+        settingsCoordinator.saveAnswerMode(mode)
     }
 
-    fun saveBaseUrl(url: String): Boolean = settingsRepository.saveBaseUrl(url)
+    fun saveBaseUrl(url: String): Boolean = settingsCoordinator.saveBaseUrl(url)
 
     fun saveHistoryPreference(enabled: Boolean) {
-        settingsRepository.setSaveHistory(enabled)
+        settingsCoordinator.saveHistoryPreference(enabled)
     }
 
     fun dismissModelMigrationNote() {
-        settingsRepository.dismissModelMigrationNote()
+        settingsCoordinator.dismissModelMigrationNote()
     }
 
     fun saveCustomModelSupportsImages(enabled: Boolean) {
-        settingsRepository.saveCustomModelCapabilities(enabled, settings.value.customModelStreaming)
+        settingsCoordinator.saveCustomModelSupportsImages(enabled)
     }
 
     fun saveCustomModelStreaming(enabled: Boolean) {
-        settingsRepository.saveCustomModelCapabilities(settings.value.customModelSupportsImages, enabled)
+        settingsCoordinator.saveCustomModelStreaming(enabled)
     }
 
     private fun imageCapabilityError(model: String): String? =

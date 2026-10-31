@@ -24,13 +24,8 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
       - run: chmod +x gradlew
       - run: ./gradlew testDebugUnitTest lintDebug assembleDebugAndroidTest --stacktrace
-      - name: Web release gate
-        run: cd web && npm test
 
   release:
     name: Build signed release and publish

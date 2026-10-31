@@ -120,7 +120,6 @@ MainViewModel
 - 不记录请求头、API Key 或完整图片到日志。
 - 按 2026-10-29 用户要求不再逐题勾选隐私确认；设置页与首页提示不要上传患者身份信息。
 - Android 网络仅允许 HTTPS：自定义 Base URL 在设置页和 `DeepSeekClient` 两处校验，HTTP 地址会被拒绝；不配置明文流量例外。
-- 网页版为独立实现，API Key 默认明文存于浏览器 localStorage，请求经本地 Node 代理转发；其边界不在 Android APK 的安全承诺内，详见 `docs/PRIVACY.md`。
 - 导出/分享只包含文字答案，不包含本地图片路径。
 
 ## 6. 错误处理

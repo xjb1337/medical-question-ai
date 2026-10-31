@@ -43,15 +43,6 @@ app/build/reports/lint-results-debug.html
 ./gradlew assembleDebug assembleDebugAndroidTest
 ```
 
-### 浏览器回归（网页版）
-
-```bash
-npm --prefix web test
-# 等价于 node --test web/test/unit.test.mjs && node web/test/browser-repair-smoke.mjs
-```
-
-单元测试覆盖 Web 设置 v2 迁移、模型能力、三档请求参数、SSE 分片/UTF-8/CRLF/`[DONE]`、预览 JSON 和取消状态；浏览器 smoke 自行启动本地 mock DeepSeek、网页服务器和无头 Chrome，验证合成 PNG 导入、裁剪保留原图、解析 Token 展示、追问 Token 用量、历史落库。它不调用真实 DeepSeek API，也不能替代真实浏览器手工验收。
-
 ## 2. 手工验收清单
 
 ### 首次启动
@@ -181,7 +172,6 @@ curl -sS https://api.deepseek.com/chat/completions \
 - `./gradlew assembleDebug`：通过，生成可安装的 debug APK，约 21 MB。
 - `./gradlew assembleDebugAndroidTest`：通过（测试 APK 编译成功）。
 - 设备测试签名复核：验收发现 `ImageImportRegressionTest` 的 `corruptImage...` 与 `unopenableUri...` 两个方法因 `runBlocking` 尾表达式被 Kotlin 推导为 `DraftImage`，JUnit 4 要求 `void`；已改为显式 `runBlocking<Unit>`/块函数体。JDK 17 `javap` 静态校验显示全部 6 个 `@Test` 方法均返回 `void`；本机没有设备/模拟器，`connectedDebugAndroidTest` **未执行**。编译成功不能记为真机功能通过。
-- `node web/test/browser-repair-smoke.mjs`：通过；合成 PNG 导入、裁剪保留原图、解析 Token、追问 Token 与历史落库均验证通过（mock 上游，非真实 DeepSeek）。
 - `aapt2 dump badging`：包名 `com.xjb.medicalquestionai`，versionCode 1、versionName 1.0.0，minSdk 26、targetSdk 35。
 - `apksigner verify`：APK Signature Scheme v2 验证通过（debug 签名）。
 - 产物副本：`dist/medical-question-ai-debug.apk`，SHA-256 `9da7a2aa7908811af2ced7a01979e4c4058610d6e10b8b445b3493b448a058f3`。
@@ -189,12 +179,11 @@ curl -sS https://api.deepseek.com/chat/completions \
 
 ### 4.3 真机反馈改造验证（2026-10-29）
 
-环境：Windows、JDK 17.0.10、Gradle 8.9、AGP 8.7.3、Android SDK 35 / Build-Tools 35.0.0、Node.js 25.8.1。
+环境：Windows、JDK 17.0.10、Gradle 8.9、AGP 8.7.3、Android SDK 35 / Build-Tools 35.0.0。
 
 - `./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest`：BUILD SUCCESSFUL；69/69 单元测试通过（单元测试重跑日志 `docs/evidence/2026-10-29-android-final.log`）。
 - Lint：0 errors、22 warnings（18 个 `GradleDependency` 依赖版本提示 + 4 个 `ApplySharedPref`）。
 - 设备：`adb devices` 无设备；`connectedDebugAndroidTest` 未执行，不能记为真机功能通过。
-- `npm --prefix web test`：19/19 单元测试通过；浏览器 smoke 通过（`ok: true`）。
 - `aapt2 dump badging`：包名 `com.xjb.medicalquestionai`，versionCode 3、versionName 1.2.0，minSdk 26、targetSdk 35（guide APK；候选更新包为 versionCode 4 / 1.2.1-test.1）。
 - `apksigner verify`：APK Signature Scheme v2 验证通过；新旧 APK 使用同一 debug 证书 SHA-256 `77c3ca8d1a7cf0aca4718b328705bb21833976bc701dad89c11881c83ca1c861`。
 - 产物：`dist/medical-question-ai-debug.apk` / `dist/medical-question-ai-update-guide.apk`，21,475,118 bytes，SHA-256 `6399fb0caed1a09c1bca4a082accab8e279cd88eaf485ff5e276bd991da8e64a`；候选包 `dist/medical-question-ai-update-candidate.apk`，21,475,122 bytes，SHA-256 `62674c833cb97ddaccc7479122db501da160210c6649e8a5b957fa6086e6f67d`。
