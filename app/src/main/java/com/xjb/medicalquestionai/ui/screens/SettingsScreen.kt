@@ -26,6 +26,9 @@ import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.BrightnessAuto
+import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
@@ -73,6 +76,7 @@ import com.xjb.medicalquestionai.data.AnswerMode
 import com.xjb.medicalquestionai.data.ModelCatalog
 import com.xjb.medicalquestionai.data.ModelSpec
 import com.xjb.medicalquestionai.data.SettingsRepository
+import com.xjb.medicalquestionai.data.ThemeMode
 import com.xjb.medicalquestionai.data.update.UpdateViewModel
 import com.xjb.medicalquestionai.ui.components.AppTopBar
 import com.xjb.medicalquestionai.ui.components.CollapsibleSection
@@ -162,6 +166,37 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f))
                     }
                 }
+            }
+            SectionCard(title = "外观") {
+                Text(
+                    "主题模式",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ThemeMode.entries.forEach { mode ->
+                        ThemeOption(
+                            mode = mode,
+                            selected = settings.themeMode == mode,
+                            onClick = { viewModel.saveThemeMode(mode) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    when (settings.themeMode) {
+                        ThemeMode.SYSTEM -> "会跟随手机的浅色/深色设置自动切换"
+                        ThemeMode.LIGHT -> "始终使用浅色界面"
+                        ThemeMode.DARK -> "始终使用深色界面"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             DeepSeekBindingGuide(
                 expanded = guideExpanded,
@@ -662,6 +697,58 @@ fun SettingsScreen(
             },
             dismissButton = { TextButton(onClick = { showClearDialog = false }) { Text("取消") } }
         )
+    }
+}
+
+@Composable
+private fun ThemeOption(
+    mode: ThemeMode,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val icon = when (mode) {
+        ThemeMode.SYSTEM -> Icons.Outlined.BrightnessAuto
+        ThemeMode.LIGHT -> Icons.Outlined.LightMode
+        ThemeMode.DARK -> Icons.Outlined.DarkMode
+    }
+    Card(
+        onClick = onClick,
+        modifier = modifier.height(88.dp),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            }
+        ),
+        border = if (selected) {
+            androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
+        } else {
+            null
+        }
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = mode.label,
+                tint = if (selected) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                mode.label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                else MaterialTheme.colorScheme.onSurface
+            )
+        }
     }
 }
 

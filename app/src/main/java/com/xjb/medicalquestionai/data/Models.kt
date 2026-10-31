@@ -405,7 +405,8 @@ data class AppSettings(
     val modelMigrationNote: String = "",
     /** 未知/自定义模型的能力声明；官方模型仍以官方能力表为准。 */
     val customModelSupportsImages: Boolean = false,
-    val customModelStreaming: Boolean = false
+    val customModelStreaming: Boolean = false,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM
 ) {
     val modelSupportsImages: Boolean
         get() = ModelCatalog.supportsImages(model, customModelSupportsImages)

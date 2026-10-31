@@ -1,18 +1,24 @@
 package com.xjb.medicalquestionai.ui.theme
 
+import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Typography
 import androidx.compose.material3.Shapes
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import com.xjb.medicalquestionai.data.ThemeMode
 
 private val LightColors = lightColorScheme(
     primary = Teal600,
@@ -26,7 +32,7 @@ private val LightColors = lightColorScheme(
     tertiary = Amber700,
     onTertiary = White,
     tertiaryContainer = Amber100,
-    onTertiaryContainer = ColorTokens.Ink900,
+    onTertiaryContainer = Ink900,
     background = Mist50,
     onBackground = Ink900,
     surface = White,
@@ -49,40 +55,26 @@ private val DarkColors = darkColorScheme(
     onPrimaryContainer = Teal50,
     secondary = Teal200,
     onSecondary = Teal900,
-    secondaryContainer = Ink700,
-    onSecondaryContainer = Teal50,
-    tertiary = ColorTokens.Amber300,
-    onTertiary = ColorTokens.Amber900,
-    tertiaryContainer = ColorTokens.Amber900,
+    secondaryContainer = NightVariant,
+    onSecondaryContainer = NightText,
+    tertiary = Amber300,
+    onTertiary = Amber900,
+    tertiaryContainer = Amber900,
     onTertiaryContainer = Amber100,
-    background = ColorTokens.Night,
-    onBackground = ColorTokens.NightText,
-    surface = ColorTokens.NightSurface,
-    onSurface = ColorTokens.NightText,
-    surfaceVariant = ColorTokens.NightVariant,
-    onSurfaceVariant = ColorTokens.NightMuted,
-    outline = ColorTokens.NightOutline,
-    outlineVariant = ColorTokens.NightOutline.copy(alpha = 0.55f),
+    background = Night,
+    onBackground = NightText,
+    surface = NightSurface,
+    onSurface = NightText,
+    surfaceVariant = NightVariant,
+    onSurfaceVariant = NightMuted,
+    outline = NightOutline,
+    outlineVariant = NightOutline.copy(alpha = 0.62f),
     surfaceTint = Teal200,
-    error = ColorTokens.Red300,
-    onError = ColorTokens.Red900,
-    errorContainer = ColorTokens.Red900,
-    onErrorContainer = ColorTokens.Red300
+    error = Red300,
+    onError = Red900,
+    errorContainer = Red900,
+    onErrorContainer = Red300
 )
-
-private object ColorTokens {
-    val Ink900 = androidx.compose.ui.graphics.Color(0xFF10201F)
-    val Amber300 = androidx.compose.ui.graphics.Color(0xFFFCD34D)
-    val Amber900 = androidx.compose.ui.graphics.Color(0xFF78350F)
-    val Night = androidx.compose.ui.graphics.Color(0xFF101B27)
-    val NightSurface = androidx.compose.ui.graphics.Color(0xFF182736)
-    val NightVariant = androidx.compose.ui.graphics.Color(0xFF223646)
-    val NightText = androidx.compose.ui.graphics.Color(0xFFE6EFF5)
-    val NightMuted = androidx.compose.ui.graphics.Color(0xFFACBFCC)
-    val NightOutline = androidx.compose.ui.graphics.Color(0xFF3D5363)
-    val Red300 = androidx.compose.ui.graphics.Color(0xFFFCA5A5)
-    val Red900 = androidx.compose.ui.graphics.Color(0xFF7F1D1D)
-}
 
 private val AppTypography = Typography(
     displaySmall = TextStyle(
@@ -126,19 +118,47 @@ private val AppTypography = Typography(
 
 @Composable
 fun MedicalQuestionAiTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
+    darkTheme: Boolean? = null,
     content: @Composable () -> Unit
 ) {
+    val resolvedDarkTheme = darkTheme ?: when (themeMode) {
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
+    val view = LocalView.current
+    val activity = LocalContext.current as? Activity
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = activity?.window ?: return@SideEffect
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !resolvedDarkTheme
+                isAppearanceLightNavigationBars = !resolvedDarkTheme
+            }
+        }
+    }
     MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
+        colorScheme = if (resolvedDarkTheme) DarkColors else LightColors,
         typography = AppTypography,
         shapes = Shapes(
-            extraSmall = RoundedCornerShape(8.dp),
-            small = RoundedCornerShape(12.dp),
-            medium = RoundedCornerShape(16.dp),
-            large = RoundedCornerShape(22.dp),
-            extraLarge = RoundedCornerShape(28.dp)
+            extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+            small = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+            medium = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+            large = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+            extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
         ),
         content = content
     )
 }
+
+private val Night = Color(0xFF101B27)
+private val NightSurface = Color(0xFF182736)
+private val NightVariant = Color(0xFF223646)
+private val NightText = Color(0xFFE6EFF5)
+private val NightMuted = Color(0xFFACBFCC)
+private val NightOutline = Color(0xFF3D5363)
+private val Amber300 = Color(0xFFFCD34D)
+private val Amber900 = Color(0xFF78350F)
+private val Red300 = Color(0xFFFCA5A5)
+private val Red900 = Color(0xFF7F1D1D)

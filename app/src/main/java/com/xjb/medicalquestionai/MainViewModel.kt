@@ -30,6 +30,7 @@ import com.xjb.medicalquestionai.data.QuestionRepository
 import com.xjb.medicalquestionai.data.QuestionType
 import com.xjb.medicalquestionai.data.SecureKeyStore
 import com.xjb.medicalquestionai.data.SettingsRepository
+import com.xjb.medicalquestionai.data.ThemeMode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -1431,6 +1432,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun dismissModelMigrationNote() {
         settingsCoordinator.dismissModelMigrationNote()
+    }
+
+    fun saveThemeMode(mode: ThemeMode) {
+        settingsCoordinator.saveThemeMode(mode)
     }
 
     fun saveCustomModelSupportsImages(enabled: Boolean) {

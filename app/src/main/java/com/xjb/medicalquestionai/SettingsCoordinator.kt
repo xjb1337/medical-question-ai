@@ -7,6 +7,7 @@ import com.xjb.medicalquestionai.data.DeepSeekClient
 import com.xjb.medicalquestionai.data.ModelCapability
 import com.xjb.medicalquestionai.data.ModelCatalog
 import com.xjb.medicalquestionai.data.SettingsRepository
+import com.xjb.medicalquestionai.data.ThemeMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -150,6 +151,10 @@ class SettingsCoordinator(
 
     fun dismissModelMigrationNote() {
         settingsRepository.dismissModelMigrationNote()
+    }
+
+    fun saveThemeMode(mode: ThemeMode) {
+        settingsRepository.saveThemeMode(mode)
     }
 
     fun saveCustomModelSupportsImages(enabled: Boolean) {

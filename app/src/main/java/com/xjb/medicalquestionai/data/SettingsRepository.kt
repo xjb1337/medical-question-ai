@@ -93,6 +93,10 @@ class SettingsRepository(context: Context, private val keyStore: SecureKeyStore)
         prefs.edit().putBoolean(KEY_SAVE_HISTORY, value).apply()
     }
 
+    fun saveThemeMode(mode: ThemeMode) {
+        prefs.edit().putString(KEY_THEME_MODE, mode.storageValue).apply()
+    }
+
     fun saveCustomModelCapabilities(supportsImages: Boolean, streaming: Boolean) {
         prefs.edit()
             .putBoolean(KEY_CUSTOM_MODEL_IMAGES, supportsImages)
@@ -131,7 +135,8 @@ class SettingsRepository(context: Context, private val keyStore: SecureKeyStore)
             settingsVersion = migration.version,
             modelMigrationNote = prefs.getString(KEY_MIGRATION_NOTE, "").orEmpty(),
             customModelSupportsImages = prefs.getBoolean(KEY_CUSTOM_MODEL_IMAGES, false),
-            customModelStreaming = prefs.getBoolean(KEY_CUSTOM_MODEL_STREAMING, false)
+            customModelStreaming = prefs.getBoolean(KEY_CUSTOM_MODEL_STREAMING, false),
+            themeMode = ThemeMode.fromStorage(prefs.getString(KEY_THEME_MODE, null))
         )
     }
 
@@ -146,6 +151,7 @@ class SettingsRepository(context: Context, private val keyStore: SecureKeyStore)
         private const val KEY_MIGRATION_NOTE = "model_migration_note"
         private const val KEY_CUSTOM_MODEL_IMAGES = "custom_model_images"
         private const val KEY_CUSTOM_MODEL_STREAMING = "custom_model_streaming"
+        private const val KEY_THEME_MODE = "theme_mode"
 
         fun normalizeBaseUrl(url: String): String = url.trim().trimEnd('/')
 

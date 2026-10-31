@@ -37,6 +37,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -130,19 +131,20 @@ fun SectionCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (title != null) {
-                        Spacer(Modifier.width(3.dp).height(14.dp).background(
-                            MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp)
-                        ))
-                        Spacer(Modifier.width(9.dp))
                         Text(
                             title,
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.weight(1f)
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        HorizontalDivider(
+                            modifier = Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.outlineVariant
                         )
                     } else {
                         Spacer(Modifier.weight(1f))
                     }
+                    Spacer(Modifier.width(10.dp))
                     trailing?.invoke()
                 }
                 Spacer(Modifier.height(14.dp))
