@@ -88,6 +88,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -439,7 +440,11 @@ fun ResultScreen(
                         state = listState,
                         modifier = Modifier.fillMaxSize().testTag("result-list"),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                            start = 20.dp, end = 20.dp, top = 12.dp, bottom = 24.dp
+                            start = 20.dp,
+                            end = 20.dp,
+                            top = 12.dp,
+                            // Keep the last card clear of the floating jump affordance.
+                            bottom = 80.dp
                         ),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
@@ -563,7 +568,7 @@ fun ResultScreen(
                         FilledTonalMiniButton(
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
-                                .padding(16.dp),
+                                .padding(end = 16.dp, bottom = 12.dp),
                             onClick = {
                                 scope.launch {
                                     listState.animateScrollToItem((listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0))
@@ -1004,6 +1009,8 @@ private fun FollowUpInputBar(
     onSend: () -> Unit,
     onStop: () -> Unit
 ) {
+    var inputFocused by remember { mutableStateOf(false) }
+
     Surface(
         tonalElevation = 0.dp,
         shadowElevation = 2.dp,
@@ -1014,7 +1021,7 @@ private fun FollowUpInputBar(
                 .fillMaxWidth()
                 .imePadding()
                 .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(horizontal = 16.dp, vertical = 4.dp)
         ) {
             if (enabled && attachAvailable) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1033,7 +1040,7 @@ private fun FollowUpInputBar(
                     )
                 }
             }
-            if (enabled && value.isBlank() && !sending) {
+            if (enabled && inputFocused && value.isBlank() && !sending) {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 2.dp)
@@ -1047,7 +1054,9 @@ private fun FollowUpInputBar(
                 OutlinedTextField(
                     value = value,
                     onValueChange = onValueChange,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .onFocusChanged { inputFocused = it.isFocused },
                     enabled = enabled,
                     placeholder = {
                         Text(
