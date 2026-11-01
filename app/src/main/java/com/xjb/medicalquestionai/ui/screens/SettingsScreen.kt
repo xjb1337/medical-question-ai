@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -147,6 +148,7 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .imePadding()
+                .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -187,7 +189,6 @@ fun SettingsScreen(
                         )
                     }
                 }
-                Spacer(Modifier.height(8.dp))
                 Text(
                     when (settings.themeMode) {
                         ThemeMode.SYSTEM -> "会跟随手机的浅色/深色设置自动切换"
@@ -714,7 +715,7 @@ private fun ThemeOption(
     }
     Card(
         onClick = onClick,
-        modifier = modifier.height(88.dp),
+        modifier = modifier,
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = if (selected) {
