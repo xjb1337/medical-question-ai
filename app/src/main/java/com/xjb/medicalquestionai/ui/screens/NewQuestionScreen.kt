@@ -94,6 +94,7 @@ import com.xjb.medicalquestionai.ui.components.SectionCard
 import com.xjb.medicalquestionai.ui.components.formatBytes
 import com.xjb.medicalquestionai.ui.components.rememberFileImageRequest
 import com.xjb.medicalquestionai.ui.theme.Amber700
+import kotlinx.coroutines.flow.first
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -112,25 +113,33 @@ fun NewQuestionScreen(
     val listState = rememberLazyListState()
     var editingImageId by remember { mutableStateOf<String?>(null) }
     var textExpanded by rememberSaveable { mutableStateOf(false) }
-    var showSubmitButton by remember { mutableStateOf(true) }
+    var showSubmitButton by remember { mutableStateOf(false) }
     val editingImage = editingImageId?.let { id -> draft.images.firstOrNull { it.id == id } }
 
     LaunchedEffect(listState) {
+        snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > 0 }
         var previousIndex = listState.firstVisibleItemIndex
         var previousOffset = listState.firstVisibleItemScrollOffset
-        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
-            .collect { (index, offset) ->
-                val scrollingDown = index > previousIndex ||
-                    (index == previousIndex && offset > previousOffset)
-                val scrollingUp = index < previousIndex ||
-                    (index == previousIndex && offset < previousOffset)
-                when {
-                    scrollingDown -> showSubmitButton = true
-                    scrollingUp -> showSubmitButton = false
-                }
-                previousIndex = index
-                previousOffset = offset
+        snapshotFlow {
+            Triple(
+                listState.firstVisibleItemIndex,
+                listState.firstVisibleItemScrollOffset,
+                listState.canScrollForward to listState.canScrollBackward
+            )
+        }.collect { (index, offset, scrollability) ->
+            val (canScrollForward, canScrollBackward) = scrollability
+            val scrollingDown = index > previousIndex ||
+                (index == previousIndex && offset > previousOffset)
+            val scrollingUp = index < previousIndex ||
+                (index == previousIndex && offset < previousOffset)
+            when {
+                !canScrollForward && !canScrollBackward -> showSubmitButton = true
+                scrollingDown -> showSubmitButton = true
+                scrollingUp -> showSubmitButton = false
             }
+            previousIndex = index
+            previousOffset = offset
+        }
     }
 
     val picker = rememberLauncherForActivityResult(
