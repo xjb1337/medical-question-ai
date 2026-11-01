@@ -2,6 +2,17 @@ name: Release APK
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: '正式版本号，例如 1.2.1'
+        required: false
+        default: ''
+        type: string
+      release_notes:
+        description: '发布说明（可选，支持多行）'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -67,12 +78,21 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          REQUESTED_VERSION: ${{ inputs.version }}
         run: |
           chmod +x gradlew
           BASE_VERSION_CODE=100000
           VERSION_CODE=$((BASE_VERSION_CODE + GITHUB_RUN_NUMBER))
           if [ "$VERSION_CODE" -gt 2100000000 ]; then echo "versionCode 超出 Android 整数范围"; exit 1; fi
-          VERSION_NAME="1.2.1-test.${GITHUB_RUN_NUMBER}"
+          if [ -n "$REQUESTED_VERSION" ]; then
+            if [[ ! "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "version 必须匹配 X.Y.Z（不允许 prerelease 后缀）" >&2
+              exit 1
+            fi
+            VERSION_NAME="$REQUESTED_VERSION"
+          else
+            VERSION_NAME="1.2.1-test.${GITHUB_RUN_NUMBER}"
+          fi
           ./gradlew assembleRelease -PversionCode="$VERSION_CODE" -PversionName="$VERSION_NAME" --stacktrace
           echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
           echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
@@ -85,9 +105,14 @@ jobs:
           EXPECTED_VERSION_CODE: ${{ env.VERSION_CODE }}
           EXPECTED_VERSION_NAME: ${{ env.VERSION_NAME }}
           COMMIT_SHA: ${{ github.sha }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/release/app-release.apk dist/medical-question-ai.apk
+          if [ -z "$REQUESTED_VERSION" ]; then
+            unset RELEASE_NOTES
+          fi
           bash scripts/release/generate-update-json.sh
           cat dist/update.json
           test -f app/build/outputs/mapping/release/mapping.txt && cp app/build/outputs/mapping/release/mapping.txt dist/mapping.txt || true
@@ -147,11 +172,28 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION_CODE: ${{ env.VERSION_CODE }}
           VERSION_NAME: ${{ env.VERSION_NAME }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
         run: |
+          set -euo pipefail
           TAG="v${VERSION_NAME}"
-          NOTES="版本 ${VERSION_NAME}（build ${VERSION_CODE}）"
           ASSETS=(dist/update.json dist/medical-question-ai.apk)
           test -f dist/mapping.txt && ASSETS+=(dist/mapping.txt)
-          gh release create "$TAG" "${ASSETS[@]}" \
-            --repo "${{ github.repository }}" --target "$GITHUB_SHA" --title "$TAG" --notes "$NOTES" --draft
-          gh release edit "$TAG" --repo "${{ github.repository }}" --draft=false --latest
+          if [ -n "$REQUESTED_VERSION" ] && [ -n "$RELEASE_NOTES" ]; then
+            NOTES_FILE="$RUNNER_TEMP/release-notes.md"
+            printf '%s' "$RELEASE_NOTES" > "$NOTES_FILE"
+            NOTES_ARGS=(--notes-file "$NOTES_FILE")
+          else
+            NOTES="版本 ${VERSION_NAME}（build ${VERSION_CODE}）"
+            NOTES_ARGS=(--notes "$NOTES")
+          fi
+          if [ -n "$REQUESTED_VERSION" ]; then
+            gh release create "$TAG" "${ASSETS[@]}" \
+              --repo "${{ github.repository }}" --target "$GITHUB_SHA" --title "$TAG" \
+              "${NOTES_ARGS[@]}" --draft=false --prerelease=false --latest
+          else
+            gh release create "$TAG" "${ASSETS[@]}" \
+              --repo "${{ github.repository }}" --target "$GITHUB_SHA" --title "$TAG" \
+              "${NOTES_ARGS[@]}" --draft
+            gh release edit "$TAG" --repo "${{ github.repository }}" --draft=false --latest
+          fi
