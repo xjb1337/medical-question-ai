@@ -3,6 +3,14 @@ package com.xjb.medicalquestionai.ui.screens
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,34 +32,25 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
-import androidx.compose.material.icons.automirrored.outlined.RotateRight
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Crop
-import androidx.compose.material.icons.outlined.DeleteOutline
-import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
-import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -62,35 +61,38 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import com.xjb.medicalquestionai.ui.openTopLevel
-import com.xjb.medicalquestionai.ui.openDetail
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.xjb.medicalquestionai.MainViewModel
 import com.xjb.medicalquestionai.data.DraftImage
 import com.xjb.medicalquestionai.data.ImageStore
-import com.xjb.medicalquestionai.data.QuestionType
+import com.xjb.medicalquestionai.ui.openDetail
+import com.xjb.medicalquestionai.ui.openTopLevel
 import com.xjb.medicalquestionai.ui.components.AnswerModeSelector
 import com.xjb.medicalquestionai.ui.components.AppTopBar
 import com.xjb.medicalquestionai.ui.components.ErrorBanner
@@ -114,9 +116,53 @@ fun NewQuestionScreen(
     val notice by viewModel.draftNotice.collectAsState()
     val parkedDraft by viewModel.parkedDraft.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val listState = rememberLazyListState()
     var editingImageId by remember { mutableStateOf<String?>(null) }
     var textExpanded by rememberSaveable { mutableStateOf(false) }
+    var showSubmitButton by remember { mutableStateOf(false) }
+    val scrollThresholdPx = with(LocalDensity.current) { 24.dp.toPx() }
+    val scrollConnection = remember(listState, scrollThresholdPx) {
+        object : NestedScrollConnection {
+            private var accumulatedScroll = 0f
+            private var scrollDirection = 0
+
+            private fun updateVisibility(deltaY: Float) {
+                if (deltaY == 0f) return
+
+                val direction = if (deltaY < 0f) 1 else -1
+                if (direction != scrollDirection) {
+                    scrollDirection = direction
+                    accumulatedScroll = 0f
+                }
+                accumulatedScroll += kotlin.math.abs(deltaY)
+                if (accumulatedScroll < scrollThresholdPx) return
+
+                accumulatedScroll = 0f
+                showSubmitButton = direction > 0
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                updateVisibility(consumed.y)
+                return Offset.Zero
+            }
+        }
+    }
     val editingImage = editingImageId?.let { id -> draft.images.firstOrNull { it.id == id } }
+
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            listState.layoutInfo.totalItemsCount to
+                (listState.canScrollForward || listState.canScrollBackward)
+        }.collect { (itemCount, canScroll) ->
+            if (itemCount > 0 && !canScroll) {
+                showSubmitButton = true
+            }
+        }
+    }
 
     val picker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(ImageStore.MAX_IMAGES)
@@ -149,61 +195,77 @@ fun NewQuestionScreen(
             )
         },
         bottomBar = {
-            Surface(
-                tonalElevation = 0.dp,
-                shadowElevation = 2.dp,
-                color = MaterialTheme.colorScheme.surface
+            AnimatedVisibility(
+                visible = showSubmitButton,
+                enter = slideInVertically(
+                    initialOffsetY = { it },
+                    animationSpec = tween(250, easing = FastOutSlowInEasing)
+                ) + fadeIn(
+                    animationSpec = tween(250, easing = FastOutSlowInEasing)
+                ),
+                exit = slideOutVertically(
+                    targetOffsetY = { it },
+                    animationSpec = tween(250, easing = FastOutLinearInEasing)
+                ) + fadeOut(
+                    animationSpec = tween(250, easing = FastOutLinearInEasing)
+                )
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .imePadding()
-                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                Surface(
+                    tonalElevation = 0.dp,
+                    shadowElevation = 2.dp,
+                    color = MaterialTheme.colorScheme.surface
                 ) {
-                    if (submitBlockedReason != null && !analyzing &&
-                        (draft.text.isNotBlank() || draft.images.isNotEmpty())) {
-                        Text(
-                            submitBlockedReason,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(6.dp))
-                    }
-                    Button(
-                        onClick = {
-                            viewModel.startAnalysis { questionId ->
-                                // 清理本地预览状态，确保返回首页时不会短暂看到上一题的图片或文字。
-                                editingImageId = null
-                                textExpanded = false
-                                navController.navigate("result/$questionId") { launchSingleTop = true }
-                            }
-                        },
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(52.dp),
-                        enabled = submitBlockedReason == null,
-                        shape = MaterialTheme.shapes.large
+                            .imePadding()
+                            .padding(horizontal = 16.dp, vertical = 10.dp)
                     ) {
-                        if (analyzing) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
+                        if (submitBlockedReason != null && !analyzing &&
+                            (draft.text.isNotBlank() || draft.images.isNotEmpty())) {
+                            Text(
+                                submitBlockedReason,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(Modifier.width(10.dp))
-                            Text("正在解析…")
-                        } else {
-                            Text(if (draft.text.isBlank() && draft.images.isEmpty()) "添加题目后开始解析" else "开始解析",
-                                style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.height(6.dp))
                         }
+                        Button(
+                            onClick = {
+                                viewModel.startAnalysis { questionId ->
+                                    // 清理本地预览状态，确保返回首页时不会短暂看到上一题的图片或文字。
+                                    editingImageId = null
+                                    textExpanded = false
+                                    navController.navigate("result/$questionId") { launchSingleTop = true }
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                            enabled = submitBlockedReason == null,
+                            shape = MaterialTheme.shapes.large
+                        ) {
+                            if (analyzing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Text("正在解析…")
+                            } else {
+                                Text(if (draft.text.isBlank() && draft.images.isEmpty()) "添加题目后开始解析" else "开始解析",
+                                    style = MaterialTheme.typography.titleMedium)
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "AI 辅助学习 · 请结合教材核对",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                        )
                     }
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "AI 辅助学习 · 请结合教材核对",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                    )
                 }
             }
         },
@@ -211,8 +273,10 @@ fun NewQuestionScreen(
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
+                .nestedScroll(scrollConnection)
                 .padding(padding),
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)

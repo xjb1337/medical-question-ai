@@ -6,18 +6,21 @@ import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
@@ -142,31 +145,41 @@ fun SettingsScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .imePadding(),
+            contentPadding = PaddingValues(
+                start = 20.dp,
+                end = 20.dp,
+                top = padding.calculateTopPadding() + 12.dp,
+                // The app navigation bar is outside this screen; keep the final card above
+                // both the system gesture area and that bar instead of drawing a fake strip.
+                bottom = padding.calculateBottomPadding() +
+                    WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp
+            )
         ) {
-            Surface(
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.primaryContainer
-            ) {
-                Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
-                    Spacer(Modifier.width(14.dp))
-                    Column {
-                        Text("让学习更顺手", style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer)
-                        Text("连接模型，选择你的解题节奏", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f))
+            item {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Surface(
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.AutoAwesome, contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
+                            Spacer(Modifier.width(14.dp))
+                            Column {
+                                Text("让学习更顺手", style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                Text("连接模型，选择你的解题节奏", style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f))
+                            }
+                        }
                     }
-                }
-            }
             SectionCard(title = "外观") {
                 Text(
                     "主题模式",
@@ -187,7 +200,6 @@ fun SettingsScreen(
                         )
                     }
                 }
-                Spacer(Modifier.height(8.dp))
                 Text(
                     when (settings.themeMode) {
                         ThemeMode.SYSTEM -> "会跟随手机的浅色/深色设置自动切换"
@@ -663,6 +675,8 @@ fun SettingsScreen(
                 )
             }
             Spacer(Modifier.height(18.dp))
+                }
+            }
         }
     }
 
@@ -714,7 +728,7 @@ private fun ThemeOption(
     }
     Card(
         onClick = onClick,
-        modifier = modifier.height(88.dp),
+        modifier = modifier,
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
             containerColor = if (selected) {

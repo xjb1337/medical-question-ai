@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
-import android.net.Uri
 import com.xjb.medicalquestionai.hasRepeatedJsonNullPrefix
 import com.xjb.medicalquestionai.isJsonNullLiteral
 import com.xjb.medicalquestionai.stripRepeatedJsonNullPrefix
@@ -18,8 +17,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -49,6 +46,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Star
@@ -61,6 +59,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -76,7 +76,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -89,6 +88,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -96,7 +96,6 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -132,7 +131,6 @@ import com.xjb.medicalquestionai.ui.returnFromDetail
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -178,6 +176,7 @@ fun ResultScreen(
     var preparingNext by remember { mutableStateOf(false) }
     var nextError by remember { mutableStateOf<String?>(null) }
     var leavingResult by remember { mutableStateOf(false) }
+    var actionsMenuExpanded by remember { mutableStateOf(false) }
     var followUpInput by rememberSaveable(questionId) { mutableStateOf("") }
     var attachImages by rememberSaveable(questionId) { mutableStateOf(false) }
     val activeRequestId = task?.takeIf { it.questionId == questionId && it.isActive }?.requestId
@@ -248,6 +247,48 @@ fun ResultScreen(
             }
         }
     }
+
+    fun copyAnswer(q: Question, result: AnalysisResult) {
+        val copyText = if (q.isAnswerStale) {
+            "注意：题目已修改，本答案对应修改前的题目，尚未重新解析。\n${result.answerDisplay}"
+        } else {
+            result.answerDisplay
+        }
+        clipboard.setText(AnnotatedString(copyText))
+        scope.launch {
+            snackbarHostState.showSnackbar(
+                if (q.isAnswerStale) "已复制旧答案，请留意题目已修改" else "答案已复制"
+            )
+        }
+    }
+
+    fun shareAnswer(q: Question, result: AnalysisResult) {
+        val shareText = buildString {
+            appendLine("医学拍题助手 · 解析结果")
+            appendLine()
+            appendLine("模式：${q.modeLabel} · 模型：${q.modelLabel}")
+            result.metrics?.let { m ->
+                appendLine(
+                    "思考：${if (m.thinkingEnabled) "开启" else "关闭"} · " +
+                        "传输：${if (m.streamed) "流式" else "非流式"} · " +
+                        "结束原因：${m.finishReason.ifBlank { "未知" }} · " +
+                        "保存：${m.saveStatus}"
+                )
+            }
+            if (q.isAnswerStale) appendLine("注意：题目已修改，本答案对应修改前的题目，尚未重新解析。")
+            if (result.recognizedQuestion.isNotBlank()) appendLine(result.recognizedQuestion)
+            appendLine("答案：${result.answerDisplay}")
+            result.reasoningSteps.forEachIndexed { index, step ->
+                appendLine("${index + 1}. ${step.title}：${step.detail}")
+            }
+        }
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, shareText)
+        }
+        context.startActivity(Intent.createChooser(intent, "分享解析"))
+    }
+
     BackHandler { exitResult() }
 
     Scaffold(
@@ -263,6 +304,66 @@ fun ResultScreen(
                                 if (question.isFavorite) Icons.Outlined.Star else Icons.Outlined.StarBorder,
                                 contentDescription = if (question.isFavorite) "取消收藏" else "收藏"
                             )
+                        }
+                        Box {
+                            IconButton(onClick = { actionsMenuExpanded = true }) {
+                                Icon(Icons.Outlined.MoreVert, contentDescription = "更多")
+                            }
+                            DropdownMenu(
+                                expanded = actionsMenuExpanded,
+                                onDismissRequest = { actionsMenuExpanded = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("分享") },
+                                    leadingIcon = {
+                                        Icon(Icons.Outlined.Share, contentDescription = null)
+                                    },
+                                    onClick = {
+                                        actionsMenuExpanded = false
+                                        question.result?.let { shareAnswer(question, it) }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("修改题干") },
+                                    leadingIcon = {
+                                        Icon(Icons.Outlined.Edit, contentDescription = null)
+                                    },
+                                    onClick = {
+                                        actionsMenuExpanded = false
+                                        showEditDialog = true
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(if (addingImages) "正在添加…" else "补充图片") },
+                                    leadingIcon = {
+                                        if (addingImages) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(18.dp),
+                                                strokeWidth = 2.dp
+                                            )
+                                        } else {
+                                            Icon(Icons.Outlined.Add, contentDescription = null)
+                                        }
+                                    },
+                                    enabled = !addingImages,
+                                    onClick = {
+                                        actionsMenuExpanded = false
+                                        imagePicker.launch(
+                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                        )
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("重新解析") },
+                                    leadingIcon = {
+                                        Icon(Icons.Outlined.Refresh, contentDescription = null)
+                                    },
+                                    onClick = {
+                                        actionsMenuExpanded = false
+                                        viewModel.retryAnalysis(questionId) {}
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -339,7 +440,11 @@ fun ResultScreen(
                         state = listState,
                         modifier = Modifier.fillMaxSize().testTag("result-list"),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                            start = 20.dp, end = 20.dp, top = 12.dp, bottom = 24.dp
+                            start = 20.dp,
+                            end = 20.dp,
+                            top = 12.dp,
+                            // Keep the last card clear of the floating jump affordance.
+                            bottom = 80.dp
                         ),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
@@ -438,53 +543,7 @@ fun ResultScreen(
                             }
                             item(key = "answer-actions", contentType = "actions") {
                                 ResultActions(
-                                    addingImages = addingImages,
-                                    onCopy = {
-                                        val copyText = if (q.isAnswerStale) {
-                                            "注意：题目已修改，本答案对应修改前的题目，尚未重新解析。\n${result.answerDisplay}"
-                                        } else {
-                                            result.answerDisplay
-                                        }
-                                        clipboard.setText(AnnotatedString(copyText))
-                                        scope.launch {
-                                            snackbarHostState.showSnackbar(
-                                                if (q.isAnswerStale) "已复制旧答案，请留意题目已修改" else "答案已复制"
-                                            )
-                                        }
-                                    },
-                                    onShare = {
-                                        val shareText = buildString {
-                                            appendLine("医学拍题助手 · 解析结果")
-                                            appendLine()
-                                            appendLine("模式：${q.modeLabel} · 模型：${q.modelLabel}")
-                                            result.metrics?.let { m ->
-                                                appendLine(
-                                                    "思考：${if (m.thinkingEnabled) "开启" else "关闭"} · " +
-                                                        "传输：${if (m.streamed) "流式" else "非流式"} · " +
-                                                        "结束原因：${m.finishReason.ifBlank { "未知" }} · " +
-                                                        "保存：${m.saveStatus}"
-                                                )
-                                            }
-                                            if (q.isAnswerStale) appendLine("注意：题目已修改，本答案对应修改前的题目，尚未重新解析。")
-                                            if (result.recognizedQuestion.isNotBlank()) appendLine(result.recognizedQuestion)
-                                            appendLine("答案：${result.answerDisplay}")
-                                            result.reasoningSteps.forEachIndexed { index, step ->
-                                                appendLine("${index + 1}. ${step.title}：${step.detail}")
-                                            }
-                                        }
-                                        val intent = Intent(Intent.ACTION_SEND).apply {
-                                            type = "text/plain"
-                                            putExtra(Intent.EXTRA_TEXT, shareText)
-                                        }
-                                        context.startActivity(Intent.createChooser(intent, "分享解析"))
-                                    },
-                                    onEditQuestion = { showEditDialog = true },
-                                    onAddImages = {
-                                        imagePicker.launch(
-                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                        )
-                                    },
-                                    onRetry = { viewModel.retryAnalysis(questionId) {} }
+                                    onCopy = { copyAnswer(q, result) }
                                 )
                             }
                             followUpItems(
@@ -509,7 +568,7 @@ fun ResultScreen(
                         FilledTonalMiniButton(
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
-                                .padding(16.dp),
+                                .padding(end = 16.dp, bottom = 12.dp),
                             onClick = {
                                 scope.launch {
                                     listState.animateScrollToItem((listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0))
@@ -556,7 +615,6 @@ fun ResultScreen(
 
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AnalysisProgressCard(
     task: AnalysisTaskState,
@@ -866,49 +924,20 @@ private fun QuestionImagesRow(paths: List<String>) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ResultActions(
-    addingImages: Boolean,
-    onCopy: () -> Unit,
-    onShare: () -> Unit,
-    onEditQuestion: () -> Unit,
-    onAddImages: () -> Unit,
-    onRetry: () -> Unit
-) {
-    FlowRow(
+private fun ResultActions(onCopy: () -> Unit) {
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.Start
     ) {
-        OutlinedButton(onClick = onCopy) {
+        OutlinedButton(
+            onClick = onCopy,
+            modifier = Modifier.height(40.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp)
+        ) {
             Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(17.dp))
             Spacer(Modifier.width(6.dp))
             Text("复制答案")
-        }
-        OutlinedButton(onClick = onShare) {
-            Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(17.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("分享")
-        }
-        OutlinedButton(onClick = onEditQuestion) {
-            Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(17.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("修改题干")
-        }
-        OutlinedButton(onClick = onAddImages, enabled = !addingImages) {
-            if (addingImages) {
-                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-            } else {
-                Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(17.dp))
-            }
-            Spacer(Modifier.width(6.dp))
-            Text(if (addingImages) "正在添加…" else "补充图片")
-        }
-        OutlinedButton(onClick = onRetry) {
-            Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(17.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("重新解析")
         }
     }
 }
@@ -980,6 +1009,8 @@ private fun FollowUpInputBar(
     onSend: () -> Unit,
     onStop: () -> Unit
 ) {
+    var inputFocused by remember { mutableStateOf(false) }
+
     Surface(
         tonalElevation = 0.dp,
         shadowElevation = 2.dp,
@@ -990,7 +1021,7 @@ private fun FollowUpInputBar(
                 .fillMaxWidth()
                 .imePadding()
                 .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(horizontal = 16.dp, vertical = 4.dp)
         ) {
             if (enabled && attachAvailable) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1009,7 +1040,7 @@ private fun FollowUpInputBar(
                     )
                 }
             }
-            if (enabled && value.isBlank() && !sending) {
+            if (enabled && inputFocused && value.isBlank() && !sending) {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 2.dp)
@@ -1023,7 +1054,9 @@ private fun FollowUpInputBar(
                 OutlinedTextField(
                     value = value,
                     onValueChange = onValueChange,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .onFocusChanged { inputFocused = it.isFocused },
                     enabled = enabled,
                     placeholder = {
                         Text(
@@ -1238,7 +1271,7 @@ private fun NextQuestionButton(preparing: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
-            .padding(horizontal = 20.dp, vertical = 4.dp),
+            .padding(horizontal = 16.dp, vertical = 2.dp),
         shape = MaterialTheme.shapes.medium
     ) {
         Icon(Icons.Outlined.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
