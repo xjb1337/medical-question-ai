@@ -4,6 +4,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -72,8 +75,12 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
@@ -94,7 +101,6 @@ import com.xjb.medicalquestionai.ui.components.SectionCard
 import com.xjb.medicalquestionai.ui.components.formatBytes
 import com.xjb.medicalquestionai.ui.components.rememberFileImageRequest
 import com.xjb.medicalquestionai.ui.theme.Amber700
-import kotlinx.coroutines.flow.first
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -114,31 +120,47 @@ fun NewQuestionScreen(
     var editingImageId by remember { mutableStateOf<String?>(null) }
     var textExpanded by rememberSaveable { mutableStateOf(false) }
     var showSubmitButton by remember { mutableStateOf(false) }
+    val scrollThresholdPx = with(LocalDensity.current) { 24.dp.toPx() }
+    val scrollConnection = remember(listState, scrollThresholdPx) {
+        object : NestedScrollConnection {
+            private var accumulatedScroll = 0f
+            private var scrollDirection = 0
+
+            private fun updateVisibility(deltaY: Float) {
+                if (deltaY == 0f) return
+
+                val direction = if (deltaY < 0f) 1 else -1
+                if (direction != scrollDirection) {
+                    scrollDirection = direction
+                    accumulatedScroll = 0f
+                }
+                accumulatedScroll += kotlin.math.abs(deltaY)
+                if (accumulatedScroll < scrollThresholdPx) return
+
+                accumulatedScroll = 0f
+                showSubmitButton = direction > 0
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                updateVisibility(consumed.y)
+                return Offset.Zero
+            }
+        }
+    }
     val editingImage = editingImageId?.let { id -> draft.images.firstOrNull { it.id == id } }
 
     LaunchedEffect(listState) {
-        snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > 0 }
-        var previousIndex = listState.firstVisibleItemIndex
-        var previousOffset = listState.firstVisibleItemScrollOffset
         snapshotFlow {
-            Triple(
-                listState.firstVisibleItemIndex,
-                listState.firstVisibleItemScrollOffset,
-                listState.canScrollForward to listState.canScrollBackward
-            )
-        }.collect { (index, offset, scrollability) ->
-            val (canScrollForward, canScrollBackward) = scrollability
-            val scrollingDown = index > previousIndex ||
-                (index == previousIndex && offset > previousOffset)
-            val scrollingUp = index < previousIndex ||
-                (index == previousIndex && offset < previousOffset)
-            when {
-                !canScrollForward && !canScrollBackward -> showSubmitButton = true
-                scrollingDown -> showSubmitButton = true
-                scrollingUp -> showSubmitButton = false
+            listState.layoutInfo.totalItemsCount to
+                (listState.canScrollForward || listState.canScrollBackward)
+        }.collect { (itemCount, canScroll) ->
+            if (itemCount > 0 && !canScroll) {
+                showSubmitButton = true
             }
-            previousIndex = index
-            previousOffset = offset
         }
     }
 
@@ -175,8 +197,18 @@ fun NewQuestionScreen(
         bottomBar = {
             AnimatedVisibility(
                 visible = showSubmitButton,
-                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+                enter = slideInVertically(
+                    initialOffsetY = { it },
+                    animationSpec = tween(250, easing = FastOutSlowInEasing)
+                ) + fadeIn(
+                    animationSpec = tween(250, easing = FastOutSlowInEasing)
+                ),
+                exit = slideOutVertically(
+                    targetOffsetY = { it },
+                    animationSpec = tween(250, easing = FastOutLinearInEasing)
+                ) + fadeOut(
+                    animationSpec = tween(250, easing = FastOutLinearInEasing)
+                )
             ) {
                 Surface(
                     tonalElevation = 0.dp,
@@ -244,6 +276,7 @@ fun NewQuestionScreen(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
+                .nestedScroll(scrollConnection)
                 .padding(padding),
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
