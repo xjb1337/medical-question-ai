@@ -5,7 +5,11 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.res.Resources
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -17,6 +21,8 @@ import com.github.takahirom.roborazzi.*
 import com.xjb.medicalquestionai.MainViewModel
 import com.xjb.medicalquestionai.data.*
 import com.xjb.medicalquestionai.data.update.UpdateViewModel
+import com.xjb.medicalquestionai.ui.components.AppTopBar
+import com.xjb.medicalquestionai.ui.screens.ResultLoadingSkeletonPage
 import com.xjb.medicalquestionai.ui.theme.MedicalQuestionAiTheme
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
@@ -41,6 +47,8 @@ class UiUxScreenshotTest {
     @Test fun resultDark() = render("result", true)
     @Test fun errorLight() = render("error", false)
     @Test fun errorDark() = render("error", true)
+    @Test fun loadingLight() = renderLoading(false)
+    @Test fun loadingDark() = renderLoading(true)
     @Test fun historyLight() = render("history", false)
     @Test fun historyDark() = render("history", true)
     @Test fun emptyLight() = render("empty", false)
@@ -49,6 +57,25 @@ class UiUxScreenshotTest {
     @Test fun settingsDark() = render("settings", true)
     @Test fun guideLight() = render("guide", false)
     @Test fun guideDark() = render("guide", true)
+
+    private fun renderLoading(dark: Boolean) {
+        compose.setContent {
+            MedicalQuestionAiTheme(darkTheme = dark) {
+                Scaffold(
+                    topBar = { AppTopBar(title = "题目解析") },
+                    containerColor = MaterialTheme.colorScheme.background
+                ) { padding ->
+                    ResultLoadingSkeletonPage(
+                        modifier = Modifier.padding(padding),
+                        statusText = "正在加载解析"
+                    )
+                }
+            }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("通常需要 10–30 秒", substring = true).assertIsDisplayed()
+        capture("loading", dark)
+    }
 
     private fun render(screen: String, dark: Boolean) {
         val app = ApplicationProvider.getApplicationContext<Application>()
@@ -111,7 +138,11 @@ class UiUxScreenshotTest {
             compose.waitForIdle()
             compose.mainClock.autoAdvance = false
         }
-        val dir = File(System.getenv("UIUX_SHOT_DIR") ?: "build/outputs/uiux")
+        capture(screen, dark)
+    }
+
+    private fun capture(screen: String, dark: Boolean) {
+        val dir = File(System.getenv("UIUX_SHOT_DIR") ?: "build/uiux-after")
         check(dir.exists() || dir.mkdirs()) { "Cannot create screenshot directory: $dir" }
         compose.onRoot().captureRoboImage(
             filePath = dir.resolve("${screen}_${if (dark) "dark" else "light"}.png").absolutePath,

@@ -51,6 +51,7 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.StarBorder
@@ -325,7 +326,7 @@ fun ResultScreen(
                 .padding(padding)
         ) {
             when {
-                questionLoading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                questionLoading -> ResultLoadingSkeletonPage(statusText = "正在加载解析")
                 question == null -> MissingQuestionCard(
                     onBack = { exitResult() },
                     modifier = Modifier
@@ -374,6 +375,14 @@ fun ResultScreen(
                                     previewComplete = runningPreview?.isComplete == true,
                                     onCancel = { viewModel.cancelAnalysis() }
                                 )
+                            }
+                            if (!previewHasAnswer && result == null) {
+                                item(key = "answer-skeleton", contentType = "answer-skeleton") {
+                                    AnswerSkeletonCard()
+                                }
+                                item(key = "analysis-skeleton", contentType = "analysis-skeleton") {
+                                    AnalysisSkeletonCard()
+                                }
                             }
                         }
                         if (nextError != null) {
@@ -582,7 +591,19 @@ private fun AnalysisProgressCard(
     ) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Outlined.Schedule,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
                 Spacer(Modifier.width(10.dp))
                 Text(
                     "正在解析 · ${task.mode.label}",
@@ -593,6 +614,13 @@ private fun AnalysisProgressCard(
                 Text("已耗时 ${elapsedSeconds}s", style = MaterialTheme.typography.labelMedium)
             }
             Spacer(Modifier.height(6.dp))
+            Text(
+                "通常需要 10–30 秒",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(Modifier.height(4.dp))
             Text(
                 when {
                     previewComplete -> "预览答案已生成，正在核对完整性与格式…"
