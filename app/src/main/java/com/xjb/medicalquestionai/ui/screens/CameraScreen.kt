@@ -36,7 +36,9 @@ import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.FlashOff
 import androidx.compose.material.icons.outlined.FlashOn
 import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,6 +48,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -59,6 +62,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
@@ -75,6 +79,10 @@ import com.xjb.medicalquestionai.data.CaptureTarget
 import com.xjb.medicalquestionai.data.ImageStore
 import com.xjb.medicalquestionai.ui.components.AppTopBar
 import com.xjb.medicalquestionai.ui.components.ErrorBanner
+import com.xjb.medicalquestionai.ui.theme.BrandCyan
+import com.xjb.medicalquestionai.ui.theme.BrandGradient
+import com.xjb.medicalquestionai.ui.theme.BrandGradientEnd
+import com.xjb.medicalquestionai.ui.theme.BrandMint
 import com.xjb.medicalquestionai.ui.returnFromDetail
 
 @Composable
@@ -307,6 +315,24 @@ fun CameraScreen(
                     }
                 }
                 if (!hasPermission) {
+                    Box(
+                        Modifier
+                            .matchParentSize()
+                            .background(Brush.linearGradient(BrandGradient))
+                    ) {
+                        Canvas(Modifier.fillMaxSize()) {
+                            drawCircle(
+                                BrandMint.copy(alpha = 0.20f),
+                                size.minDimension * 0.42f,
+                                Offset(size.width * 0.92f, size.height * 0.14f)
+                            )
+                            drawCircle(
+                                BrandCyan.copy(alpha = 0.18f),
+                                size.minDimension * 0.30f,
+                                Offset(size.width * 0.10f, size.height * 0.82f)
+                            )
+                        }
+                    }
                     Column(
                         modifier = Modifier
                             .align(Alignment.Center)
@@ -325,9 +351,33 @@ fun CameraScreen(
                             color = Color.White,
                             style = MaterialTheme.typography.titleMedium
                         )
-                        Spacer(Modifier.height(12.dp))
-                        Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "也可以从相册导入已有题目照片",
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Spacer(Modifier.height(14.dp))
+                        Button(
+                            onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.White,
+                                contentColor = BrandGradientEnd
+                            )
+                        ) {
                             Text("允许使用相机")
+                        }
+                        TextButton(
+                            onClick = ::exitCamera,
+                            colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
+                        ) {
+                            Icon(
+                                Icons.Outlined.PhotoLibrary,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("返回首页选图")
                         }
                     }
                 }

@@ -36,6 +36,7 @@ import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -86,7 +87,10 @@ import com.xjb.medicalquestionai.ui.components.QuestionTypeChips
 import com.xjb.medicalquestionai.ui.components.SectionCard
 import com.xjb.medicalquestionai.ui.components.formatBytes
 import com.xjb.medicalquestionai.ui.components.rememberFileImageRequest
-import com.xjb.medicalquestionai.ui.theme.Amber700
+import com.xjb.medicalquestionai.ui.theme.BrandCyan
+import com.xjb.medicalquestionai.ui.theme.BrandGradient
+import com.xjb.medicalquestionai.ui.theme.BrandGradientEnd
+import com.xjb.medicalquestionai.ui.theme.BrandMint
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -170,7 +174,11 @@ fun NewQuestionScreen(
                             .fillMaxWidth()
                             .height(52.dp),
                         enabled = submitBlockedReason == null,
-                        shape = MaterialTheme.shapes.large
+                        shape = MaterialTheme.shapes.large,
+                        colors = ButtonDefaults.buttonColors(
+                            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f)
+                        )
                     ) {
                         if (analyzing) {
                             CircularProgressIndicator(
@@ -485,18 +493,16 @@ private fun CameraHeroCard(enabled: Boolean, compact: Boolean, onClick: () -> Un
             contentColor = MaterialTheme.colorScheme.onPrimary
         )
     ) {
-        Box(Modifier.fillMaxWidth().background(Brush.linearGradient(
-            listOf(Color(0xFF087F8C), Color(0xFF145266))
-        ))) {
+        Box(Modifier.fillMaxWidth().background(Brush.linearGradient(BrandGradient))) {
             Canvas(Modifier.matchParentSize()) {
-                drawCircle(Color.White.copy(alpha = 0.05f), size.width * 0.42f,
+                drawCircle(BrandMint.copy(alpha = 0.16f), size.width * 0.42f,
                     Offset(size.width, size.height * 0.1f))
-                drawCircle(Color.White.copy(alpha = 0.06f), size.width * 0.25f,
+                drawCircle(BrandCyan.copy(alpha = 0.18f), size.width * 0.25f,
                     Offset(size.width * 0.95f, size.height * 0.95f))
             }
             Column(Modifier.fillMaxWidth().padding(20.dp)) {
                 Text("AI 医学学习助手", style = MaterialTheme.typography.labelMedium,
-                    color = Color.White.copy(alpha = 0.78f))
+                    color = Color.White)
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -504,7 +510,7 @@ private fun CameraHeroCard(enabled: Boolean, compact: Boolean, onClick: () -> Un
                             fontWeight = FontWeight.Bold, color = Color.White)
                         Spacer(Modifier.height(6.dp))
                         Text("从参考答案到解题思路", style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.76f))
+                            color = Color.White)
                     }
                     Surface(shape = RoundedCornerShape(24.dp), color = Color.White.copy(alpha = 0.12f)) {
                         Icon(Icons.Outlined.CameraAlt, contentDescription = null,
@@ -512,7 +518,7 @@ private fun CameraHeroCard(enabled: Boolean, compact: Boolean, onClick: () -> Un
                     }
                 }
                 Spacer(Modifier.height(14.dp))
-                Surface(shape = RoundedCornerShape(50), color = Color.White, contentColor = Color(0xFF096573)) {
+                Surface(shape = RoundedCornerShape(50), color = Color.White, contentColor = BrandGradientEnd) {
                     Row(Modifier.padding(horizontal = 18.dp, vertical = 11.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Text("拍照解题", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
@@ -566,7 +572,7 @@ private fun DraftImagePreview(
                     Icon(
                         Icons.Outlined.WarningAmber,
                         contentDescription = "图片有提示",
-                        tint = Amber700,
+                        tint = MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(6.dp)
@@ -653,7 +659,11 @@ private fun ImageEditDialog(
                 if (image.warnings.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
                     image.warnings.forEach {
-                        Text(it, style = MaterialTheme.typography.bodySmall, color = Amber700)
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
                     }
                 }
                 Spacer(Modifier.height(6.dp))

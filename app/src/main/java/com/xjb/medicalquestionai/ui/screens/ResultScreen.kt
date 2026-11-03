@@ -13,6 +13,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -49,6 +51,7 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.StarBorder
@@ -165,7 +168,9 @@ fun ResultScreen(
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val listState = rememberLazyListState()
-    val showJumpToBottom by remember { derivedStateOf { listState.canScrollForward } }
+    val showJumpToBottom by remember {
+        derivedStateOf { listState.canScrollForward && listState.firstVisibleItemIndex > 1 }
+    }
 
     var showEditDialog by remember { mutableStateOf(false) }
     var editSaving by remember { mutableStateOf(false) }
@@ -321,7 +326,7 @@ fun ResultScreen(
                 .padding(padding)
         ) {
             when {
-                questionLoading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                questionLoading -> ResultLoadingSkeletonPage(statusText = "正在加载解析")
                 question == null -> MissingQuestionCard(
                     onBack = { exitResult() },
                     modifier = Modifier
@@ -370,6 +375,14 @@ fun ResultScreen(
                                     previewComplete = runningPreview?.isComplete == true,
                                     onCancel = { viewModel.cancelAnalysis() }
                                 )
+                            }
+                            if (!previewHasAnswer && result == null) {
+                                item(key = "answer-skeleton", contentType = "answer-skeleton") {
+                                    AnswerSkeletonCard()
+                                }
+                                item(key = "analysis-skeleton", contentType = "analysis-skeleton") {
+                                    AnalysisSkeletonCard()
+                                }
                             }
                         }
                         if (nextError != null) {
@@ -578,7 +591,19 @@ private fun AnalysisProgressCard(
     ) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Outlined.Schedule,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
                 Spacer(Modifier.width(10.dp))
                 Text(
                     "正在解析 · ${task.mode.label}",
@@ -589,6 +614,13 @@ private fun AnalysisProgressCard(
                 Text("已耗时 ${elapsedSeconds}s", style = MaterialTheme.typography.labelMedium)
             }
             Spacer(Modifier.height(6.dp))
+            Text(
+                "通常需要 10–30 秒",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(Modifier.height(4.dp))
             Text(
                 when {
                     previewComplete -> "预览答案已生成，正在核对完整性与格式…"
@@ -876,22 +908,39 @@ private fun ResultActions(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        OutlinedButton(onClick = onCopy) {
+        Button(
+            onClick = onCopy,
+            modifier = Modifier.heightIn(min = 44.dp),
+            contentPadding = PaddingValues(horizontal = 14.dp)
+        ) {
             Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(17.dp))
             Spacer(Modifier.width(6.dp))
             Text("复制答案")
         }
-        OutlinedButton(onClick = onShare) {
+        OutlinedButton(
+            onClick = onShare,
+            modifier = Modifier.heightIn(min = 44.dp),
+            contentPadding = PaddingValues(horizontal = 14.dp)
+        ) {
             Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(17.dp))
             Spacer(Modifier.width(6.dp))
             Text("分享")
         }
-        OutlinedButton(onClick = onEditQuestion) {
+        OutlinedButton(
+            onClick = onEditQuestion,
+            modifier = Modifier.heightIn(min = 44.dp),
+            contentPadding = PaddingValues(horizontal = 14.dp)
+        ) {
             Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(17.dp))
             Spacer(Modifier.width(6.dp))
             Text("修改题干")
         }
-        OutlinedButton(onClick = onAddImages, enabled = !addingImages) {
+        OutlinedButton(
+            onClick = onAddImages,
+            enabled = !addingImages,
+            modifier = Modifier.heightIn(min = 44.dp),
+            contentPadding = PaddingValues(horizontal = 14.dp)
+        ) {
             if (addingImages) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
             } else {
@@ -900,7 +949,11 @@ private fun ResultActions(
             Spacer(Modifier.width(6.dp))
             Text(if (addingImages) "正在添加…" else "补充图片")
         }
-        OutlinedButton(onClick = onRetry) {
+        OutlinedButton(
+            onClick = onRetry,
+            modifier = Modifier.heightIn(min = 44.dp),
+            contentPadding = PaddingValues(horizontal = 14.dp)
+        ) {
             Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(17.dp))
             Spacer(Modifier.width(6.dp))
             Text("重新解析")
@@ -1252,18 +1305,19 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 private fun FilledTonalMiniButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
-        modifier = modifier,
-        shape = RoundedCornerShape(50),
+        modifier = modifier.size(48.dp),
+        shape = CircleShape,
         color = MaterialTheme.colorScheme.secondaryContainer,
-        shadowElevation = 3.dp
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shadowElevation = 4.dp
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Outlined.ExpandMore, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("回到底部", style = MaterialTheme.typography.labelMedium)
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                Icons.Outlined.ExpandMore,
+                contentDescription = "回到底部",
+                modifier = Modifier.size(22.dp)
+            )
         }
     }
 }

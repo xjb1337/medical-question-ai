@@ -20,26 +20,26 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import com.xjb.medicalquestionai.data.ThemeMode
 
-private val Night = Color(0xFF101B27)
-private val NightSurface = Color(0xFF182736)
-private val NightVariant = Color(0xFF223646)
-private val NightText = Color(0xFFE6EFF5)
-private val NightMuted = Color(0xFFACBFCC)
-private val NightOutline = Color(0xFF3D5363)
+private val Night = Color(0xFF0F1C24)
+private val NightSurface = Color(0xFF172A33)
+private val NightVariant = Color(0xFF203842)
+private val NightText = Color(0xFFE7F3F2)
+private val NightMuted = Color(0xFFA9C1C2)
+private val NightOutline = Color(0xFF5B7780)
 private val Amber300 = Color(0xFFFCD34D)
 private val Amber900 = Color(0xFF78350F)
 private val Red300 = Color(0xFFFCA5A5)
-private val Red900 = Color(0xFF7F1D1D)
+private val Red900 = Color(0xFF4B2227)
 
 private val LightColors = lightColorScheme(
     primary = Teal600,
     onPrimary = White,
     primaryContainer = Teal100,
     onPrimaryContainer = Teal900,
-    secondary = Teal700,
+    secondary = Sky600,
     onSecondary = White,
-    secondaryContainer = Mist100,
-    onSecondaryContainer = Teal900,
+    secondaryContainer = Sky100,
+    onSecondaryContainer = Sky900,
     tertiary = Amber700,
     onTertiary = White,
     tertiaryContainer = Amber100,
@@ -51,7 +51,7 @@ private val LightColors = lightColorScheme(
     surfaceVariant = Mist100,
     onSurfaceVariant = Ink700,
     outline = Mist200,
-    outlineVariant = Mist100,
+    outlineVariant = Mist300,
     surfaceTint = Teal600,
     error = Red700,
     onError = White,
@@ -64,10 +64,10 @@ private val DarkColors = darkColorScheme(
     onPrimary = Teal900,
     primaryContainer = Teal700,
     onPrimaryContainer = Teal50,
-    secondary = Teal200,
-    onSecondary = Teal900,
-    secondaryContainer = NightVariant,
-    onSecondaryContainer = NightText,
+    secondary = Color(0xFF8ADDF1),
+    onSecondary = Sky900,
+    secondaryContainer = Color(0xFF123A47),
+    onSecondaryContainer = Color(0xFFD7F5FC),
     tertiary = Amber300,
     onTertiary = Amber900,
     tertiaryContainer = Amber900,
@@ -88,24 +88,38 @@ private val DarkColors = darkColorScheme(
 )
 
 private val AppTypography = Typography(
+    headlineSmall = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Bold,
+        fontSize = 22.sp,
+        lineHeight = 29.sp,
+        letterSpacing = (-0.2).sp
+    ),
     displaySmall = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Bold,
-        fontSize = 40.sp,
-        lineHeight = 48.sp
+        fontSize = 38.sp,
+        lineHeight = 44.sp,
+        letterSpacing = (-0.5).sp
     ),
     titleLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Bold,
-        fontSize = 23.sp,
-        lineHeight = 32.sp,
-        letterSpacing = (-0.5).sp
+        fontSize = 22.sp,
+        lineHeight = 28.sp,
+        letterSpacing = (-0.3).sp
     ),
     titleMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
         fontSize = 16.sp,
         lineHeight = 24.sp
+    ),
+    titleSmall = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 14.sp,
+        lineHeight = 20.sp
     ),
     bodyLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
@@ -124,6 +138,25 @@ private val AppTypography = Typography(
         fontWeight = FontWeight.Normal,
         fontSize = 12.sp,
         lineHeight = 19.sp
+    ),
+    labelLarge = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Medium,
+        fontSize = 14.sp,
+        lineHeight = 20.sp
+    ),
+    labelMedium = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Medium,
+        fontSize = 12.sp,
+        lineHeight = 17.sp
+    ),
+    labelSmall = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Medium,
+        fontSize = 11.sp,
+        lineHeight = 16.sp,
+        letterSpacing = 0.15.sp
     )
 )
 

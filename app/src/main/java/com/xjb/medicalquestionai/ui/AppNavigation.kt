@@ -115,7 +115,7 @@ fun MedicalQuestionApp(
                             onClick = {
                                 navController.openTopLevel(destination.route)
                             },
-                            icon = { Icon(destination.icon, contentDescription = destination.label) },
+                            icon = { Icon(destination.icon, contentDescription = null) },
                             label = { Text(destination.label) }
                         )
                     }
