@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -52,6 +53,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -63,6 +65,7 @@ import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.xjb.medicalquestionai.data.AnswerMode
 import com.xjb.medicalquestionai.data.QuestionType
+import com.xjb.medicalquestionai.ui.theme.BrandGradient
 import java.io.File
 import java.util.Locale
 
@@ -387,17 +390,17 @@ fun EmptyState(
             .padding(vertical = 54.dp, horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.primaryContainer
+        Box(
+            modifier = Modifier
+                .background(Brush.linearGradient(BrandGradient), RoundedCornerShape(28.dp))
+                .padding(25.dp),
+            contentAlignment = Alignment.Center
         ) {
             Icon(
                 icon,
                 contentDescription = null,
-                modifier = Modifier
-                    .padding(25.dp)
-                    .size(42.dp),
-                tint = MaterialTheme.colorScheme.primary
+                modifier = Modifier.size(42.dp),
+                tint = Color.White
             )
         }
         Spacer(Modifier.height(24.dp))

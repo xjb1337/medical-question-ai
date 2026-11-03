@@ -2,9 +2,11 @@ package com.xjb.medicalquestionai.ui.screens
 
 import android.content.Intent
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -66,6 +68,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -87,6 +91,7 @@ import com.xjb.medicalquestionai.ui.components.DeepSeekBindingGuide
 import com.xjb.medicalquestionai.ui.components.InfoBanner
 import com.xjb.medicalquestionai.ui.components.SectionCard
 import com.xjb.medicalquestionai.ui.components.UpdateSection
+import com.xjb.medicalquestionai.ui.theme.BrandGradient
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -166,17 +171,33 @@ fun SettingsScreen(
                 ) {
                     Surface(
                         shape = MaterialTheme.shapes.large,
-                        color = MaterialTheme.colorScheme.primaryContainer
+                        color = MaterialTheme.colorScheme.primary,
+                        contentColor = Color.White
                     ) {
-                        Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Outlined.AutoAwesome, contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
-                            Spacer(Modifier.width(14.dp))
-                            Column {
-                                Text("让学习更顺手", style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer)
-                                Text("连接模型，选择你的解题节奏", style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f))
+                        Box(Modifier.background(Brush.linearGradient(BrandGradient))) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(20.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Outlined.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(30.dp)
+                                )
+                                Spacer(Modifier.width(14.dp))
+                                Column {
+                                    Text(
+                                        "让学习更顺手",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = Color.White
+                                    )
+                                    Text(
+                                        "连接模型，选择你的解题节奏",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.White
+                                    )
+                                }
                             }
                         }
                     }
