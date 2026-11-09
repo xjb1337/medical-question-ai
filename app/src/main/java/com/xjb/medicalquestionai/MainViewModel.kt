@@ -421,7 +421,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val meta = imageStore.rotate(image.path, degrees)
                 _draft.value = _draft.value.copy(images = _draft.value.images.map {
-                    if (it.id == id) it.copy(width = meta.width, height = meta.height, sizeBytes = meta.sizeBytes) else it
+                    if (it.id == id) it.copy(width = meta.width, height = meta.height, sizeBytes = meta.sizeBytes, revision = it.revision + 1) else it
                 })
             } catch (e: Exception) {
                 _draftNotice.value = "旋转失败：${e.message ?: "请重试"}"
@@ -457,7 +457,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     val meta = imageStore.cropInPlace(image.path, rect)
                     _draft.value = _draft.value.copy(images = _draft.value.images.map {
-                        if (it.id == id) it.copy(width = meta.width, height = meta.height, sizeBytes = meta.sizeBytes) else it
+                        if (it.id == id) it.copy(width = meta.width, height = meta.height, sizeBytes = meta.sizeBytes, revision = it.revision + 1) else it
                     })
                 }
             } catch (e: Exception) {

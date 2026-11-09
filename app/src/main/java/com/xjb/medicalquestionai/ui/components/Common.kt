@@ -429,11 +429,11 @@ fun formatBytes(bytes: Long): String = when {
 }
 
 @Composable
-fun rememberFileImageRequest(path: String): ImageRequest {
+fun rememberFileImageRequest(path: String, revision: Long = 0): ImageRequest {
     val context = LocalContext.current
     val file = remember(path) { File(path) }
-    val version = runCatching { "${file.lastModified()}_${file.length()}" }.getOrDefault("0")
-    return remember(path, version) {
+    val version = "$revision-" + runCatching { "${file.lastModified()}_${file.length()}" }.getOrDefault("0")
+    return remember(context, path, version) {
         ImageRequest.Builder(context)
             .data(file)
             .memoryCacheKey("$path-$version")
