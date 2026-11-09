@@ -23,7 +23,8 @@ data class DraftImage(
     val width: Int,
     val height: Int,
     val sizeBytes: Long,
-    val warnings: List<String> = emptyList()
+    val warnings: List<String> = emptyList(),
+    val revision: Long = 0
 )
 
 data class QuestionDraft(

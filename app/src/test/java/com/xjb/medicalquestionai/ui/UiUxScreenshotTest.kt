@@ -176,7 +176,7 @@ class UiUxScreenshotTest {
 }
 
 /** Material 3's library-local string IDs are not remapped by the direct Robolectric runner. */
-private class AuditContext(base: Context) : ContextWrapper(base) {
+internal class AuditContext(base: Context) : ContextWrapper(base) {
     private val auditResources = AuditResources(base.resources)
     override fun getResources(): Resources = auditResources
 }
