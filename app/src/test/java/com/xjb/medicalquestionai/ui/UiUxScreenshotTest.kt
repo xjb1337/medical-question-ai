@@ -120,7 +120,7 @@ class UiUxScreenshotTest {
             compose.mainClock.advanceTimeBy(1_000)
         }
         val readyText = when (screen) {
-            "result" -> "详细解析"
+            "result" -> "识别到的题目"
             "error" -> "重新解析"
             "history" -> "文本题目示例：骨骼肌收缩的基本单位是什么？"
             "empty" -> "还没有历史记录"
@@ -154,7 +154,13 @@ class UiUxScreenshotTest {
         val text = "文本题目示例：骨骼肌收缩的基本单位是什么？"
         val result = AnalysisResult(
             status = "answered", questionType = "single", recognizedQuestion = text,
+            questionCount = 1, pageComplete = true,
             answer = listOf("B"), answerText = "肌节",
+            optionsSeen = listOf(
+                SeenOption("A", "肌纤维"),
+                SeenOption("B", "肌节"),
+                SeenOption("C", "肌束")
+            ),
             optionAnalyses = listOf(
                 OptionAnalysis("A", "错误", "肌纤维由许多肌原纤维构成。"),
                 OptionAnalysis("B", "正确", "肌节是相邻两条 Z 线之间的结构。"),

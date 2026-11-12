@@ -80,6 +80,12 @@ MainViewModel
   "status": "answered",
   "question_type": "single",
   "recognized_question": "……",
+  "question_count": 1,
+  "page_complete": true,
+  "options_seen": [
+    {"letter": "A", "text": "……"},
+    {"letter": "B", "text": "……"}
+  ],
   "image_observations": [
     {"image_index": 1, "observation": "……", "uncertainty": "……"}
   ],
@@ -96,6 +102,8 @@ MainViewModel
 }
 ```
 
+本地校验要求正常答案同时满足 `question_count=1` 与 `page_complete=true`；缺字段、非法类型、多题或页面不完整都会降级为 `needs_confirmation`。有图片时，`image_observations` 必须按上传顺序用 `image_index=1..N` 覆盖每一张图，且观察文本不能为空。
+
 解析器容忍 Markdown 代码围栏、字段别名、字符串形式的步骤和对象形式的选项表；对明显不属于医学学习范围的输入，模型返回 `out_of_scope`，界面以“非医学题目”卡片礼貌说明，不展示把握程度。
 
 ### 应用内更新
@@ -111,7 +119,9 @@ MainViewModel
 - 解码时按最长边采样，避免 OOM。
 - 读取 EXIF 方向并旋转，统一转正。
 - 最长边压缩到 1800 px，JPEG 质量 86，保存至 `filesDir/question_images`。
-- 旋转默认通过临时文件原子替换原文件，路径保持不变；裁剪可选择替换原图，或保留原图并新增一张局部图（受 9 张上限约束）。
+- 相机拍摄或相册导入成功后，首页提供一次可跳过的「裁剪本题 / 使用原图 / 重拍（重选）」选择；裁剪从该图直接进入裁剪态，不强制保存。
+- 旋转默认通过临时文件原子替换原文件，路径保持不变；裁剪默认替换原图，「保留原图并添加」为次选（受 9 张上限约束）。保存期间锁定提交，失败留在裁剪态并在编辑 Dialog 内显示错误。
+- 重拍/重选只删除本次导入的图片 ID，不触碰草稿中更早的图片。
 - 图片仅在分析时读取为 Base64；历史记录保存本地路径，不保存 Base64。
 
 ## 5. 安全与隐私

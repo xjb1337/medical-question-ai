@@ -31,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,10 +53,75 @@ fun AnalysisResultView(
     }
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         AnalysisAnswerCard(result)
+        if (result.needsCaptureCompletenessReview) {
+            CaptureCompletenessCard(result)
+        }
+        if (result.recognizedQuestion.isNotBlank()) {
+            RecognizedQuestionCard(result)
+        }
+        if (result.questionType == "single" || result.questionType == "multiple") {
+            SeenOptionsCard(result)
+        }
         if (result.warnings.isNotEmpty()) {
             AnalysisWarningCard(result.warnings)
         }
         AnalysisDetails(result)
+    }
+}
+
+/** 多题或题干/选项不完整时的明确提示；操作入口复用结果页底部的编辑、补图与重新解析。 */
+@Composable
+fun CaptureCompletenessCard(result: AnalysisResult, modifier: Modifier = Modifier) {
+    if (!result.needsCaptureCompletenessReview) return
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("capture-completeness-card"),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.WarningAmber, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "题目可能不完整",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            val countMessage = when {
+                result.questionCount != null && result.questionCount > 1 ->
+                    "检测到画面中可能有 ${result.questionCount} 道题。当前只支持单题解析，请先裁剪或补拍至只保留一道题。"
+                result.questionCount != 1 ->
+                    "未能确认画面中只有一道题，请裁剪或补拍至只保留一道完整题目。"
+                else -> null
+            }
+            countMessage?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall)
+            }
+            val pageMessage = when {
+                result.pageComplete == false ->
+                    "题干或选项可能被截断、拍漏，已避免脑补缺失内容。请补拍或裁剪完整页面。"
+                result.pageComplete != true ->
+                    "未能确认题干与选项是否完整可见，请补拍或裁剪完整页面。"
+                else -> null
+            }
+            if (countMessage != null && pageMessage != null) {
+                Spacer(Modifier.height(4.dp))
+            }
+            pageMessage?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall)
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "可使用下方“修改题干”修正识别内容，“补充图片”补拍缺失部分，然后点“重新解析”。",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium
+            )
+        }
     }
 }
 
@@ -125,7 +191,7 @@ fun AnalysisAnswerCard(
                 )
                 Spacer(Modifier.weight(1f))
                 if (compact) {
-                    Tag("生成中", onContainer)
+                    Tag("预览", onContainer)
                 } else if (!isOutOfScope) {
                     StatusChip(result.confidenceLabel)
                 }
@@ -186,7 +252,96 @@ fun AnalysisAnswerCard(
     }
 }
 
-/** 详细解析：识别题干、图片观察、选项分析、解题思路、知识点、易错点与调用信息。 */
+/** 题干常驻展示，不依赖默认收起的“详细解析”；空题干不占位。 */
+@Composable
+fun RecognizedQuestionCard(result: AnalysisResult, modifier: Modifier = Modifier) {
+    if (result.recognizedQuestion.isBlank()) return
+    SectionCard(
+        modifier = modifier.testTag("recognized-question-card"),
+        title = "识别到的题目"
+    ) {
+        SelectionContainer {
+            Text(
+                result.recognizedQuestion,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+/** 选择题的选项原文对照；答案不在识别列表中时直接标出，避免只凭字母作答。 */
+@Composable
+fun SeenOptionsCard(result: AnalysisResult, modifier: Modifier = Modifier) {
+    if (result.questionType != "single" && result.questionType != "multiple") return
+    val answerLetters = result.answer.mapNotNull(::singleOptionLetter).toSet()
+    val seenLetters = result.optionsSeen.map { it.letter.uppercase() }.toSet()
+    val missingAnswerLetters = answerLetters.filterNot { it in seenLetters }
+    SectionCard(
+        modifier = modifier.testTag("seen-options-card"),
+        title = "识别到的选项"
+    ) {
+        if (result.optionsSeen.isEmpty()) {
+            Text(
+                "未能识别到选项原文，无法核对答案字母。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                result.optionsSeen.forEach { option ->
+                    val isAnswer = option.letter.uppercase() in answerLetters
+                    Row(verticalAlignment = Alignment.Top) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isAnswer) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            }
+                        ) {
+                            Text(
+                                option.letter,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            SelectionContainer {
+                                Text(
+                                    option.text,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            if (isAnswer) {
+                                Text(
+                                    "答案",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (missingAnswerLetters.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "答案 ${missingAnswerLetters.joinToString("、")} 不在识别到的选项中，请核对。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+/** 详细解析：图片观察、选项分析、解题思路、知识点、易错点与调用信息。 */
 @Composable
 fun AnalysisDetails(result: AnalysisResult, modifier: Modifier = Modifier) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -200,17 +355,6 @@ fun AnalysisDetails(result: AnalysisResult, modifier: Modifier = Modifier) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                }
-            }
-        }
-        if (result.recognizedQuestion.isNotBlank()) {
-            SectionCard(title = "识别到的题目") {
-                SelectionContainer {
-                    Text(
-                        result.recognizedQuestion,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
                 }
             }
         }
@@ -397,6 +541,14 @@ fun AnalysisWarningCard(warnings: List<String>, modifier: Modifier = Modifier) {
             }
         }
     }
+}
+
+private fun singleOptionLetter(value: String): String? {
+    val normalized = value.trim()
+    if (normalized.length != 1) return null
+    val letter = normalized[0]
+    if (letter !in 'A'..'Z' && letter !in 'a'..'z') return null
+    return letter.uppercase()
 }
 
 private fun AnalysisResult.typeLabel(): String = when (questionType.lowercase()) {

@@ -1,5 +1,10 @@
 package com.xjb.medicalquestionai.data
 
+sealed interface ImageCropResult {
+    data object Success : ImageCropResult
+    data class Failure(val message: String) : ImageCropResult
+}
+
 /**
  * Pure list-editing rules for image drafts, kept outside the ViewModel so the
  * "keep original" crop behavior can be unit-tested without Android classes.
@@ -30,4 +35,14 @@ object ImageEditPolicy {
             add(index + 1, cropped)
         }
     }
+
+    /** Resolves review IDs against the current draft without admitting stale IDs. */
+    fun reviewImages(images: List<DraftImage>, imageIds: List<String>): List<DraftImage> {
+        val byId = images.associateBy { it.id }
+        return imageIds.mapNotNull(byId::get)
+    }
+
+    /** Removes exactly the reviewed images, preserving every older draft image. */
+    fun removeByIds(images: List<DraftImage>, imageIds: Set<String>): List<DraftImage> =
+        images.filterNot { it.id in imageIds }
 }

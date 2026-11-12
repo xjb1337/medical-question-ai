@@ -11,6 +11,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
@@ -21,13 +22,20 @@ import coil.Coil
 import coil.request.ImageRequest
 import com.github.takahirom.roborazzi.*
 import com.xjb.medicalquestionai.data.DraftImage
+import com.xjb.medicalquestionai.data.ImageCropResult
 import com.xjb.medicalquestionai.ui.components.rememberFileImageRequest
 import com.xjb.medicalquestionai.ui.screens.CropGeometry
+import com.xjb.medicalquestionai.ui.screens.CropOffsetKey
 import com.xjb.medicalquestionai.ui.screens.CropRectKey
+import com.xjb.medicalquestionai.ui.screens.CropViewport
+import com.xjb.medicalquestionai.ui.screens.CropZoomKey
 import com.xjb.medicalquestionai.ui.screens.ImageEditDialog
+import com.xjb.medicalquestionai.ui.screens.PreviewOffsetKey
+import com.xjb.medicalquestionai.ui.screens.PreviewZoomKey
 import com.xjb.medicalquestionai.ui.theme.MedicalQuestionAiTheme
 import java.io.File
 import java.time.Duration
+import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -75,6 +83,7 @@ class ImageEditDialogTest {
         render()
         compose.onNodeWithText("裁剪").performClick()
         assertCropButtons()
+        capture("crop-primary-replace")
         val initial = currentRect()
         capture("crop-before")
         dragBottomRight(0.24f)
@@ -125,6 +134,130 @@ class ImageEditDialogTest {
     }
 
     @Test
+    fun postImportReviewStartsDirectlyInCropModeAndClosesAfterSuccess() {
+        render(startInCropMode = true)
+
+        compose.onNodeWithTag("crop-overlay").assertIsDisplayed()
+        compose.onNodeWithText("替换当前图").assertIsDisplayed()
+        compose.onNodeWithText("前移").assertDoesNotExist()
+        dragBottomRight(0.18f)
+        compose.onNodeWithText("替换当前图").performClick()
+
+        compose.waitUntil(5_000) { dismisses == 1 }
+        assertEquals(1, crops.size)
+        assertFalse(crops.single().second)
+    }
+
+    @Test
+    fun twoFingerPinchZoomsTheBaseImageWithoutChangingTheSavedCropRect() {
+        render()
+        compose.onNodeWithText("裁剪").performClick()
+        dragBottomRight(0.21f)
+        dragTopLeft(0.21f)
+        val before = currentRect()
+        assertEquals(1f, currentZoom(), 0.001f)
+
+        compose.onNodeWithTag("crop-overlay").performTouchInput {
+            val focus = Offset(width / 2f, height / 2f)
+            down(0, focus - Offset(40f, 0f))
+            down(1, focus + Offset(40f, 0f))
+            repeat(3) {
+                moveBy(0, Offset(-10f, 0f))
+                moveBy(1, Offset(10f, 0f))
+            }
+            up(0)
+            up(1)
+        }
+        compose.waitForIdle()
+
+        assertTrue("pinch should zoom the crop viewport", currentZoom() > 1.5f)
+        assertEquals(before, currentRect())
+        compose.onNodeWithTag("crop-zoom-indicator").assertIsDisplayed()
+        capture("crop-zoomed")
+
+        val zoomedRect = currentRect()
+        val zoom = currentZoom()
+        val offset = compose.onNodeWithTag("crop-overlay").fetchSemanticsNode().config[CropOffsetKey]
+        compose.onNodeWithTag("crop-overlay").performTouchInput {
+            val corner = CropViewport(zoom = zoom, offset = offset).imageToScreen(
+                zoomedRect.topLeft,
+                Size(width.toFloat(), height.toFloat())
+            )
+            down(corner)
+            repeat(3) { moveBy(Offset(6f, 6f)) }
+            up()
+        }
+        compose.waitForIdle()
+        val draggedAfterZoom = currentRect()
+        val dragDebug = "before=$zoomedRect after=$draggedAfterZoom zoom=$zoom offset=$offset " +
+            "leftDelta=${draggedAfterZoom.left - zoomedRect.left} " +
+            "topDelta=${draggedAfterZoom.top - zoomedRect.top}"
+        assertTrue(dragDebug, draggedAfterZoom.left > zoomedRect.left + 0.005f)
+        assertTrue(dragDebug, draggedAfterZoom.top > zoomedRect.top + 0.005f)
+        assertEquals(zoomedRect.right, draggedAfterZoom.right, 0.001f)
+        assertEquals(zoomedRect.bottom, draggedAfterZoom.bottom, 0.001f)
+        capture("crop-zoomed-drag")
+    }
+
+    @Test
+    fun cancelAfterPinchResetsThePreviewTransformAndHidesZoomIndicator() {
+        render()
+        compose.onNodeWithText("裁剪").performClick()
+
+        compose.onNodeWithTag("crop-overlay").performTouchInput {
+            val focus = Offset(width / 2f, height / 2f)
+            down(0, focus - Offset(40f, 0f))
+            down(1, focus + Offset(40f, 0f))
+            repeat(3) {
+                moveBy(0, Offset(-10f, 0f))
+                moveBy(1, Offset(10f, 0f))
+            }
+            up(0)
+            up(1)
+        }
+        compose.waitForIdle()
+
+        assertTrue("pinch should zoom before cancel", currentZoom() > 1.5f)
+        compose.onNodeWithTag("crop-zoom-indicator").assertIsDisplayed()
+
+        compose.onNodeWithText("取消").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("crop-zoom-indicator").assertDoesNotExist()
+        compose.onNodeWithText("调整题目图片 2").assertIsDisplayed()
+        assertEquals(1f, previewZoom(), 0.001f)
+        assertEquals(Offset.Zero, previewOffset())
+    }
+
+    @Test
+    fun savingDisablesBothActionsAndFailureKeepsTheCropRect() {
+        val pending = CompletableDeferred<ImageCropResult>()
+        render(cropDeferred = pending)
+        compose.onNodeWithText("裁剪").performClick()
+        dragBottomRight(0.22f)
+        val selected = currentRect()
+
+        compose.onNodeWithText("替换当前图").performClick()
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithText("正在保存…").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("crop-replace-primary").assertIsNotEnabled()
+        compose.onNodeWithTag("crop-keep-secondary").assertIsNotEnabled()
+        capture("crop-saving")
+
+        pending.complete(ImageCropResult.Failure("裁剪失败：虚构测试错误"))
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithTag("crop-save-error").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("裁剪失败：虚构测试错误").assertIsDisplayed()
+        compose.onNodeWithTag("crop-replace-primary").assertIsEnabled()
+        compose.onNodeWithTag("crop-keep-secondary").assertIsEnabled()
+        compose.onNodeWithTag("crop-overlay").assertIsDisplayed()
+        assertEquals(selected, currentRect())
+        capture("crop-save-error")
+    }
+
+    @Test
     @Config(qualifiers = "w360dp-h800dp-xxhdpi")
     fun narrowScreenWithLargeFontKeepsEveryButtonVisibleAndClickable() {
         render(fontScale = 1.3f)
@@ -163,7 +296,12 @@ class ImageEditDialogTest {
         assertEquals(initial.data, requireNotNull(request).data)
     }
 
-    private fun render(fontScale: Float = 1f) {
+    private fun render(
+        fontScale: Float = 1f,
+        cropResult: ImageCropResult = ImageCropResult.Success,
+        cropDeferred: CompletableDeferred<ImageCropResult>? = null,
+        startInCropMode: Boolean = false
+    ) {
         val image = fixtureImage()
         val context = compose.activity
         var imageRequest: ImageRequest? = null
@@ -179,7 +317,11 @@ class ImageEditDialogTest {
                         image = image, index = 2, enableMoveLeft = true, enableMoveRight = true,
                         onDismiss = { dismisses++ }, onMoveLeft = { moves++ }, onMoveRight = { moves++ },
                         onRotate = { rotations.add(it) },
-                        onCrop = { rect, keepOriginal -> crops.add(rect to keepOriginal) },
+                        onCrop = { rect, keepOriginal ->
+                            crops.add(rect to keepOriginal)
+                            cropDeferred?.await() ?: cropResult
+                        },
+                        startInCropMode = startInCropMode,
                         onDelete = { deletes++ }
                     )
                 }
@@ -192,7 +334,12 @@ class ImageEditDialogTest {
     }
 
     private fun assertNormalButtons() = assertButtons("前移", "后移", "左转", "右转", "裁剪", "删除", "完成")
-    private fun assertCropButtons() = assertButtons("取消", "重置", "替换当前图", "保留原图并添加")
+    private fun assertCropButtons() {
+        assertButtons("取消", "重置", "替换当前图", "保留原图并添加")
+        val replace = compose.onNodeWithTag("crop-replace-primary").fetchSemanticsNode().boundsInRoot
+        val keep = compose.onNodeWithTag("crop-keep-secondary").fetchSemanticsNode().boundsInRoot
+        assertTrue("replace must be the primary action above the optional keep action", replace.top < keep.top)
+    }
 
     private fun assertButtons(vararg labels: String) {
         val editorBounds = compose.onNodeWithTag("image-editor").fetchSemanticsNode().boundsInRoot
@@ -206,12 +353,25 @@ class ImageEditDialogTest {
     }
 
     private fun currentRect(): Rect = compose.onNodeWithTag("crop-overlay").fetchSemanticsNode().config[CropRectKey]
+    private fun currentZoom(): Float = compose.onNodeWithTag("crop-overlay").fetchSemanticsNode().config[CropZoomKey]
+    private fun previewZoom(): Float = compose.onNodeWithTag("image-preview").fetchSemanticsNode().config[PreviewZoomKey]
+    private fun previewOffset(): Offset = compose.onNodeWithTag("image-preview").fetchSemanticsNode().config[PreviewOffsetKey]
 
     private fun dragBottomRight(distance: Float) {
         val rect = currentRect()
         compose.onNodeWithTag("crop-overlay").performTouchInput {
             down(Offset(width * rect.right, height * rect.bottom))
             repeat(6) { moveBy(Offset(-width * distance / 6, -height * distance / 6)) }
+            up()
+        }
+        compose.waitForIdle()
+    }
+
+    private fun dragTopLeft(distance: Float) {
+        val rect = currentRect()
+        compose.onNodeWithTag("crop-overlay").performTouchInput {
+            down(Offset(width * rect.left, height * rect.top))
+            repeat(6) { moveBy(Offset(width * distance / 6, height * distance / 6)) }
             up()
         }
         compose.waitForIdle()

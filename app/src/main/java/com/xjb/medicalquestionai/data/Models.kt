@@ -24,7 +24,23 @@ data class DraftImage(
     val height: Int,
     val sizeBytes: Long,
     val warnings: List<String> = emptyList(),
-    val revision: Long = 0
+    val revision: Long = 0,
+    /** 应用私有的高清源图；[path] 始终是用于展示和上传的派生图。 */
+    val sourcePath: String? = null
+)
+
+enum class ImageReviewSource {
+    CAMERA,
+    GALLERY
+}
+
+/**
+ * Images added by the most recent capture or picker result. The IDs keep the
+ * review flow from touching images that were already in the draft.
+ */
+data class PendingImageReview(
+    val imageIds: List<String>,
+    val source: ImageReviewSource
 )
 
 data class QuestionDraft(
@@ -66,6 +82,11 @@ data class OptionAnalysis(
     val option: String,
     val verdict: String,
     val reason: String
+)
+
+data class SeenOption(
+    val letter: String,
+    val text: String
 )
 
 data class FollowUp(
@@ -110,6 +131,9 @@ data class AnalysisResult(
     val status: String = "answered",
     val questionType: String = "unknown",
     val recognizedQuestion: String = "",
+    val questionCount: Int? = null,
+    val pageComplete: Boolean? = null,
+    val optionsSeen: List<SeenOption> = emptyList(),
     val answer: List<String> = emptyList(),
     val answerText: String = "",
     val imageObservations: List<ImageObservation> = emptyList(),
@@ -126,6 +150,10 @@ data class AnalysisResult(
     val needsConfirmation: Boolean
         get() = status != "out_of_scope" &&
             (status == "needs_confirmation" || (answer.isEmpty() && answerText.isBlank()))
+
+    val needsCaptureCompletenessReview: Boolean
+        get() = status == "needs_confirmation" &&
+            (questionCount != 1 || pageComplete != true)
 
     val answerDisplay: String
         get() = when {
@@ -145,6 +173,16 @@ data class AnalysisResult(
         put("status", status)
         put("question_type", questionType)
         put("recognized_question", recognizedQuestion)
+        put("question_count", questionCount ?: JSONObject.NULL)
+        put("page_complete", pageComplete ?: JSONObject.NULL)
+        put("options_seen", JSONArray().apply {
+            optionsSeen.forEach {
+                put(JSONObject().apply {
+                    put("letter", it.letter)
+                    put("text", it.text)
+                })
+            }
+        })
         put("answer", JSONArray(answer))
         put("answer_text", answerText)
         put("image_observations", JSONArray().apply {
@@ -215,6 +253,13 @@ data class AnalysisResult(
             }
             fun longOrNull(item: JSONObject, key: String): Long? =
                 if (item.has(key) && !item.isNull(key)) item.optLong(key) else null
+            fun positiveIntOrNull(item: JSONObject, key: String): Int? {
+                val value = item.opt(key) as? Number ?: return null
+                val doubleValue = value.toDouble()
+                if (!doubleValue.isFinite() || doubleValue != doubleValue.toLong().toDouble()) return null
+                val longValue = value.toLong()
+                return longValue.takeIf { it in 1..Int.MAX_VALUE.toLong() }?.toInt()
+            }
             fun stringList(key: String): List<String> {
                 val value = obj.opt(key) ?: return emptyList()
                 return when (value) {
@@ -259,6 +304,17 @@ data class AnalysisResult(
                     }
                 }
             }
+            val optionsSeen = mutableListOf<SeenOption>()
+            obj.optJSONArray("options_seen")?.let { array ->
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    val letter = text(item, "letter", text(item, "option"))
+                    val optionText = text(item, "text", text(item, "content"))
+                    if (letter.isNotBlank() && optionText.isNotBlank()) {
+                        optionsSeen += SeenOption(letter, optionText)
+                    }
+                }
+            }
             val options = mutableListOf<OptionAnalysis>()
             fun addOption(item: JSONObject, fallbackLabel: String) {
                 val option = text(item, "option", text(item, "label"))
@@ -289,6 +345,9 @@ data class AnalysisResult(
                 status = text(obj, "status", "answered"),
                 questionType = text(obj, "question_type", text(obj, "type", "unknown")),
                 recognizedQuestion = text(obj, "recognized_question", text(obj, "question")),
+                questionCount = positiveIntOrNull(obj, "question_count"),
+                pageComplete = obj.opt("page_complete") as? Boolean,
+                optionsSeen = optionsSeen,
                 answer = stringList("answer"),
                 answerText = text(obj, "answer_text", text(obj, "answerText")),
                 imageObservations = observations,

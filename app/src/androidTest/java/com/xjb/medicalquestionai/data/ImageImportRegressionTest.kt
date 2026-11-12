@@ -162,8 +162,12 @@ class ImageImportRegressionTest {
 
         val imported = store.importImage(Uri.fromFile(source))
         created += imported.path
-        assertEquals("rotated portrait should be scaled to 1800 max side", 900, imported.width)
-        assertEquals(1800, imported.height)
+        assertEquals("metadata should describe the oriented high-resolution source", 1000, imported.width)
+        assertEquals(2000, imported.height)
+        val displayBounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(imported.path, displayBounds)
+        assertEquals("upload copy should stay within 1800 max side", 900, displayBounds.outWidth)
+        assertEquals(1800, displayBounds.outHeight)
 
         val outputExif = ExifInterface(imported.path)
         // Android JPEG encoders may omit orientation or write UNDEFINED after pixel rotation.

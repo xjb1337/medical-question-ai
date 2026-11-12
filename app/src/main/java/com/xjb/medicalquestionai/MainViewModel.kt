@@ -20,9 +20,12 @@ import com.xjb.medicalquestionai.data.DraftImage
 import com.xjb.medicalquestionai.data.FollowUp
 import com.xjb.medicalquestionai.data.FollowUpRepository
 import com.xjb.medicalquestionai.data.ImageEditPolicy
+import com.xjb.medicalquestionai.data.ImageCropResult
+import com.xjb.medicalquestionai.data.ImageReviewSource
 import com.xjb.medicalquestionai.data.ImageStore
 import com.xjb.medicalquestionai.data.ModelCapability
 import com.xjb.medicalquestionai.data.ModelCatalog
+import com.xjb.medicalquestionai.data.PendingImageReview
 import com.xjb.medicalquestionai.data.Question
 import com.xjb.medicalquestionai.data.QuestionAnalyzer
 import com.xjb.medicalquestionai.data.QuestionDraft
@@ -97,6 +100,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _draftNotice = MutableStateFlow<String?>(null)
     val draftNotice: StateFlow<String?> = _draftNotice.asStateFlow()
 
+    private val _pendingImageReview = MutableStateFlow<PendingImageReview?>(null)
+    val pendingImageReview: StateFlow<PendingImageReview?> = _pendingImageReview.asStateFlow()
+
     private val settingsCoordinator = SettingsCoordinator(
         settingsRepository = settingsRepository,
         client = client,
@@ -141,6 +147,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var cancelRequested = false
     private var pendingStopReason: StopReason? = null
     private var lastStopSaveFailure: String? = null
+    private val cropSavesInFlight = mutableSetOf<String>()
 
     init {
         // 进程被杀后，数据库里遗留的 analyzing/receiving/validating 不能继续显示为“正在解析”。
@@ -247,6 +254,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val sessionId = UUID.randomUUID().toString()
             _draft.value = QuestionDraft(sessionId = sessionId)
             draftImageSource = null
+            _pendingImageReview.value = null
             _analysisError.value = null
             _draftNotice.value = null
             return NextQuestionResult(true, sessionId = sessionId)
@@ -262,10 +270,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val current = _draft.value
         _parkedDraft.value = current.takeIf { it.text.isNotBlank() || it.images.isNotEmpty() }
         _draft.value = parked
+        _pendingImageReview.value = null
         return true
     }
 
     fun clearParkedDraft() {
+        _parkedDraft.value?.images?.forEach { imageStore.delete(it.path) }
         _parkedDraft.value = null
     }
 
@@ -311,6 +321,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 privacyConfirmed = if (imported.isEmpty()) _draft.value.privacyConfirmed else false
             )
             _isImporting.value = false
+            if (imported.isNotEmpty()) {
+                _pendingImageReview.value = PendingImageReview(
+                    imageIds = imported.map { it.id },
+                    source = ImageReviewSource.GALLERY
+                )
+            }
             if (uris.size > remaining) {
                 _draftNotice.value = "最多添加 ${ImageStore.MAX_IMAGES} 张图片，已忽略多余图片"
             } else if (failed > 0) {
@@ -374,6 +390,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     images = _draft.value.images + image,
                     privacyConfirmed = false
                 )
+                _pendingImageReview.value = PendingImageReview(
+                    imageIds = listOf(image.id),
+                    source = ImageReviewSource.CAMERA
+                )
                 activeCameraTokens.remove(captureToken)
                 onComplete()
             } catch (e: Exception) {
@@ -390,6 +410,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteCapture(file: java.io.File) = imageStore.deleteCapture(file)
 
+    /** Keeps every reviewed image and closes the optional crop prompt. */
+    fun useOriginalPendingImageReview() {
+        _pendingImageReview.value = null
+    }
+
+    /** A reviewed image was cropped successfully; keep prompting for any remaining new images. */
+    fun markPendingImageReviewHandled(imageId: String) {
+        val current = _pendingImageReview.value ?: return
+        val remaining = current.imageIds.filterNot { it == imageId }
+        _pendingImageReview.value = remaining.takeIf { it.isNotEmpty() }
+            ?.let { current.copy(imageIds = it) }
+    }
+
+    /**
+     * Removes only images imported by the reviewed camera shot or picker result.
+     * Earlier draft images are deliberately left untouched.
+     */
+    fun discardPendingImageReviewImages() {
+        val review = _pendingImageReview.value ?: return
+        val ids = review.imageIds.toSet()
+        val draft = _draft.value
+        val removed = draft.images.filter { it.id in ids }
+        removed.forEach { imageStore.delete(it.path) }
+        _draft.value = draft.copy(images = ImageEditPolicy.removeByIds(draft.images, ids))
+        _pendingImageReview.value = null
+    }
+
     fun removeImage(id: String) {
         if (_isAnalyzing.value) {
             _draftNotice.value = "解析过程中不能修改题目图片"
@@ -398,6 +445,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val image = _draft.value.images.firstOrNull { it.id == id } ?: return
         imageStore.delete(image.path)
         _draft.value = _draft.value.copy(images = _draft.value.images.filterNot { it.id == id })
+        markPendingImageReviewHandled(id)
     }
 
     fun moveImage(id: String, delta: Int) {
@@ -421,7 +469,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val meta = imageStore.rotate(image.path, degrees)
                 _draft.value = _draft.value.copy(images = _draft.value.images.map {
-                    if (it.id == id) it.copy(width = meta.width, height = meta.height, sizeBytes = meta.sizeBytes, revision = it.revision + 1) else it
+                    if (it.id == id) {
+                        it.copy(
+                            width = meta.width,
+                            height = meta.height,
+                            sizeBytes = meta.sizeBytes,
+                            revision = it.revision + 1,
+                            sourcePath = meta.sourcePath ?: it.sourcePath
+                        )
+                    } else {
+                        it
+                    }
                 })
             } catch (e: Exception) {
                 _draftNotice.value = "旋转失败：${e.message ?: "请重试"}"
@@ -429,40 +487,70 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun cropImage(id: String, rect: android.graphics.RectF, keepOriginal: Boolean = true) {
+    suspend fun cropImage(
+        id: String,
+        rect: android.graphics.RectF,
+        keepOriginal: Boolean = false
+    ): ImageCropResult {
         if (_isAnalyzing.value) {
-            _draftNotice.value = "解析过程中不能修改题目图片"
-            return
+            return ImageCropResult.Failure("解析过程中不能修改题目图片")
         }
-        val image = _draft.value.images.firstOrNull { it.id == id } ?: return
+        if (!cropSavesInFlight.add(id)) {
+            return ImageCropResult.Failure("正在保存裁剪结果，请稍候")
+        }
+        val image = _draft.value.images.firstOrNull { it.id == id }
+        if (image == null) {
+            cropSavesInFlight.remove(id)
+            return ImageCropResult.Failure("这张图片已不存在，请重新选择")
+        }
         if (keepOriginal && !ImageEditPolicy.canAddImage(_draft.value.images, ImageStore.MAX_IMAGES)) {
-            _draftNotice.value = "最多添加 ${ImageStore.MAX_IMAGES} 张图片，请先删除一张再裁剪"
-            return
+            cropSavesInFlight.remove(id)
+            return ImageCropResult.Failure(
+                "最多添加 ${ImageStore.MAX_IMAGES} 张图片，请先删除一张再裁剪"
+            )
         }
-        viewModelScope.launch {
-            try {
-                if (keepOriginal) {
+        return try {
+            when {
+                keepOriginal -> {
                     val cropped = imageStore.cropCopy(image.path, rect)
                     if (!ImageEditPolicy.canAddImage(_draft.value.images, ImageStore.MAX_IMAGES)) {
                         imageStore.delete(cropped.path)
-                        _draftNotice.value = "最多添加 ${ImageStore.MAX_IMAGES} 张图片，请先删除一张再裁剪"
-                        return@launch
+                        return ImageCropResult.Failure(
+                            "最多添加 ${ImageStore.MAX_IMAGES} 张图片，请先删除一张再裁剪"
+                        )
                     }
                     val images = ImageEditPolicy.insertAfter(_draft.value.images, id, cropped)
                     if (images == null) {
                         imageStore.delete(cropped.path)
-                        return@launch
+                        return ImageCropResult.Failure("这张图片已不存在，请重新选择")
                     }
                     _draft.value = _draft.value.copy(images = images, privacyConfirmed = false)
-                } else {
+                }
+                else -> {
                     val meta = imageStore.cropInPlace(image.path, rect)
                     _draft.value = _draft.value.copy(images = _draft.value.images.map {
-                        if (it.id == id) it.copy(width = meta.width, height = meta.height, sizeBytes = meta.sizeBytes, revision = it.revision + 1) else it
+                        if (it.id == id) {
+                            it.copy(
+                                width = meta.width,
+                                height = meta.height,
+                                sizeBytes = meta.sizeBytes,
+                                revision = it.revision + 1,
+                                warnings = meta.warnings,
+                                sourcePath = meta.sourcePath ?: it.sourcePath
+                            )
+                        } else {
+                            it
+                        }
                     })
                 }
-            } catch (e: Exception) {
-                _draftNotice.value = "裁剪失败：${e.message ?: "请重试"}"
             }
+            ImageCropResult.Success
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            ImageCropResult.Failure("裁剪失败：${e.message ?: "请重试"}")
+        } finally {
+            cropSavesInFlight.remove(id)
         }
     }
 
@@ -532,6 +620,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             _draft.value = QuestionDraft(sessionId = UUID.randomUUID().toString())
             draftImageSource = null
+            _pendingImageReview.value = null
             onNavigate(questionId)
             runAnalysis(question, mode, clickedAt = clickedAt)
         }
@@ -581,6 +670,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             durationMs = 0
         )
         var lastCheckpointAt = 0L
+        var latestCheckpoint = current.checkpoint
         if (previous == null) {
             try {
                 repository.update(current)
@@ -641,8 +731,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // 重答期间数据库保留旧完成记录，避免失败/取消时覆盖旧结果与元数据。
             if (previous != null) return
             if (current.status == status) return
-            current = current.copy(status = status)
-            runCatching { repository.update(current) }
+            current = current.copy(
+                status = status,
+                checkpoint = latestCheckpoint ?: current.checkpoint
+            )
+            // 只更新状态，不能用 checkpoint=null 的内存对象整行覆盖已落库的流式预览。
+            runCatching { repository.updateAnalysisStatus(current.id, status) }
+        }
+
+        suspend fun persistFailure(message: String, durationMs: Long) {
+            if (previous != null) {
+                // 重答失败：数据库保留旧结果、旧模型、旧时长等元数据。
+                current = previous.copy()
+                return
+            }
+            val checkpoint = latestCheckpoint ?: current.checkpoint
+            current = current.copy(
+                status = "failed",
+                errorMessage = message,
+                durationMs = durationMs,
+                checkpoint = checkpoint
+            )
+            runCatching {
+                repository.updateAnalysisFailure(
+                    id = current.id,
+                    status = "failed",
+                    errorMessage = message,
+                    durationMs = durationMs,
+                    checkpointJson = checkpoint?.toJson()
+                )
+            }
         }
 
         try {
@@ -690,10 +808,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _analysisTask.update { it?.copy(preview = event.preview) }
                         val checkpoint = event.preview.toResult()
                         val checkpointAt = SystemClock.elapsedRealtime()
+                        val hasCheckpointContent = checkpoint.answer.isNotEmpty() ||
+                            checkpoint.answerText.isNotBlank() ||
+                            checkpoint.recognizedQuestion.isNotBlank() ||
+                            checkpoint.optionsSeen.isNotEmpty()
+                        if (hasCheckpointContent) {
+                            latestCheckpoint = checkpoint
+                            current = current.copy(checkpoint = checkpoint)
+                        }
                         if (previous == null &&
-                            (checkpoint.answer.isNotEmpty() ||
-                                checkpoint.answerText.isNotBlank() ||
-                                checkpoint.recognizedQuestion.isNotBlank()) &&
+                            hasCheckpointContent &&
                             checkpointAt - lastCheckpointAt >= CHECKPOINT_INTERVAL_MS
                         ) {
                             lastCheckpointAt = checkpointAt
@@ -723,6 +847,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val completed = base.copy(
                             status = "completed",
                             result = resultForSave,
+                            checkpoint = null,
                             errorMessage = null,
                             model = requestModel,
                             baseUrl = requestBaseUrl,
@@ -753,13 +878,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
                         if (saveFailure != null) {
                             val message = "结果已生成，但保存到本地数据库失败：${saveFailure.message ?: "存储空间可能不足"}。请检查存储空间后重试。"
-                            if (previous == null) {
-                                current = current.copy(status = "failed", errorMessage = message, durationMs = duration)
-                                runCatching { repository.update(current) }
-                            } else {
-                                // 重答时不覆盖旧完成记录；旧结果仍保留在数据库，页面显示本次保存失败。
-                                current = previous.copy()
-                            }
+                            persistFailure(message, duration)
                             _analysisElapsedMs.value = duration
                             logMetrics("save_failed", duration, resultForSave.metrics?.copy(saveStatus = "failed"))
                             updateTaskStatus(
@@ -870,17 +989,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     is com.xjb.medicalquestionai.data.AnalysisEvent.Failed -> {
                         val duration = SystemClock.elapsedRealtime() - startedAt
-                        if (previous != null) {
-                            // 重答失败：数据库保留旧结果、旧模型、旧时长等元数据。
-                            current = previous.copy()
-                        } else {
-                            current = current.copy(
-                                status = "failed",
-                                errorMessage = event.message,
-                                durationMs = duration
-                            )
-                            runCatching { repository.update(current) }
-                        }
+                        persistFailure(event.message, duration)
                         _analysisElapsedMs.value = duration
                         logMetrics("failed", duration)
                         updateTaskStatus(
@@ -913,9 +1022,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         "解析被中断，请重新解析"
                     }
                 }
-                val checkpoint = _analysisTask.value?.preview
+                val checkpoint = latestCheckpoint ?: _analysisTask.value?.preview
                     ?.takeIf { it.hasUsefulContent }
                     ?.toResult()
+                    ?: current.checkpoint
                 logMetrics(if (cancelledByUser || cancelledByExit) "cancelled" else "interrupted", duration)
                 withContext(NonCancellable) {
                     if (previous == null) {
@@ -964,13 +1074,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val duration = SystemClock.elapsedRealtime() - startedAt
                 logMetrics("failed", duration)
                 withContext(NonCancellable) {
-                    if (previous == null) {
-                        current = current.copy(status = "failed", errorMessage = message, durationMs = duration)
-                        runCatching { repository.update(current) }
-                    } else {
-                        // 重答异常：旧结果与元数据保持原样。
-                        current = previous.copy()
-                    }
+                    persistFailure(message, duration)
                 }
                 updateTaskStatus(AnalysisTaskStatus.FAILED, titles = titles, error = message, failedIndex = currentStageIndex())
                 _analysisError.value = message

@@ -87,6 +87,28 @@ interface QuestionDao {
     @Query("UPDATE questions SET checkpointJson = :json WHERE id = :id")
     suspend fun updateCheckpoint(id: String, json: String?)
 
+    @Query("UPDATE questions SET status = :status WHERE id = :id")
+    suspend fun updateStatus(id: String, status: String)
+
+    // 失败写库只改分析状态字段，不整行回写；checkpointJson 为空时保留库中已有的预览。
+    @Query(
+        """
+        UPDATE questions
+        SET status = :status,
+            errorMessage = :errorMessage,
+            durationMs = :durationMs,
+            checkpointJson = COALESCE(:checkpointJson, checkpointJson)
+        WHERE id = :id
+        """
+    )
+    suspend fun updateAnalysisFailure(
+        id: String,
+        status: String,
+        errorMessage: String?,
+        durationMs: Long,
+        checkpointJson: String?
+    )
+
     @Query("DELETE FROM questions WHERE id = :id")
     suspend fun deleteById(id: String)
 
@@ -224,6 +246,16 @@ class QuestionRepository(private val dao: QuestionDao) {
     suspend fun update(question: Question) = withContext(Dispatchers.Default) { dao.update(question.toEntity()) }
 
     suspend fun updateCheckpoint(id: String, json: String?) = dao.updateCheckpoint(id, json)
+
+    suspend fun updateAnalysisStatus(id: String, status: String) = dao.updateStatus(id, status)
+
+    suspend fun updateAnalysisFailure(
+        id: String,
+        status: String,
+        errorMessage: String?,
+        durationMs: Long,
+        checkpointJson: String?
+    ) = dao.updateAnalysisFailure(id, status, errorMessage, durationMs, checkpointJson)
 
     suspend fun delete(id: String) = dao.deleteById(id)
 

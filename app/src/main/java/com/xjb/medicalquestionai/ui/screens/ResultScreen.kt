@@ -121,11 +121,14 @@ import com.xjb.medicalquestionai.ui.components.AnalysisAnswerCard
 import com.xjb.medicalquestionai.ui.components.AnalysisDetails
 import com.xjb.medicalquestionai.ui.components.AnalysisWarningCard
 import com.xjb.medicalquestionai.ui.components.AppTopBar
+import com.xjb.medicalquestionai.ui.components.CaptureCompletenessCard
 import com.xjb.medicalquestionai.ui.components.CollapsibleSection
 import com.xjb.medicalquestionai.ui.components.ErrorBanner
 import com.xjb.medicalquestionai.ui.components.InfoBanner
 import com.xjb.medicalquestionai.ui.components.QuestionTypeChips
+import com.xjb.medicalquestionai.ui.components.RecognizedQuestionCard
 import com.xjb.medicalquestionai.ui.components.SectionCard
+import com.xjb.medicalquestionai.ui.components.SeenOptionsCard
 import com.xjb.medicalquestionai.ui.components.rememberFileImageRequest
 import com.xjb.medicalquestionai.ui.components.QuestionImageViewer
 import com.xjb.medicalquestionai.ui.returnFromDetail
@@ -295,25 +298,27 @@ fun ResultScreen(
                             }
                         }
                     )
-                    FollowUpInputBar(
-                    value = followUpInput,
-                    onValueChange = { followUpInput = it },
-                    sending = sendingFollowUp,
-                    enabled = canFollowUp,
-                    attachAvailable = question.imagePaths.isNotEmpty(),
-                    attachImages = attachImages,
-                    onAttachChange = { attachImages = it },
-                    onSend = {
-                        val text = followUpInput.trim()
-                        if (text.isNotEmpty() && !sendingFollowUp) {
-                            viewModel.sendFollowUp(questionId, text, attachImages) {
-                                // 只有用户没有在等待期间改写输入时才清空，失败时保留原文供重试。
-                                if (followUpInput.trim() == text) followUpInput = ""
-                            }
-                        }
-                    },
-                    onStop = { viewModel.cancelFollowUp(questionId) }
-                    )
+                    if (question.result != null) {
+                        FollowUpInputBar(
+                            value = followUpInput,
+                            onValueChange = { followUpInput = it },
+                            sending = sendingFollowUp,
+                            enabled = canFollowUp,
+                            attachAvailable = question.imagePaths.isNotEmpty(),
+                            attachImages = attachImages,
+                            onAttachChange = { attachImages = it },
+                            onSend = {
+                                val text = followUpInput.trim()
+                                if (text.isNotEmpty() && !sendingFollowUp) {
+                                    viewModel.sendFollowUp(questionId, text, attachImages) {
+                                        // 只有用户没有在等待期间改写输入时才清空，失败时保留原文供重试。
+                                        if (followUpInput.trim() == text) followUpInput = ""
+                                    }
+                                }
+                            },
+                            onStop = { viewModel.cancelFollowUp(questionId) }
+                        )
+                    }
                 }
             }
         },
@@ -348,6 +353,12 @@ fun ResultScreen(
                             item(key = "answer-preview", contentType = "answer-preview") {
                                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     AnalysisAnswerCard(result = runningPreviewResult, compact = true)
+                                    if (runningPreviewResult.recognizedQuestion.isNotBlank()) {
+                                        RecognizedQuestionCard(runningPreviewResult)
+                                    }
+                                    if (runningPreviewResult.optionsSeen.isNotEmpty()) {
+                                        SeenOptionsCard(runningPreviewResult)
+                                    }
                                     if (runningPreviewResult.warnings.isNotEmpty()) {
                                         AnalysisWarningCard(runningPreviewResult.warnings)
                                     }
@@ -406,9 +417,26 @@ fun ResultScreen(
                         }
                         if (result == null && q.checkpoint != null) {
                             item(key = "checkpoint-notice", contentType = "notice") {
-                                InfoBanner("未完成预览：离开页面时解析已停止，以下内容不是正式答案，不能追问、复制或分享。可点击“重新解析”重新请求。")
+                                InfoBanner(
+                                    when (q.status) {
+                                        "failed" ->
+                                            "未完成预览：解析失败，以下只保留已生成的部分内容，不是最终答案，不能追问、复制或分享。可点击“重新解析”重新请求。"
+                                        else ->
+                                            "未完成预览：离开页面时解析已停止，以下内容不是正式答案，不能追问、复制或分享。可点击“重新解析”重新请求。"
+                                    }
+                                )
                             }
                             item(key = "checkpoint-answer", contentType = "answer") { AnalysisAnswerCard(result = q.checkpoint, compact = true) }
+                            if (q.checkpoint.recognizedQuestion.isNotBlank()) {
+                                item(key = "checkpoint-question", contentType = "question") {
+                                    RecognizedQuestionCard(q.checkpoint)
+                                }
+                            }
+                            if (q.checkpoint.questionType == "single" || q.checkpoint.questionType == "multiple") {
+                                item(key = "checkpoint-options", contentType = "options") {
+                                    SeenOptionsCard(q.checkpoint)
+                                }
+                            }
                             if (q.imagePaths.isNotEmpty()) {
                                 item(key = "checkpoint-images", contentType = "images") { QuestionImagesRow(q.imagePaths) }
                             }
@@ -420,6 +448,21 @@ fun ResultScreen(
                                 }
                             }
                             item(key = "answer", contentType = "answer") { AnalysisAnswerCard(result = result) }
+                            if (result.needsCaptureCompletenessReview) {
+                                item(key = "capture-completeness", contentType = "notice") {
+                                    CaptureCompletenessCard(result)
+                                }
+                            }
+                            if (result.recognizedQuestion.isNotBlank()) {
+                                item(key = "recognized-question", contentType = "question") {
+                                    RecognizedQuestionCard(result)
+                                }
+                            }
+                            if (result.questionType == "single" || result.questionType == "multiple") {
+                                item(key = "seen-options", contentType = "options") {
+                                    SeenOptionsCard(result)
+                                }
+                            }
                             item(key = "result-meta", contentType = "meta") { ResultMetaLine(q) }
                             if (result.warnings.isNotEmpty()) {
                                 item(key = "answer-warnings", contentType = "warnings") { AnalysisWarningCard(result.warnings) }
@@ -430,7 +473,7 @@ fun ResultScreen(
                             item(key = "answer-details", contentType = "details") {
                                 CollapsibleSection(
                                     title = "详细解析",
-                                    subtitle = "题干识别 · 选项对照 · 解题思路"
+                                    subtitle = "选项分析 · 解题思路 · 知识点"
                                 ) {
                                     AnalysisDetails(result)
                                 }
@@ -648,6 +691,12 @@ private fun AnalysisProgressCard(
                     "已识别题干，正在生成答案…",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    previewResult.recognizedQuestion,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
             if (task.reasoningPreview.isNotBlank()) {

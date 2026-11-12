@@ -457,7 +457,7 @@ fun CameraScreen(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "拍摄后可在首页旋转、裁剪、调整顺序。涉及患者信息时，请先遮挡姓名、住院号等。",
+                    "拍摄后可选择裁剪本题；不裁剪也可以直接使用原图。涉及患者信息时，请先遮挡姓名、住院号等。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
