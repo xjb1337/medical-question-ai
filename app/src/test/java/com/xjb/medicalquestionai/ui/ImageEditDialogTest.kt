@@ -21,6 +21,7 @@ import coil.Coil
 import coil.request.ImageRequest
 import com.github.takahirom.roborazzi.*
 import com.xjb.medicalquestionai.data.DraftImage
+import com.xjb.medicalquestionai.data.ImageCropResult
 import com.xjb.medicalquestionai.ui.components.rememberFileImageRequest
 import com.xjb.medicalquestionai.ui.screens.CropGeometry
 import com.xjb.medicalquestionai.ui.screens.CropRectKey
@@ -28,6 +29,7 @@ import com.xjb.medicalquestionai.ui.screens.ImageEditDialog
 import com.xjb.medicalquestionai.ui.theme.MedicalQuestionAiTheme
 import java.io.File
 import java.time.Duration
+import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -75,6 +77,7 @@ class ImageEditDialogTest {
         render()
         compose.onNodeWithText("裁剪").performClick()
         assertCropButtons()
+        capture("crop-primary-replace")
         val initial = currentRect()
         capture("crop-before")
         dragBottomRight(0.24f)
@@ -125,6 +128,49 @@ class ImageEditDialogTest {
     }
 
     @Test
+    fun postImportReviewStartsDirectlyInCropModeAndClosesAfterSuccess() {
+        render(startInCropMode = true)
+
+        compose.onNodeWithTag("crop-overlay").assertIsDisplayed()
+        compose.onNodeWithText("替换当前图").assertIsDisplayed()
+        compose.onNodeWithText("前移").assertDoesNotExist()
+        dragBottomRight(0.18f)
+        compose.onNodeWithText("替换当前图").performClick()
+
+        compose.waitUntil(5_000) { dismisses == 1 }
+        assertEquals(1, crops.size)
+        assertFalse(crops.single().second)
+    }
+
+    @Test
+    fun savingDisablesBothActionsAndFailureKeepsTheCropRect() {
+        val pending = CompletableDeferred<ImageCropResult>()
+        render(cropDeferred = pending)
+        compose.onNodeWithText("裁剪").performClick()
+        dragBottomRight(0.22f)
+        val selected = currentRect()
+
+        compose.onNodeWithText("替换当前图").performClick()
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithText("正在保存…").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("crop-replace-primary").assertIsNotEnabled()
+        compose.onNodeWithTag("crop-keep-secondary").assertIsNotEnabled()
+        capture("crop-saving")
+
+        pending.complete(ImageCropResult.Failure("裁剪失败：虚构测试错误"))
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithTag("crop-save-error").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("裁剪失败：虚构测试错误").assertIsDisplayed()
+        compose.onNodeWithTag("crop-replace-primary").assertIsEnabled()
+        compose.onNodeWithTag("crop-keep-secondary").assertIsEnabled()
+        compose.onNodeWithTag("crop-overlay").assertIsDisplayed()
+        assertEquals(selected, currentRect())
+        capture("crop-save-error")
+    }
+
+    @Test
     @Config(qualifiers = "w360dp-h800dp-xxhdpi")
     fun narrowScreenWithLargeFontKeepsEveryButtonVisibleAndClickable() {
         render(fontScale = 1.3f)
@@ -163,7 +209,12 @@ class ImageEditDialogTest {
         assertEquals(initial.data, requireNotNull(request).data)
     }
 
-    private fun render(fontScale: Float = 1f) {
+    private fun render(
+        fontScale: Float = 1f,
+        cropResult: ImageCropResult = ImageCropResult.Success,
+        cropDeferred: CompletableDeferred<ImageCropResult>? = null,
+        startInCropMode: Boolean = false
+    ) {
         val image = fixtureImage()
         val context = compose.activity
         var imageRequest: ImageRequest? = null
@@ -179,7 +230,11 @@ class ImageEditDialogTest {
                         image = image, index = 2, enableMoveLeft = true, enableMoveRight = true,
                         onDismiss = { dismisses++ }, onMoveLeft = { moves++ }, onMoveRight = { moves++ },
                         onRotate = { rotations.add(it) },
-                        onCrop = { rect, keepOriginal -> crops.add(rect to keepOriginal) },
+                        onCrop = { rect, keepOriginal ->
+                            crops.add(rect to keepOriginal)
+                            cropDeferred?.await() ?: cropResult
+                        },
+                        startInCropMode = startInCropMode,
                         onDelete = { deletes++ }
                     )
                 }
@@ -192,7 +247,12 @@ class ImageEditDialogTest {
     }
 
     private fun assertNormalButtons() = assertButtons("前移", "后移", "左转", "右转", "裁剪", "删除", "完成")
-    private fun assertCropButtons() = assertButtons("取消", "重置", "替换当前图", "保留原图并添加")
+    private fun assertCropButtons() {
+        assertButtons("取消", "重置", "替换当前图", "保留原图并添加")
+        val replace = compose.onNodeWithTag("crop-replace-primary").fetchSemanticsNode().boundsInRoot
+        val keep = compose.onNodeWithTag("crop-keep-secondary").fetchSemanticsNode().boundsInRoot
+        assertTrue("replace must be the primary action above the optional keep action", replace.top < keep.top)
+    }
 
     private fun assertButtons(vararg labels: String) {
         val editorBounds = compose.onNodeWithTag("image-editor").fetchSemanticsNode().boundsInRoot

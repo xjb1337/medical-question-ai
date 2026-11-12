@@ -27,6 +27,20 @@ data class DraftImage(
     val revision: Long = 0
 )
 
+enum class ImageReviewSource {
+    CAMERA,
+    GALLERY
+}
+
+/**
+ * Images added by the most recent capture or picker result. The IDs keep the
+ * review flow from touching images that were already in the draft.
+ */
+data class PendingImageReview(
+    val imageIds: List<String>,
+    val source: ImageReviewSource
+)
+
 data class QuestionDraft(
     val questionType: QuestionType = QuestionType.AUTO,
     val text: String = "",

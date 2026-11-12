@@ -70,6 +70,9 @@ import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.xjb.medicalquestionai.MainViewModel
 import com.xjb.medicalquestionai.data.DraftImage
+import com.xjb.medicalquestionai.data.ImageCropResult
+import com.xjb.medicalquestionai.data.ImageEditPolicy
+import com.xjb.medicalquestionai.data.ImageReviewSource
 import com.xjb.medicalquestionai.data.ImageStore
 import com.xjb.medicalquestionai.ui.openDetail
 import com.xjb.medicalquestionai.ui.openTopLevel
@@ -98,10 +101,15 @@ fun NewQuestionScreen(
     val analysisError by viewModel.analysisError.collectAsState()
     val notice by viewModel.draftNotice.collectAsState()
     val parkedDraft by viewModel.parkedDraft.collectAsState()
+    val pendingImageReview by viewModel.pendingImageReview.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var editingImageId by remember { mutableStateOf<String?>(null) }
+    var editingImageStartInCrop by remember { mutableStateOf(false) }
     var textExpanded by rememberSaveable { mutableStateOf(false) }
     val editingImage = editingImageId?.let { id -> draft.images.firstOrNull { it.id == id } }
+    val pendingReviewImages = pendingImageReview?.let {
+        ImageEditPolicy.reviewImages(draft.images, it.imageIds)
+    }.orEmpty()
 
     val picker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(ImageStore.MAX_IMAGES)
@@ -283,7 +291,10 @@ fun NewQuestionScreen(
                                     image = image,
                                     index = draft.images.indexOfFirst { it.id == image.id } + 1,
                                     enabled = !analyzing,
-                                    onOpen = { editingImageId = image.id }
+                                    onOpen = {
+                                        editingImageStartInCrop = false
+                                        editingImageId = image.id
+                                    }
                                 )
                             }
                         }
@@ -292,7 +303,7 @@ fun NewQuestionScreen(
                             "共 ${draft.images.size} 张 · 约 ${formatBytes(draft.images.sumOf { it.sizeBytes })}"
                         )
                         Text(
-                            "点按图片可旋转、裁剪、排序或删除；建议保留完整画面，再另加局部图。",
+                            "拍完可裁剪本题，默认用裁剪后的图替换原图；点按图片可旋转、排序或删除。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -437,15 +448,48 @@ fun NewQuestionScreen(
             index = draft.images.indexOfFirst { it.id == editingImage.id } + 1,
             enableMoveLeft = draft.images.indexOfFirst { it.id == editingImage.id } > 0,
             enableMoveRight = draft.images.indexOfFirst { it.id == editingImage.id } < draft.images.lastIndex,
-            onDismiss = { editingImageId = null },
+            onDismiss = {
+                editingImageId = null
+                editingImageStartInCrop = false
+            },
             onMoveLeft = { viewModel.moveImage(editingImage.id, -1) },
             onMoveRight = { viewModel.moveImage(editingImage.id, 1) },
             onRotate = { degrees -> viewModel.rotateImage(editingImage.id, degrees) },
-            onCrop = { rect, keepOriginal -> viewModel.cropImage(editingImage.id, rect, keepOriginal) },
+            onCrop = { rect, keepOriginal ->
+                viewModel.cropImage(editingImage.id, rect, keepOriginal).also { result ->
+                    if (result is ImageCropResult.Success) {
+                        viewModel.markPendingImageReviewHandled(editingImage.id)
+                    }
+                }
+            },
+            startInCropMode = editingImageStartInCrop,
             onDelete = {
                 viewModel.removeImage(editingImage.id)
                 editingImageId = null
+                editingImageStartInCrop = false
             }
+        )
+    }
+
+    if (editingImage == null && pendingImageReview != null && pendingReviewImages.isNotEmpty()) {
+        PostImportReviewDialog(
+            images = pendingReviewImages,
+            source = pendingImageReview!!.source,
+            onCropImage = { imageId ->
+                editingImageStartInCrop = true
+                editingImageId = imageId
+            },
+            onUseOriginal = viewModel::useOriginalPendingImageReview,
+            onRetakeOrReselect = {
+                if (pendingImageReview!!.source == ImageReviewSource.CAMERA) {
+                    viewModel.discardPendingImageReviewImages()
+                    navController.openDetail("camera?source=home&sessionId=${draft.sessionId}")
+                } else {
+                    viewModel.discardPendingImageReviewImages()
+                    picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }
+            },
+            onDismiss = viewModel::useOriginalPendingImageReview
         )
     }
 }
@@ -467,7 +511,7 @@ private fun CameraHeroCard(enabled: Boolean, compact: Boolean, onClick: () -> Un
                 Column(Modifier.weight(1f)) {
                     Text("继续拍摄", style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer)
-                    Text("补充局部图片，让题目信息更完整", style = MaterialTheme.typography.bodySmall,
+                    Text("拍完可直接裁剪本题", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f))
                 }
                 Icon(Icons.AutoMirrored.Outlined.ArrowForward, contentDescription = null,

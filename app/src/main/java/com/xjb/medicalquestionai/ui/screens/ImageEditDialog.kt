@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -31,6 +33,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -48,8 +51,10 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.xjb.medicalquestionai.data.DraftImage
+import com.xjb.medicalquestionai.data.ImageCropResult
 import com.xjb.medicalquestionai.ui.components.formatBytes
 import com.xjb.medicalquestionai.ui.components.rememberFileImageRequest
+import kotlinx.coroutines.launch
 
 internal val CropRectKey = SemanticsPropertyKey<Rect>("CropRect")
 
@@ -63,15 +68,42 @@ internal fun ImageEditDialog(
     onMoveLeft: () -> Unit,
     onMoveRight: () -> Unit,
     onRotate: (Int) -> Unit,
-    onCrop: (android.graphics.RectF, Boolean) -> Unit,
+    onCrop: suspend (android.graphics.RectF, Boolean) -> ImageCropResult,
+    startInCropMode: Boolean = false,
     onDelete: () -> Unit
 ) {
-    var cropMode by remember(image.id) { mutableStateOf(false) }
+    var cropMode by remember(image.id, startInCropMode) { mutableStateOf(startInCropMode) }
     var cropRect by remember(image.id) { mutableStateOf(CropGeometry.defaultRect) }
     var confirmDelete by remember(image.id) { mutableStateOf(false) }
+    var cropSaving by remember(image.id) { mutableStateOf(false) }
+    var cropError by remember(image.id) { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    fun saveCrop(keepOriginal: Boolean) {
+        if (cropSaving) return
+        val savedRect = cropRect
+        cropSaving = true
+        cropError = null
+        scope.launch {
+            when (val result = onCrop(savedRect.toAndroidRect(), keepOriginal)) {
+                ImageCropResult.Success -> {
+                    cropSaving = false
+                    if (startInCropMode) onDismiss() else cropMode = false
+                }
+                is ImageCropResult.Failure -> {
+                    cropSaving = false
+                    cropError = result.message
+                }
+            }
+        }
+    }
 
     Dialog(
-        onDismissRequest = { if (cropMode) cropMode = false else onDismiss() },
+        onDismissRequest = {
+            if (!cropSaving) {
+                if (cropMode) cropMode = false else onDismiss()
+            }
+        },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
         Surface(modifier = Modifier.fillMaxSize()) {
@@ -124,27 +156,74 @@ internal fun ImageEditDialog(
                         )
                         if (cropMode) {
                             Text(
-                                "拖动四角调整范围，拖动框内移动。可保留原图并新增裁剪图，或替换当前图。",
+                                "拖动四角调整范围，拖动框内移动。保存后将用裁剪后的图替换当前图；如仍需完整原图，可选择保留并新增。",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                TextButton(onClick = { cropMode = false }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("取消") }
-                                TextButton(onClick = { cropRect = CropGeometry.defaultRect }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("重置") }
+                                TextButton(
+                                    onClick = {
+                                        cropError = null
+                                        cropMode = false
+                                    },
+                                    enabled = !cropSaving,
+                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                                ) { Text("取消") }
+                                TextButton(
+                                    onClick = {
+                                        cropError = null
+                                        cropRect = CropGeometry.defaultRect
+                                    },
+                                    enabled = !cropSaving,
+                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                                ) { Text("重置") }
+                            }
+                            if (cropSaving) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp).testTag("crop-saving-indicator"),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(Modifier.size(8.dp))
+                                    Text(
+                                        "正在保存裁剪结果…",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            if (cropError != null) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.errorContainer,
+                                    shape = MaterialTheme.shapes.medium,
+                                    modifier = Modifier.fillMaxWidth().testTag("crop-save-error")
+                                ) {
+                                    Text(
+                                        cropError!!,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                            }
+                            Button(
+                                onClick = { saveCrop(keepOriginal = false) },
+                                enabled = !cropSaving,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                                    .testTag("crop-replace-primary")
+                            ) {
+                                Text(if (cropSaving) "正在保存…" else "替换当前图")
                             }
                             OutlinedButton(
-                                onClick = {
-                                    onCrop(cropRect.toAndroidRect(), false)
-                                    cropMode = false
-                                },
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                            ) { Text("替换当前图") }
-                            Button(
-                                onClick = {
-                                    onCrop(cropRect.toAndroidRect(), true)
-                                    cropMode = false
-                                },
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                onClick = { saveCrop(keepOriginal = true) },
+                                enabled = !cropSaving,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                                    .testTag("crop-keep-secondary")
                             ) { Text("保留原图并添加") }
                         } else {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {

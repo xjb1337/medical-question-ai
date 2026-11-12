@@ -63,4 +63,33 @@ class ImageEditPolicyTest {
         assertTrue(ImageEditPolicy.canAddImage(eight, 9))
         assertEquals(9, nine.size)
     }
+
+    @Test
+    fun reviewResolutionIgnoresStaleIdsAndKeepsImportOrder() {
+        val older = image("older")
+        val firstNew = image("new-1")
+        val secondNew = image("new-2")
+
+        val resolved = ImageEditPolicy.reviewImages(
+            listOf(older, firstNew, secondNew),
+            listOf("missing", secondNew.id, firstNew.id)
+        )
+
+        assertEquals(listOf("new-2", "new-1"), resolved.map { it.id })
+    }
+
+    @Test
+    fun discardingAReviewRemovesOnlyNewlyImportedImages() {
+        val oldOne = image("old-1")
+        val oldTwo = image("old-2")
+        val newOne = image("new-1")
+        val newTwo = image("new-2")
+
+        val remaining = ImageEditPolicy.removeByIds(
+            listOf(oldOne, newOne, oldTwo, newTwo),
+            setOf(newOne.id, newTwo.id)
+        )
+
+        assertEquals(listOf("old-1", "old-2"), remaining.map { it.id })
+    }
 }
