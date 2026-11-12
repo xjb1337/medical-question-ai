@@ -11,6 +11,7 @@ import com.xjb.medicalquestionai.data.ImageReviewSource
 import com.xjb.medicalquestionai.data.PendingImageReview
 import com.xjb.medicalquestionai.ui.AuditKeyStore
 import java.io.File
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -56,6 +57,7 @@ class PostImportReviewViewModelTest {
         assertTrue(completed)
         val newImage = viewModel.draft.value.images.single { it.id != olderImage.id }
         assertTrue(File(newImage.path).exists())
+        assertTrue(File(requireNotNull(newImage.sourcePath)).exists())
 
         viewModel.discardPendingImageReviewImages()
 
@@ -63,6 +65,7 @@ class PostImportReviewViewModelTest {
         assertEquals(listOf(olderImage.id), viewModel.draft.value.images.map { it.id })
         assertTrue(File(olderImage.path).exists())
         assertFalse(File(newImage.path).exists())
+        assertFalse(File(requireNotNull(newImage.sourcePath)).exists())
     }
 
     @Test
@@ -88,7 +91,28 @@ class PostImportReviewViewModelTest {
 
         assertEquals(listOf(older.id), viewModel.draft.value.images.map { it.id })
         assertTrue(File(older.path).exists())
-        newImages.forEach { assertFalse(File(it.path).exists()) }
+        newImages.forEach {
+            assertFalse(File(it.path).exists())
+            assertFalse(File(requireNotNull(it.sourcePath)).exists())
+        }
+    }
+
+    @Test
+    fun clearingAParkedDraftRemovesBothImageCopies() = runBlocking {
+        val viewModel = MainViewModel(app)
+        viewModel.addImages(listOf(Uri.fromFile(imageFile("parked.jpg"))))
+        val image = awaitReview(viewModel).let { viewModel.draft.value.images.single() }
+        viewModel.useOriginalPendingImageReview()
+
+        val prepared = viewModel.prepareNextQuestion("fictional-question")
+        assertTrue(prepared.success)
+        assertNotNull(viewModel.parkedDraft.value)
+
+        viewModel.clearParkedDraft()
+
+        assertNull(viewModel.parkedDraft.value)
+        assertFalse(File(image.path).exists())
+        assertFalse(File(requireNotNull(image.sourcePath)).exists())
     }
 
     private fun awaitReview(viewModel: MainViewModel): PendingImageReview {

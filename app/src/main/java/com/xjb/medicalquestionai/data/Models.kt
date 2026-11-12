@@ -24,7 +24,9 @@ data class DraftImage(
     val height: Int,
     val sizeBytes: Long,
     val warnings: List<String> = emptyList(),
-    val revision: Long = 0
+    val revision: Long = 0,
+    /** 应用私有的高清源图；[path] 始终是用于展示和上传的派生图。 */
+    val sourcePath: String? = null
 )
 
 enum class ImageReviewSource {

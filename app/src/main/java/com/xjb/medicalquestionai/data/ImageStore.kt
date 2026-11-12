@@ -3,6 +3,7 @@ package com.xjb.medicalquestionai.data
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BitmapRegionDecoder
 import android.graphics.Matrix
 import android.net.Uri
 import androidx.core.content.FileProvider
@@ -25,18 +26,13 @@ class ImageStore(private val context: Context) {
     suspend fun importImage(uri: Uri): DraftImage = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        // inJustDecodeBounds=true intentionally returns no Bitmap. Check only
-        // whether the stream opens here; decoding success is judged below.
         val boundsStream = try {
             resolver.openInputStream(uri)
         } catch (e: SecurityException) {
             throw ImageImportException("没有权限读取这张图片，请重新选择", e)
         } catch (e: Exception) {
             throw ImageImportException("无法读取这张图片，请重新选择或换一张图片", e)
-        }
-        if (boundsStream == null) {
-            throw ImageImportException("无法读取这张图片，请重新选择或换一张图片")
-        }
+        } ?: throw ImageImportException("无法读取这张图片，请重新选择或换一张图片")
         try {
             boundsStream.use { stream -> BitmapFactory.decodeStream(stream, null, bounds) }
         } catch (e: Exception) {
@@ -49,9 +45,8 @@ class ImageStore(private val context: Context) {
             throw ImageImportException("图片格式无法识别，请换一张 JPG、PNG 或 WEBP 图片")
         }
 
-        val sample = calculateSampleSize(originalWidth, originalHeight)
         val options = BitmapFactory.Options().apply {
-            inSampleSize = sample
+            inSampleSize = calculateSampleSize(originalWidth, originalHeight, MAX_SOURCE_DIMENSION)
             inPreferredConfig = Bitmap.Config.ARGB_8888
         }
         val pixelStream = try {
@@ -60,10 +55,7 @@ class ImageStore(private val context: Context) {
             throw ImageImportException("没有权限读取这张图片，请重新选择", e)
         } catch (e: Exception) {
             throw ImageImportException("无法再次读取这张图片，请重新选择", e)
-        }
-        if (pixelStream == null) {
-            throw ImageImportException("无法再次读取这张图片，请重新选择")
-        }
+        } ?: throw ImageImportException("无法再次读取这张图片，请重新选择")
         var bitmap: Bitmap? = try {
             pixelStream.use { stream -> BitmapFactory.decodeStream(stream, null, options) }
         } catch (e: SecurityException) {
@@ -75,7 +67,9 @@ class ImageStore(private val context: Context) {
         }
         if (bitmap == null) throw ImageImportException("图片解码失败，请换一张图片重试")
 
-        var target: File? = null
+        val token = imageToken()
+        val sourceOutput = File(imagesDir, "$SOURCE_PREFIX$token.jpg")
+        val displayOutput = File(imagesDir, "$DERIVED_PREFIX$token.jpg")
         try {
             val orientation = runCatching {
                 resolver.openInputStream(uri)?.use { stream ->
@@ -86,52 +80,37 @@ class ImageStore(private val context: Context) {
                 } ?: ExifInterface.ORIENTATION_NORMAL
             }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
             bitmap = applyOrientation(bitmap, orientation)
+            bitmap = scaleDownTo(bitmap, MAX_SOURCE_DIMENSION)
 
-            val maxSide = maxOf(bitmap.width, bitmap.height)
-            if (maxSide > MAX_DIMENSION) {
-                val ratio = MAX_DIMENSION.toFloat() / maxSide
-                val scaled = Bitmap.createScaledBitmap(
-                    bitmap,
-                    (bitmap.width * ratio).toInt().coerceAtLeast(1),
-                    (bitmap.height * ratio).toInt().coerceAtLeast(1),
-                    true
-                )
-                if (scaled !== bitmap) bitmap.recycle()
-                bitmap = scaled
+            writeBitmap(sourceOutput, bitmap, SOURCE_JPEG_QUALITY)
+
+            val displayBitmap = scaleDownTo(bitmap, MAX_DIMENSION)
+            try {
+                writeBitmap(displayOutput, displayBitmap, JPEG_QUALITY)
+            } finally {
+                if (displayBitmap !== bitmap) displayBitmap.recycle()
             }
 
-            val output = File(imagesDir, "q_${System.currentTimeMillis()}_${UUID.randomUUID()}.jpg")
-            target = output
-            val compressed = FileOutputStream(output).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
-            }
-            if (!compressed || output.length() <= 0L) {
-                throw ImageImportException("图片保存失败，请重试")
-            }
-            val warnings = buildList {
-                if (originalWidth < LOW_RES_THRESHOLD || originalHeight < LOW_RES_THRESHOLD) {
-                    add("分辨率偏低，建议靠近重拍以保证文字清晰")
-                }
-                if (maxOf(originalWidth, originalHeight) > HIGH_RES_THRESHOLD) {
-                    add("原图较大，已自动压缩后上传")
-                }
-            }
             DraftImage(
                 id = UUID.randomUUID().toString(),
-                path = output.absolutePath,
+                path = displayOutput.absolutePath,
                 width = bitmap.width,
                 height = bitmap.height,
-                sizeBytes = output.length(),
-                warnings = warnings
+                sizeBytes = displayOutput.length(),
+                warnings = importWarnings(originalWidth, originalHeight),
+                sourcePath = sourceOutput.absolutePath
             )
         } catch (e: ImageImportException) {
-            target?.delete()
+            sourceOutput.delete()
+            displayOutput.delete()
             throw e
         } catch (e: OutOfMemoryError) {
-            target?.delete()
+            sourceOutput.delete()
+            displayOutput.delete()
             throw ImageImportException("图片过大，设备内存不足，请先缩小图片后重试", e)
         } catch (e: Exception) {
-            target?.delete()
+            sourceOutput.delete()
+            displayOutput.delete()
             throw ImageImportException("图片处理失败，请重试或换一张图片", e)
         } finally {
             bitmap.recycle()
@@ -139,71 +118,112 @@ class ImageStore(private val context: Context) {
     }
 
     suspend fun rotate(path: String, degrees: Int): ImageMeta = withContext(Dispatchers.IO) {
-        val file = File(path)
-        require(file.exists()) { "图片文件不存在" }
-        val source = BitmapFactory.decodeFile(path) ?: error("图片解码失败")
+        val displayFile = File(path)
+        require(displayFile.exists()) { "图片文件不存在" }
+        val sourceFile = cropSource(displayFile)
+        val source = decodeBounded(sourceFile, MAX_SOURCE_DIMENSION) ?: error("图片解码失败")
         val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
         val rotated = Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
-        writeBitmap(file, rotated)
-        val width = rotated.width
-        val height = rotated.height
         if (rotated !== source) source.recycle()
-        rotated.recycle()
-        ImageMeta(width, height, file.length())
+        var upload: Bitmap? = null
+        try {
+            if (isOwnedImage(displayFile)) {
+                val sourceTarget = sourceFileFor(displayFile)
+                writeBitmap(sourceTarget, rotated, SOURCE_JPEG_QUALITY)
+                upload = scaleDownTo(rotated, MAX_DIMENSION)
+                writeBitmap(displayFile, upload, JPEG_QUALITY)
+                ImageMeta(
+                    width = rotated.width,
+                    height = rotated.height,
+                    sizeBytes = displayFile.length(),
+                    sourcePath = sourceTarget.absolutePath
+                )
+            } else {
+                writeBitmap(displayFile, rotated, SOURCE_JPEG_QUALITY)
+                ImageMeta(rotated.width, rotated.height, displayFile.length())
+            }
+        } finally {
+            if (upload != null && upload !== rotated) upload.recycle()
+            rotated.recycle()
+        }
     }
 
     suspend fun cropCopy(path: String, rect: android.graphics.RectF): DraftImage = withContext(Dispatchers.IO) {
-        val file = File(path)
-        require(file.exists()) { "图片文件不存在" }
-        val source = BitmapFactory.decodeFile(path) ?: error("图片解码失败")
-        var cropped: Bitmap? = null
-        var target: File? = null
+        val displayFile = File(path)
+        require(displayFile.exists()) { "图片文件不存在" }
+        val cropped = decodeCrop(cropSource(displayFile), rect)
+        val token = imageToken()
+        val sourceOutput = File(imagesDir, "$SOURCE_PREFIX$token.jpg")
+        val displayOutput = File(imagesDir, "$DERIVED_PREFIX$token.jpg")
+        var upload: Bitmap? = null
         try {
-            val bounds = normalizedCrop(source, rect)
-            val croppedBitmap = Bitmap.createBitmap(source, bounds[0], bounds[1], bounds[2], bounds[3])
-            cropped = croppedBitmap
-            target = File(imagesDir, "q_${System.currentTimeMillis()}_${UUID.randomUUID()}.jpg")
-            writeBitmap(target, croppedBitmap)
-            if (target.length() <= 0L) throw ImageImportException("裁剪图片保存失败，请重试")
+            writeBitmap(sourceOutput, cropped, SOURCE_JPEG_QUALITY)
+            upload = scaleDownTo(cropped, MAX_DIMENSION)
+            writeBitmap(displayOutput, upload, JPEG_QUALITY)
             DraftImage(
                 id = UUID.randomUUID().toString(),
-                path = target.absolutePath,
-                width = croppedBitmap.width,
-                height = croppedBitmap.height,
-                sizeBytes = target.length(),
-                warnings = listOf("由上一张图片裁剪生成，原图已保留")
+                path = displayOutput.absolutePath,
+                width = cropped.width,
+                height = cropped.height,
+                sizeBytes = displayOutput.length(),
+                warnings = cropWarnings(cropped.width, cropped.height, keepOriginal = true),
+                sourcePath = sourceOutput.absolutePath
             )
         } catch (e: Exception) {
-            target?.delete()
+            sourceOutput.delete()
+            displayOutput.delete()
             throw e
         } finally {
-            if (cropped != null && cropped !== source) cropped.recycle()
-            source.recycle()
+            if (upload != null && upload !== cropped) upload.recycle()
+            cropped.recycle()
         }
     }
 
     suspend fun cropInPlace(path: String, rect: android.graphics.RectF): ImageMeta = withContext(Dispatchers.IO) {
-        val file = File(path)
-        require(file.exists()) { "图片文件不存在" }
-        val source = BitmapFactory.decodeFile(path) ?: error("图片解码失败")
-        var cropped: Bitmap? = null
+        val displayFile = File(path)
+        require(displayFile.exists()) { "图片文件不存在" }
+        val cropped = decodeCrop(cropSource(displayFile), rect)
+        var upload: Bitmap? = null
         try {
-            val bounds = normalizedCrop(source, rect)
-            val croppedBitmap = Bitmap.createBitmap(source, bounds[0], bounds[1], bounds[2], bounds[3])
-            cropped = croppedBitmap
-            writeBitmap(file, croppedBitmap)
-            if (file.length() <= 0L) throw ImageImportException("裁剪图片保存失败，请重试")
-            ImageMeta(croppedBitmap.width, croppedBitmap.height, file.length())
+            if (isOwnedImage(displayFile)) {
+                val sourceTarget = sourceFileFor(displayFile)
+                writeBitmap(sourceTarget, cropped, SOURCE_JPEG_QUALITY)
+                upload = scaleDownTo(cropped, MAX_DIMENSION)
+                writeBitmap(displayFile, upload, JPEG_QUALITY)
+                ImageMeta(
+                    width = cropped.width,
+                    height = cropped.height,
+                    sizeBytes = displayFile.length(),
+                    warnings = cropWarnings(cropped.width, cropped.height, keepOriginal = false),
+                    sourcePath = sourceTarget.absolutePath
+                )
+            } else {
+                writeBitmap(displayFile, cropped, SOURCE_JPEG_QUALITY)
+                ImageMeta(
+                    width = cropped.width,
+                    height = cropped.height,
+                    sizeBytes = displayFile.length(),
+                    warnings = cropWarnings(cropped.width, cropped.height, keepOriginal = false)
+                )
+            }
         } finally {
-            if (cropped != null && cropped !== source) cropped.recycle()
-            source.recycle()
+            if (upload != null && upload !== cropped) upload.recycle()
+            cropped.recycle()
         }
     }
 
     fun handleFor(path: String): File = File(path)
 
+    /** 删除展示图及其同 token 的高清源图；外部路径不会被删除。 */
     fun delete(path: String) {
-        runCatching { File(path).takeIf { it.exists() && it.parentFile?.canonicalPath == imagesDir.canonicalPath }?.delete() }
+        val file = ownedImage(path) ?: return
+        val candidates = when {
+            file.name.startsWith(DERIVED_PREFIX) -> listOf(file, sourceFileFor(file))
+            file.name.startsWith(SOURCE_PREFIX) -> listOf(file, displayFileFor(file))
+            else -> listOf(file)
+        }
+        candidates.distinctBy { runCatching { it.canonicalPath }.getOrDefault(it.absolutePath) }
+            .forEach { runCatching { if (it.exists()) it.delete() } }
     }
 
     fun deleteAll(paths: Iterable<String>) {
@@ -221,38 +241,157 @@ class ImageStore(private val context: Context) {
         runCatching { if (file.exists()) file.delete() }
     }
 
+    /**
+     * 上传入口的最后一道尺寸保险。新导入图片通常直接读取派生图；
+     * 旧图或调用方误传高清源图时，会在缓存中派生一份 ≤1800 的 JPEG。
+     */
     fun readBase64(path: String): String {
-        val bytes = File(path).readBytes()
+        val file = File(path)
+        val bounds = decodeBounds(file) ?: error("图片文件不存在或无法读取")
+        val maxSide = maxOf(bounds.outWidth, bounds.outHeight)
+        val alreadyUploadReady = maxSide <= MAX_DIMENSION &&
+            file.extension.lowercase() in JPEG_EXTENSIONS &&
+            !file.name.startsWith(SOURCE_PREFIX)
+        val bytes = if (alreadyUploadReady) {
+            file.readBytes()
+        } else {
+            val upload = createUploadJpeg(file)
+            try {
+                upload.readBytes()
+            } finally {
+                upload.delete()
+            }
+        }
         return android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
     }
 
     fun totalBytes(paths: List<String>): Long = paths.sumOf { runCatching { File(it).length() }.getOrDefault(0L) }
 
-    private fun writeBitmap(file: File, bitmap: Bitmap) {
-        val temp = File(file.parentFile, "${file.nameWithoutExtension}_tmp.jpg")
-        FileOutputStream(temp).use { out ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
+    private fun importWarnings(originalWidth: Int, originalHeight: Int): List<String> = buildList {
+        if (originalWidth < LOW_RES_THRESHOLD || originalHeight < LOW_RES_THRESHOLD) {
+            add("分辨率偏低，建议靠近重拍以保证文字清晰")
         }
-        if (!temp.renameTo(file)) {
-            temp.copyTo(file, overwrite = true)
+        if (maxOf(originalWidth, originalHeight) > HIGH_RES_THRESHOLD) {
+            add("已保留高清源图，上传时会自动压缩")
+        }
+    }
+
+    private fun cropWarnings(width: Int, height: Int, keepOriginal: Boolean): List<String> = buildList {
+        if (keepOriginal) add("由上一张图片裁剪生成，原图已保留")
+        if (minOf(width, height) < MIN_CROP_SHORT_SIDE) {
+            add(
+                "裁剪后短边仅 ${minOf(width, height)}px（低于 ${MIN_CROP_SHORT_SIDE}px），" +
+                    "文字可能不清晰，建议扩大裁剪范围或重拍"
+            )
+        }
+    }
+
+    private fun createUploadJpeg(file: File): File {
+        val bounds = decodeBounds(file) ?: error("图片解码失败")
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = calculateUploadSampleSize(bounds.outWidth, bounds.outHeight)
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        var bitmap = BitmapFactory.decodeFile(file.absolutePath, options) ?: error("图片解码失败")
+        val target = File.createTempFile("upload_", ".jpg", context.cacheDir)
+        try {
+            bitmap = scaleDownTo(bitmap, MAX_DIMENSION)
+            writeBitmap(target, bitmap, JPEG_QUALITY)
+            return target
+        } catch (e: Exception) {
+            target.delete()
+            throw e
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    private fun decodeCrop(sourceFile: File, rect: android.graphics.RectF): Bitmap {
+        val bounds = decodeBounds(sourceFile) ?: error("图片解码失败")
+        val region = normalizedCrop(bounds.outWidth, bounds.outHeight, rect)
+        @Suppress("DEPRECATION")
+        val decoder = BitmapRegionDecoder.newInstance(sourceFile.absolutePath, false)
+        return try {
+            val options = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
+            decoder.decodeRegion(
+                android.graphics.Rect(region[0], region[1], region[0] + region[2], region[1] + region[3]),
+                options
+            ) ?: error("裁剪图片解码失败")
+        } finally {
+            decoder.recycle()
+        }
+    }
+
+    private fun decodeBounded(file: File, maxDimension: Int): Bitmap? {
+        val bounds = decodeBounds(file) ?: return null
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = calculateSampleSize(bounds.outWidth, bounds.outHeight, maxDimension)
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        val decoded = BitmapFactory.decodeFile(file.absolutePath, options) ?: return null
+        return scaleDownTo(decoded, maxDimension)
+    }
+
+    private fun decodeBounds(file: File): BitmapFactory.Options? {
+        if (!file.isFile) return null
+        return BitmapFactory.Options().apply { inJustDecodeBounds = true }.also { options ->
+            BitmapFactory.decodeFile(file.absolutePath, options)
+        }.takeIf { it.outWidth > 0 && it.outHeight > 0 }
+    }
+
+    private fun writeBitmap(file: File, bitmap: Bitmap, quality: Int) {
+        val parent = file.parentFile ?: error("图片目录不存在")
+        parent.mkdirs()
+        val temp = File.createTempFile("${file.nameWithoutExtension}_", ".tmp", parent)
+        try {
+            val compressed = FileOutputStream(temp).use { out ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)
+            }
+            if (!compressed || temp.length() <= 0L) {
+                throw ImageImportException("图片保存失败，请重试")
+            }
+            if (!temp.renameTo(file)) {
+                temp.copyTo(file, overwrite = true)
+            }
+        } finally {
             temp.delete()
         }
     }
 
-    private fun normalizedCrop(source: Bitmap, rect: android.graphics.RectF): IntArray {
-        val left = (rect.left.coerceIn(0f, 1f) * source.width).toInt().coerceIn(0, source.width - 1)
-        val top = (rect.top.coerceIn(0f, 1f) * source.height).toInt().coerceIn(0, source.height - 1)
-        val right = (rect.right.coerceIn(0f, 1f) * source.width).toInt().coerceIn(left + 1, source.width)
-        val bottom = (rect.bottom.coerceIn(0f, 1f) * source.height).toInt().coerceIn(top + 1, source.height)
+    private fun normalizedCrop(width: Int, height: Int, rect: android.graphics.RectF): IntArray {
+        val left = (rect.left.coerceIn(0f, 1f) * width).toInt().coerceIn(0, width - 1)
+        val top = (rect.top.coerceIn(0f, 1f) * height).toInt().coerceIn(0, height - 1)
+        val right = (rect.right.coerceIn(0f, 1f) * width).toInt().coerceIn(left + 1, width)
+        val bottom = (rect.bottom.coerceIn(0f, 1f) * height).toInt().coerceIn(top + 1, height)
         return intArrayOf(left, top, right - left, bottom - top)
     }
 
-    private fun calculateSampleSize(width: Int, height: Int): Int {
+    private fun scaleDownTo(bitmap: Bitmap, maxDimension: Int): Bitmap {
+        val maxSide = maxOf(bitmap.width, bitmap.height)
+        if (maxSide <= maxDimension) return bitmap
+        val ratio = maxDimension.toFloat() / maxSide
+        val scaled = Bitmap.createScaledBitmap(
+            bitmap,
+            (bitmap.width * ratio).toInt().coerceAtLeast(1),
+            (bitmap.height * ratio).toInt().coerceAtLeast(1),
+            true
+        )
+        if (scaled !== bitmap) bitmap.recycle()
+        return scaled
+    }
+
+    private fun calculateSampleSize(width: Int, height: Int, maxDimension: Int): Int {
         var sample = 1
-        var largest = maxOf(width, height)
-        while (largest / 2 >= MAX_DIMENSION) {
+        while (maxOf(width, height) / sample > maxDimension) {
             sample *= 2
-            largest /= 2
+        }
+        return sample
+    }
+
+    private fun calculateUploadSampleSize(width: Int, height: Int): Int {
+        var sample = 1
+        while (maxOf(width, height) / sample > MAX_DIMENSION * 2) {
+            sample *= 2
         }
         return sample
     }
@@ -280,13 +419,49 @@ class ImageStore(private val context: Context) {
         return oriented
     }
 
+    private fun cropSource(displayFile: File): File = sourceFileFor(displayFile).takeIf { it.isFile } ?: displayFile
+
+    private fun sourceFileFor(file: File): File {
+        if (file.name.startsWith(SOURCE_PREFIX)) return file
+        val stem = file.name.removePrefix(DERIVED_PREFIX)
+        return File(file.parentFile, "$SOURCE_PREFIX$stem")
+    }
+
+    private fun displayFileFor(file: File): File {
+        val stem = file.name.removePrefix(SOURCE_PREFIX)
+        return File(file.parentFile, "$DERIVED_PREFIX$stem")
+    }
+
+    private fun ownedImage(path: String): File? {
+        val file = File(path)
+        val parent = runCatching { file.parentFile?.canonicalFile }.getOrNull() ?: return null
+        val ownDir = runCatching { imagesDir.canonicalFile }.getOrNull() ?: return null
+        return file.takeIf { parent == ownDir }
+    }
+
+    private fun isOwnedImage(file: File): Boolean = ownedImage(file.absolutePath) != null
+
+    private fun imageToken(): String = "${System.currentTimeMillis()}_${UUID.randomUUID()}"
+
     companion object {
         const val MAX_IMAGES = 9
         const val MAX_DIMENSION = 1800
+        const val MAX_SOURCE_DIMENSION = 4096
         const val JPEG_QUALITY = 86
+        const val SOURCE_JPEG_QUALITY = 95
+        const val MIN_CROP_SHORT_SIDE = 400
         private const val LOW_RES_THRESHOLD = 900
         private const val HIGH_RES_THRESHOLD = 3200
+        private const val SOURCE_PREFIX = "src_"
+        private const val DERIVED_PREFIX = "q_"
+        private val JPEG_EXTENSIONS = setOf("jpg", "jpeg")
     }
 }
 
-data class ImageMeta(val width: Int, val height: Int, val sizeBytes: Long)
+data class ImageMeta(
+    val width: Int,
+    val height: Int,
+    val sizeBytes: Long,
+    val warnings: List<String> = emptyList(),
+    val sourcePath: String? = null
+)

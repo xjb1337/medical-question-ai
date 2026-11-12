@@ -11,6 +11,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
@@ -24,8 +25,13 @@ import com.xjb.medicalquestionai.data.DraftImage
 import com.xjb.medicalquestionai.data.ImageCropResult
 import com.xjb.medicalquestionai.ui.components.rememberFileImageRequest
 import com.xjb.medicalquestionai.ui.screens.CropGeometry
+import com.xjb.medicalquestionai.ui.screens.CropOffsetKey
 import com.xjb.medicalquestionai.ui.screens.CropRectKey
+import com.xjb.medicalquestionai.ui.screens.CropViewport
+import com.xjb.medicalquestionai.ui.screens.CropZoomKey
 import com.xjb.medicalquestionai.ui.screens.ImageEditDialog
+import com.xjb.medicalquestionai.ui.screens.PreviewOffsetKey
+import com.xjb.medicalquestionai.ui.screens.PreviewZoomKey
 import com.xjb.medicalquestionai.ui.theme.MedicalQuestionAiTheme
 import java.io.File
 import java.time.Duration
@@ -140,6 +146,87 @@ class ImageEditDialogTest {
         compose.waitUntil(5_000) { dismisses == 1 }
         assertEquals(1, crops.size)
         assertFalse(crops.single().second)
+    }
+
+    @Test
+    fun twoFingerPinchZoomsTheBaseImageWithoutChangingTheSavedCropRect() {
+        render()
+        compose.onNodeWithText("裁剪").performClick()
+        dragBottomRight(0.21f)
+        dragTopLeft(0.21f)
+        val before = currentRect()
+        assertEquals(1f, currentZoom(), 0.001f)
+
+        compose.onNodeWithTag("crop-overlay").performTouchInput {
+            val focus = Offset(width / 2f, height / 2f)
+            down(0, focus - Offset(40f, 0f))
+            down(1, focus + Offset(40f, 0f))
+            repeat(3) {
+                moveBy(0, Offset(-10f, 0f))
+                moveBy(1, Offset(10f, 0f))
+            }
+            up(0)
+            up(1)
+        }
+        compose.waitForIdle()
+
+        assertTrue("pinch should zoom the crop viewport", currentZoom() > 1.5f)
+        assertEquals(before, currentRect())
+        compose.onNodeWithTag("crop-zoom-indicator").assertIsDisplayed()
+        capture("crop-zoomed")
+
+        val zoomedRect = currentRect()
+        val zoom = currentZoom()
+        val offset = compose.onNodeWithTag("crop-overlay").fetchSemanticsNode().config[CropOffsetKey]
+        compose.onNodeWithTag("crop-overlay").performTouchInput {
+            val corner = CropViewport(zoom = zoom, offset = offset).imageToScreen(
+                zoomedRect.topLeft,
+                Size(width.toFloat(), height.toFloat())
+            )
+            down(corner)
+            repeat(3) { moveBy(Offset(6f, 6f)) }
+            up()
+        }
+        compose.waitForIdle()
+        val draggedAfterZoom = currentRect()
+        val dragDebug = "before=$zoomedRect after=$draggedAfterZoom zoom=$zoom offset=$offset " +
+            "leftDelta=${draggedAfterZoom.left - zoomedRect.left} " +
+            "topDelta=${draggedAfterZoom.top - zoomedRect.top}"
+        assertTrue(dragDebug, draggedAfterZoom.left > zoomedRect.left + 0.005f)
+        assertTrue(dragDebug, draggedAfterZoom.top > zoomedRect.top + 0.005f)
+        assertEquals(zoomedRect.right, draggedAfterZoom.right, 0.001f)
+        assertEquals(zoomedRect.bottom, draggedAfterZoom.bottom, 0.001f)
+        capture("crop-zoomed-drag")
+    }
+
+    @Test
+    fun cancelAfterPinchResetsThePreviewTransformAndHidesZoomIndicator() {
+        render()
+        compose.onNodeWithText("裁剪").performClick()
+
+        compose.onNodeWithTag("crop-overlay").performTouchInput {
+            val focus = Offset(width / 2f, height / 2f)
+            down(0, focus - Offset(40f, 0f))
+            down(1, focus + Offset(40f, 0f))
+            repeat(3) {
+                moveBy(0, Offset(-10f, 0f))
+                moveBy(1, Offset(10f, 0f))
+            }
+            up(0)
+            up(1)
+        }
+        compose.waitForIdle()
+
+        assertTrue("pinch should zoom before cancel", currentZoom() > 1.5f)
+        compose.onNodeWithTag("crop-zoom-indicator").assertIsDisplayed()
+
+        compose.onNodeWithText("取消").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("crop-zoom-indicator").assertDoesNotExist()
+        compose.onNodeWithText("调整题目图片 2").assertIsDisplayed()
+        assertEquals(1f, previewZoom(), 0.001f)
+        assertEquals(Offset.Zero, previewOffset())
     }
 
     @Test
@@ -266,12 +353,25 @@ class ImageEditDialogTest {
     }
 
     private fun currentRect(): Rect = compose.onNodeWithTag("crop-overlay").fetchSemanticsNode().config[CropRectKey]
+    private fun currentZoom(): Float = compose.onNodeWithTag("crop-overlay").fetchSemanticsNode().config[CropZoomKey]
+    private fun previewZoom(): Float = compose.onNodeWithTag("image-preview").fetchSemanticsNode().config[PreviewZoomKey]
+    private fun previewOffset(): Offset = compose.onNodeWithTag("image-preview").fetchSemanticsNode().config[PreviewOffsetKey]
 
     private fun dragBottomRight(distance: Float) {
         val rect = currentRect()
         compose.onNodeWithTag("crop-overlay").performTouchInput {
             down(Offset(width * rect.right, height * rect.bottom))
             repeat(6) { moveBy(Offset(-width * distance / 6, -height * distance / 6)) }
+            up()
+        }
+        compose.waitForIdle()
+    }
+
+    private fun dragTopLeft(distance: Float) {
+        val rect = currentRect()
+        compose.onNodeWithTag("crop-overlay").performTouchInput {
+            down(Offset(width * rect.left, height * rect.top))
+            repeat(6) { moveBy(Offset(width * distance / 6, height * distance / 6)) }
             up()
         }
         compose.waitForIdle()

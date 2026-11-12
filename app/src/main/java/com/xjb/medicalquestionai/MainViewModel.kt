@@ -275,6 +275,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearParkedDraft() {
+        _parkedDraft.value?.images?.forEach { imageStore.delete(it.path) }
         _parkedDraft.value = null
     }
 
@@ -468,7 +469,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val meta = imageStore.rotate(image.path, degrees)
                 _draft.value = _draft.value.copy(images = _draft.value.images.map {
-                    if (it.id == id) it.copy(width = meta.width, height = meta.height, sizeBytes = meta.sizeBytes, revision = it.revision + 1) else it
+                    if (it.id == id) {
+                        it.copy(
+                            width = meta.width,
+                            height = meta.height,
+                            sizeBytes = meta.sizeBytes,
+                            revision = it.revision + 1,
+                            sourcePath = meta.sourcePath ?: it.sourcePath
+                        )
+                    } else {
+                        it
+                    }
                 })
             } catch (e: Exception) {
                 _draftNotice.value = "旋转失败：${e.message ?: "请重试"}"
@@ -523,7 +534,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 width = meta.width,
                                 height = meta.height,
                                 sizeBytes = meta.sizeBytes,
-                                revision = it.revision + 1
+                                revision = it.revision + 1,
+                                warnings = meta.warnings,
+                                sourcePath = meta.sourcePath ?: it.sourcePath
                             )
                         } else {
                             it

@@ -2,6 +2,7 @@ package com.xjb.medicalquestionai.ui.screens
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -77,6 +78,75 @@ class CropGeometryTest {
     @Test
     fun noHandleLeavesRectUnchanged() {
         assertEquals(CropGeometry.defaultRect, CropGeometry.drag(CropGeometry.defaultRect, CropHandle.NONE, 1f, 1f))
+    }
+
+    @Test
+    fun viewportZoomKeepsTheFingertipImagePointAndRoundTripsCoordinates() {
+        val viewportSize = Size(400f, 300f)
+        val focus = Offset(100f, 75f)
+        val zoomed = CropViewport().zoomBy(2f, focus, viewportSize)
+
+        assertEquals(2f, zoomed.zoom, 0.00001f)
+        val before = CropViewport().screenToImage(focus, viewportSize)
+        val after = zoomed.screenToImage(focus, viewportSize)
+        assertEquals(before.x, after.x, 0.00001f)
+        assertEquals(before.y, after.y, 0.00001f)
+        val roundTrip = zoomed.screenToImage(zoomed.imageToScreen(before, viewportSize), viewportSize)
+        assertEquals(before.x, roundTrip.x, 0.00001f)
+        assertEquals(before.y, roundTrip.y, 0.00001f)
+    }
+
+    @Test
+    fun viewportZoomIsBoundedAndPanCannotDragTheImageOutOfView() {
+        val viewportSize = Size(400f, 300f)
+        var zoomed = CropViewport()
+        repeat(10) { zoomed = zoomed.zoomBy(2f, Offset(200f, 150f), viewportSize) }
+        assertEquals(CropViewport.MAX_ZOOM, zoomed.zoom, 0.00001f)
+
+        val clamped = zoomed.panBy(Offset(10_000f, -10_000f), viewportSize)
+        val maxX = viewportSize.width * (zoomed.zoom - 1f) / 2f
+        val maxY = viewportSize.height * (zoomed.zoom - 1f) / 2f
+        assertEquals(maxX, clamped.offset.x, 0.00001f)
+        assertEquals(-maxY, clamped.offset.y, 0.00001f)
+        assertEquals(0f, clamped.screenToImage(Offset.Zero, viewportSize).x, 0.00001f)
+        assertEquals(1f, clamped.screenToImage(Offset(viewportSize.width, viewportSize.height), viewportSize).y, 0.00001f)
+
+        var zoomedOut = clamped
+        repeat(10) { zoomedOut = zoomedOut.zoomBy(0.1f, Offset(200f, 150f), viewportSize) }
+        assertEquals(CropViewport.MIN_ZOOM, zoomedOut.zoom, 0.00001f)
+        assertEquals(0f, zoomedOut.offset.x, 0.00001f)
+        assertEquals(0f, zoomedOut.offset.y, 0.00001f)
+    }
+
+    @Test
+    fun cornerDragAfterZoomAccumulatesUsingScreenToImageScale() {
+        val viewportSize = Size(400f, 400f)
+        val viewport = CropViewport(zoom = 2f)
+        var rect = CropGeometry.defaultRect
+        repeat(3) {
+            rect = CropGeometry.dragOnScreen(
+                rect,
+                CropHandle.BOTTOM_RIGHT,
+                screenDx = -40f,
+                screenDy = -40f,
+                viewport = viewport,
+                viewportSize = viewportSize
+            )
+        }
+
+        assertRect(Rect(0.04f, 0.04f, 0.81f, 0.81f), rect)
+    }
+
+    @Test
+    fun hitTestingUsesScreenSizedCornersAtHighZoom() {
+        val viewportSize = Size(400f, 400f)
+        val viewport = CropViewport(zoom = 4f)
+        val rect = Rect(0.4f, 0.4f, 0.48f, 0.48f)
+        val threshold = 22f / (viewportSize.width * viewport.zoom)
+        val corner = viewport.imageToScreen(rect.topLeft, viewportSize)
+        val nearby = viewport.screenToImage(corner + Offset(18f, 18f), viewportSize)
+
+        assertEquals(CropHandle.TOP_LEFT, CropGeometry.hitTest(rect, nearby, threshold, threshold))
     }
 
     private fun assertRect(expected: Rect, actual: Rect) {
