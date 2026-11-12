@@ -53,6 +53,9 @@ fun AnalysisResultView(
     }
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         AnalysisAnswerCard(result)
+        if (result.needsCaptureCompletenessReview) {
+            CaptureCompletenessCard(result)
+        }
         if (result.recognizedQuestion.isNotBlank()) {
             RecognizedQuestionCard(result)
         }
@@ -63,6 +66,62 @@ fun AnalysisResultView(
             AnalysisWarningCard(result.warnings)
         }
         AnalysisDetails(result)
+    }
+}
+
+/** 多题或题干/选项不完整时的明确提示；操作入口复用结果页底部的编辑、补图与重新解析。 */
+@Composable
+fun CaptureCompletenessCard(result: AnalysisResult, modifier: Modifier = Modifier) {
+    if (!result.needsCaptureCompletenessReview) return
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("capture-completeness-card"),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.WarningAmber, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "题目可能不完整",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            val countMessage = when {
+                result.questionCount != null && result.questionCount > 1 ->
+                    "检测到画面中可能有 ${result.questionCount} 道题。当前只支持单题解析，请先裁剪或补拍至只保留一道题。"
+                result.questionCount != 1 ->
+                    "未能确认画面中只有一道题，请裁剪或补拍至只保留一道完整题目。"
+                else -> null
+            }
+            countMessage?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall)
+            }
+            val pageMessage = when {
+                result.pageComplete == false ->
+                    "题干或选项可能被截断、拍漏，已避免脑补缺失内容。请补拍或裁剪完整页面。"
+                result.pageComplete != true ->
+                    "未能确认题干与选项是否完整可见，请补拍或裁剪完整页面。"
+                else -> null
+            }
+            if (countMessage != null && pageMessage != null) {
+                Spacer(Modifier.height(4.dp))
+            }
+            pageMessage?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall)
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "可使用下方“修改题干”修正识别内容，“补充图片”补拍缺失部分，然后点“重新解析”。",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium
+            )
+        }
     }
 }
 

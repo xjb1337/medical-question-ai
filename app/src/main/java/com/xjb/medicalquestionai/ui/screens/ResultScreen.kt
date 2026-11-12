@@ -121,6 +121,7 @@ import com.xjb.medicalquestionai.ui.components.AnalysisAnswerCard
 import com.xjb.medicalquestionai.ui.components.AnalysisDetails
 import com.xjb.medicalquestionai.ui.components.AnalysisWarningCard
 import com.xjb.medicalquestionai.ui.components.AppTopBar
+import com.xjb.medicalquestionai.ui.components.CaptureCompletenessCard
 import com.xjb.medicalquestionai.ui.components.CollapsibleSection
 import com.xjb.medicalquestionai.ui.components.ErrorBanner
 import com.xjb.medicalquestionai.ui.components.InfoBanner
@@ -447,6 +448,11 @@ fun ResultScreen(
                                 }
                             }
                             item(key = "answer", contentType = "answer") { AnalysisAnswerCard(result = result) }
+                            if (result.needsCaptureCompletenessReview) {
+                                item(key = "capture-completeness", contentType = "notice") {
+                                    CaptureCompletenessCard(result)
+                                }
+                            }
                             if (result.recognizedQuestion.isNotBlank()) {
                                 item(key = "recognized-question", contentType = "question") {
                                     RecognizedQuestionCard(result)

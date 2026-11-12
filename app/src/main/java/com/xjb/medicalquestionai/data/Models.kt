@@ -115,6 +115,8 @@ data class AnalysisResult(
     val status: String = "answered",
     val questionType: String = "unknown",
     val recognizedQuestion: String = "",
+    val questionCount: Int? = null,
+    val pageComplete: Boolean? = null,
     val optionsSeen: List<SeenOption> = emptyList(),
     val answer: List<String> = emptyList(),
     val answerText: String = "",
@@ -132,6 +134,10 @@ data class AnalysisResult(
     val needsConfirmation: Boolean
         get() = status != "out_of_scope" &&
             (status == "needs_confirmation" || (answer.isEmpty() && answerText.isBlank()))
+
+    val needsCaptureCompletenessReview: Boolean
+        get() = status == "needs_confirmation" &&
+            (questionCount != 1 || pageComplete != true)
 
     val answerDisplay: String
         get() = when {
@@ -151,6 +157,8 @@ data class AnalysisResult(
         put("status", status)
         put("question_type", questionType)
         put("recognized_question", recognizedQuestion)
+        put("question_count", questionCount ?: JSONObject.NULL)
+        put("page_complete", pageComplete ?: JSONObject.NULL)
         put("options_seen", JSONArray().apply {
             optionsSeen.forEach {
                 put(JSONObject().apply {
@@ -229,6 +237,13 @@ data class AnalysisResult(
             }
             fun longOrNull(item: JSONObject, key: String): Long? =
                 if (item.has(key) && !item.isNull(key)) item.optLong(key) else null
+            fun positiveIntOrNull(item: JSONObject, key: String): Int? {
+                val value = item.opt(key) as? Number ?: return null
+                val doubleValue = value.toDouble()
+                if (!doubleValue.isFinite() || doubleValue != doubleValue.toLong().toDouble()) return null
+                val longValue = value.toLong()
+                return longValue.takeIf { it in 1..Int.MAX_VALUE.toLong() }?.toInt()
+            }
             fun stringList(key: String): List<String> {
                 val value = obj.opt(key) ?: return emptyList()
                 return when (value) {
@@ -314,6 +329,8 @@ data class AnalysisResult(
                 status = text(obj, "status", "answered"),
                 questionType = text(obj, "question_type", text(obj, "type", "unknown")),
                 recognizedQuestion = text(obj, "recognized_question", text(obj, "question")),
+                questionCount = positiveIntOrNull(obj, "question_count"),
+                pageComplete = obj.opt("page_complete") as? Boolean,
                 optionsSeen = optionsSeen,
                 answer = stringList("answer"),
                 answerText = text(obj, "answer_text", text(obj, "answerText")),

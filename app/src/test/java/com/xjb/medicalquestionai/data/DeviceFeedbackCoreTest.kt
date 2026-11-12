@@ -212,6 +212,7 @@ class DeviceFeedbackCoreTest {
         assertNull(parser.feed("{\"recognized_question\":\"半句"))
         val preview = parser.feed(
             "{\"status\":\"answered\",\"question_type\":\"single\"," +
+                "\"question_count\":1,\"page_complete\":true," +
                 "\"recognized_question\":\"急性心梗首选检查？\"," +
                 "\"options_seen\":[{\"letter\":\"A\",\"text\":\"胸部 X 线\"},{\"letter\":\"B\",\"text\":\"心电图\"}]," +
                 "\"answer\":[\"B\"],\"answer_text\":\"心电图\"," +
@@ -230,6 +231,7 @@ class DeviceFeedbackCoreTest {
         val parser = PreviewJsonParser()
         val preview = parser.feed(
             "{\"status\":\"answered\",\"question_type\":\"single\",\"recognized_question\":\"题干包含 {花括号} 和 \\\"引号\\\"\"," +
+                "\"question_count\":1,\"page_complete\":true," +
                 "\"image_observations\":[{\"image_index\":1,\"observation\":\"ST 段抬高\"}]," +
                 "\"options_seen\":[{\"letter\":\"A\",\"text\":\"选项原文 A\"},{\"letter\":\"B\",\"text\":\"选项原文 B\"}]," +
                 "\"answer\":[\"A\"],\"option_analysis\":[{\"option\":\"A\",\"verdict\":\"正确\",\"reason\":\"符合\"}],\"warnings\":[]}"
@@ -241,13 +243,14 @@ class DeviceFeedbackCoreTest {
     @Test
     fun previewRejectsChoiceWithoutOptionsSeenOnlyAfterRootCloses() {
         val open = PreviewJsonParser().feed(
-            "{\"status\":\"answered\",\"question_type\":\"single\",\"answer\":[\"A\"],\"warnings\":[]"
+            "{\"status\":\"answered\",\"question_type\":\"single\",\"question_count\":1," +
+                "\"page_complete\":true,\"answer\":[\"A\"],\"warnings\":[]"
         )
         assertNotNull(open)
         assertFalse(open!!.answerInvalid)
 
         val closed = PreviewJsonParser().feed(
-            """{"status":"answered","question_type":"single","answer":["A"],"warnings":[],
+            """{"status":"answered","question_type":"single","question_count":1,"page_complete":true,"answer":["A"],"warnings":[],
                 "option_analysis":[{"option":"A","verdict":"正确","reason":"符合"}]}""",
             QuestionType.SINGLE
         )
@@ -264,7 +267,8 @@ class DeviceFeedbackCoreTest {
     @Test
     fun previewFillDoesNotRequireOptionsSeen() {
         val preview = PreviewJsonParser().feed(
-            """{"status":"answered","question_type":"fill","answer":[],"answer_text":"第1空：左心室肥大","warnings":[]}""",
+            """{"status":"answered","question_type":"fill","question_count":1,"page_complete":true,
+                "answer":[],"answer_text":"第1空：左心室肥大","warnings":[]}""",
             QuestionType.FILL
         )
         assertNotNull(preview)
@@ -282,6 +286,7 @@ class DeviceFeedbackCoreTest {
             下面是答案：
             ```json
             {"status":"answered","question_type":"单选","recognized_question":"题干",
+             "question_count":1,"page_complete":true,
              "options_seen":[{"letter":"A","text":"选项原文 A"},{"letter":"B","text":"选项原文 B"}],"answer":["B"],
              "option_analysis":[{"option":"A","verdict":"错误","reason":"不符合"},
                                {"option":"B","verdict":"正确","reason":"符合诊断标准"}],"confidence":"high","warnings":[]}
@@ -298,6 +303,7 @@ class DeviceFeedbackCoreTest {
     fun parserHandlesBracesInStringsAndWrapperObject() {
         val raw = """
             {"result":{"status":"answered","question_type":"multiple","recognized_question":"包含 } 的题干",
+            "question_count":1,"page_complete":true,
             "options_seen":[{"letter":"A","text":"选项原文 A"},{"letter":"B","text":"选项原文 B"},{"letter":"C","text":"选项原文 C"}],
             "answer":["A","C"],"option_analysis":[{"option":"A","verdict":"正确","reason":"符合"},
             {"option":"C","verdict":"正确","reason":"符合"}],"confidence":"medium","warnings":[]}}
@@ -324,6 +330,7 @@ class DeviceFeedbackCoreTest {
     fun emptyAnswerGetsNeedsConfirmationAndWarnings() {
         val raw = """
             {"status":"answered","question_type":"single","recognized_question":"题干","answer":[],
+             "question_count":1,"page_complete":true,
              "answer_text":"","confidence":"low"}
         """.trimIndent()
         val result = AnalysisResultParser.parse(raw, draft)
@@ -336,6 +343,7 @@ class DeviceFeedbackCoreTest {
     @Test
     fun singleChoiceWithMultipleAnswersAddsWarning() {
         val raw = """{"status":"answered","question_type":"single",
+            "question_count":1,"page_complete":true,
             "options_seen":[{"letter":"A","text":"选项原文 A"},{"letter":"B","text":"选项原文 B"}],
             "answer":["A","B"],"option_analysis":[{"option":"A","verdict":"正确","reason":"符合"},
             {"option":"B","verdict":"正确","reason":"符合"}],"confidence":"high","warnings":[]}"""
@@ -352,11 +360,13 @@ class DeviceFeedbackCoreTest {
             privacyConfirmed = true
         )
         val raw = """{"status":"answered","question_type":"single",
+            "question_count":1,"page_complete":true,
             "options_seen":[{"letter":"A","text":"选项原文 A"},{"letter":"B","text":"选项原文 B"}],
             "answer":["A"],"option_analysis":[{"option":"A","verdict":"正确","reason":"符合"}],
             "confidence":"high","warnings":[]}"""
         val result = AnalysisResultParser.parse(raw, imageDraft)
-        assertTrue(result.warnings.any { it.contains("逐张说明") })
+        assertEquals("needs_confirmation", result.status)
+        assertTrue(result.warnings.any { it.contains("image_observations") })
         assertTrue(result.warnings.any { it.contains("没有完整识别出题干") })
     }
 
@@ -431,6 +441,7 @@ class DeviceFeedbackCoreTest {
         assertFalse(missingWarnings!!.isComplete)
         val complete = parser.feed(
             "{\"status\":\"answered\",\"question_type\":\"single\"," +
+                "\"question_count\":1,\"page_complete\":true," +
                 "\"options_seen\":[{\"letter\":\"A\",\"text\":\"胸部 X 线\"},{\"letter\":\"B\",\"text\":\"心电图\"}]," +
                 "\"answer\":[\"B\"],\"answer_text\":\"心电图\"," +
                 "\"option_analysis\":[{\"option\":\"B\",\"verdict\":\"正确\",\"reason\":\"首选检查\"}],\"warnings\":[]}"
@@ -444,7 +455,8 @@ class DeviceFeedbackCoreTest {
     @Test
     fun previewParsesWarningsArray() {
         val preview = PreviewJsonParser().feed(
-            "{\"status\":\"answered\",\"question_type\":\"single\",\"answer\":[\"A\"]," +
+            "{\"status\":\"answered\",\"question_type\":\"single\",\"question_count\":1,\"page_complete\":true," +
+                "\"answer\":[\"A\"]," +
                 "\"options_seen\":[{\"letter\":\"A\",\"text\":\"选项原文 A\"},{\"letter\":\"B\",\"text\":\"选项原文 B\"}]," +
                 "\"option_analysis\":[{\"option\":\"A\",\"verdict\":\"正确\",\"reason\":\"符合\"}]," +
                 "\"warnings\":[\"题干可能不完整\",\"请核对选项\"]}"
@@ -564,6 +576,7 @@ class DeviceFeedbackCoreTest {
     fun choiceWithCompleteOptionsSeenCanStayAnswered() {
         val result = AnalysisResultParser.parse(
             """{"status":"answered","question_type":"single","recognized_question":"急性心肌梗死首选检查是什么？",
+                "question_count":1,"page_complete":true,
                 "options_seen":[{"letter":"A","text":"胸部 X 线"},{"letter":"B","text":"心电图"}],
                 "answer":["B"],"option_analysis":[{"option":"A","verdict":"错误","reason":"不能直接确诊"},
                 {"option":"B","verdict":"正确","reason":"首选检查"}],
@@ -579,6 +592,7 @@ class DeviceFeedbackCoreTest {
     fun fillAndShortDoNotRequireOptionsSeen() {
         val fill = AnalysisResultParser.parse(
             """{"status":"answered","question_type":"fill","recognized_question":"填空题干",
+                "question_count":1,"page_complete":true,
                 "answer":[],"answer_text":"第1空：左心室肥大","confidence":"high","warnings":[]}""",
             QuestionDraft(questionType = QuestionType.FILL, text = "题干", privacyConfirmed = true)
         )
@@ -586,6 +600,7 @@ class DeviceFeedbackCoreTest {
 
         val short = AnalysisResultParser.parse(
             """{"status":"answered","question_type":"short","recognized_question":"简答题干",
+                "question_count":1,"page_complete":true,
                 "answer":[],"answer_text":"要点一；要点二","confidence":"high","warnings":[]}""",
             QuestionDraft(questionType = QuestionType.SHORT, text = "题干", privacyConfirmed = true)
         )
@@ -645,7 +660,8 @@ class DeviceFeedbackCoreTest {
     @Test
     fun previewKeepsRootOpenContentButDoesNotComplete() {
         val preview = PreviewJsonParser().feed(
-            "{\"status\":\"answered\",\"question_type\":\"single\",\"answer\":[\"A\"],\"warnings\":[]"
+            "{\"status\":\"answered\",\"question_type\":\"single\",\"question_count\":1," +
+                "\"page_complete\":true,\"answer\":[\"A\"],\"warnings\":[]"
         )
         assertNotNull(preview)
         assertFalse(preview!!.isComplete)

@@ -154,6 +154,7 @@ class UiUxScreenshotTest {
         val text = "文本题目示例：骨骼肌收缩的基本单位是什么？"
         val result = AnalysisResult(
             status = "answered", questionType = "single", recognizedQuestion = text,
+            questionCount = 1, pageComplete = true,
             answer = listOf("B"), answerText = "肌节",
             optionsSeen = listOf(
                 SeenOption("A", "肌纤维"),

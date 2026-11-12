@@ -90,7 +90,64 @@ class ResultScreenContentTest {
         compose.onNodeWithText("识别到的题目").assertIsDisplayed()
         compose.onNodeWithText(stem).assertIsDisplayed()
         compose.onNodeWithTag("recognized-question-card").assertIsDisplayed()
+        assertTrue(
+            compose.onAllNodes(hasTestTag("capture-completeness-card"))
+                .fetchSemanticsNodes().isEmpty()
+        )
         capture("result_stem_persistent")
+    }
+
+    @Test
+    fun multipleQuestionsShowCaptureGuidanceAndRecoveryActions() {
+        insert(
+            status = "completed",
+            result = result(
+                status = "needs_confirmation",
+                stem = "虚构页面包含两道题，当前只能确认其中一道。",
+                answer = listOf("B"),
+                options = listOf(
+                    SeenOption("A", "常规心电图"),
+                    SeenOption("B", "胸部 X 线")
+                ),
+                questionCount = 2
+            )
+        )
+        openResult()
+
+        compose.onNodeWithTag("result-list")
+            .performScrollToNode(hasTestTag("capture-completeness-card"))
+        compose.onNodeWithTag("capture-completeness-card").assertIsDisplayed()
+        compose.onNodeWithText("检测到画面中可能有 2 道题", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("只保留一道题", substring = true).assertIsDisplayed()
+
+        compose.onNodeWithTag("result-list").performScrollToNode(hasText("修改题干"))
+        compose.onNodeWithText("修改题干").assertIsDisplayed()
+        compose.onNodeWithText("补充图片").assertIsDisplayed()
+        compose.onNodeWithText("重新解析").assertIsDisplayed()
+    }
+
+    @Test
+    fun truncatedPageShowsCaptureGuidance() {
+        insert(
+            status = "completed",
+            result = result(
+                status = "needs_confirmation",
+                stem = "虚构题干最后一行被截断，选项可能没有拍全。",
+                answer = listOf("A"),
+                options = listOf(
+                    SeenOption("A", "常规心电图"),
+                    SeenOption("B", "胸部 X 线")
+                ),
+                pageComplete = false
+            )
+        )
+        openResult()
+
+        compose.onNodeWithTag("result-list")
+            .performScrollToNode(hasTestTag("capture-completeness-card"))
+        compose.onNodeWithTag("capture-completeness-card").assertIsDisplayed()
+        compose.onNodeWithText("题干或选项可能被截断、拍漏", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("补拍或裁剪完整页面", substring = true).assertIsDisplayed()
     }
 
     @Test
@@ -229,11 +286,15 @@ class ResultScreenContentTest {
         stem: String,
         answer: List<String>,
         options: List<SeenOption>,
-        confidence: String = "high"
+        confidence: String = "high",
+        questionCount: Int = 1,
+        pageComplete: Boolean = true
     ): AnalysisResult = AnalysisResult(
         status = status,
         questionType = "single",
         recognizedQuestion = stem,
+        questionCount = questionCount,
+        pageComplete = pageComplete,
         optionsSeen = options,
         answer = answer,
         answerText = "心电图是首选检查。",

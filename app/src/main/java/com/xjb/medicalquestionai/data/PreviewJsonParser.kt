@@ -8,6 +8,8 @@ data class AnalysisPreview(
     val status: String = "",
     val questionType: String = "unknown",
     val recognizedQuestion: String = "",
+    val questionCount: Int? = null,
+    val pageComplete: Boolean? = null,
     val optionsSeen: List<SeenOption> = emptyList(),
     val answer: List<String> = emptyList(),
     val answerText: String = "",
@@ -53,6 +55,8 @@ data class AnalysisPreview(
         status = if (answerInvalid) "needs_confirmation" else status,
         questionType = questionType,
         recognizedQuestion = recognizedQuestion,
+        questionCount = questionCount,
+        pageComplete = pageComplete,
         optionsSeen = optionsSeen,
         answer = if (suppressAnswer) emptyList() else answer,
         answerText = if (suppressAnswer) "" else answerText,
@@ -72,7 +76,8 @@ data class AnalysisPreview(
 class PreviewJsonParser {
     fun feed(
         accumulatedText: String,
-        selectedType: QuestionType = QuestionType.AUTO
+        selectedType: QuestionType = QuestionType.AUTO,
+        imageCount: Int = 0
     ): AnalysisPreview? {
         val fields = scanCompletedTopLevelFields(accumulatedText)
         if (fields.isEmpty()) return null
@@ -89,6 +94,16 @@ class PreviewJsonParser {
         val optionsSeen = AnswerSemantics.SeenOptions.from(
             if (fields.containsKey("options_seen")) fields["options_seen"] else null
         )
+        val pageCompleteness = AnswerSemantics.PageCompleteness.from(
+            questionCountPresent = fields.containsKey("question_count"),
+            questionCountRaw = fields.valueOrNull("question_count"),
+            pageCompletePresent = fields.containsKey("page_complete"),
+            pageCompleteRaw = fields.valueOrNull("page_complete")
+        )
+        val imageObservations = AnswerSemantics.ImageObservationEvidence.from(
+            raw = fields["image_observations"],
+            fieldPresent = fields.containsKey("image_observations")
+        )
         val warningsFieldPresent = fields.containsKey("warnings")
         val warningsFieldValid = fields["warnings"]?.let { raw ->
             runCatching { JSONArray(raw) }.isSuccess
@@ -103,12 +118,18 @@ class PreviewJsonParser {
             selectedType = selectedType,
             optionAnalysisOptions = optionAnalysisOptions,
             optionsSeen = optionsSeen,
-            requireChoiceEvidence = rootClosed
+            requireChoiceEvidence = rootClosed,
+            pageCompleteness = pageCompleteness,
+            imageObservationEvidence = imageObservations,
+            expectedImageCount = imageCount,
+            requireCompletenessEvidence = rootClosed
         )
         val preview = AnalysisPreview(
             status = status,
             questionType = evaluation.normalizedType,
             recognizedQuestion = question,
+            questionCount = evaluation.questionCount,
+            pageComplete = evaluation.pageComplete,
             optionsSeen = optionsSeen.values,
             answer = evaluation.normalizedAnswer,
             answerText = answerText,
@@ -235,6 +256,11 @@ class PreviewJsonParser {
     private fun Map<String, String>.stringValue(key: String): String {
         val raw = this[key] ?: return ""
         return runCatching { JSONTokener(raw).nextValue() as? String }.getOrNull().orEmpty()
+    }
+
+    private fun Map<String, String>.valueOrNull(key: String): Any? {
+        val raw = this[key] ?: return null
+        return runCatching { JSONTokener(raw).nextValue() }.getOrNull()
     }
 
     private fun Map<String, String>.optionAnalysisOptions(): List<String> {

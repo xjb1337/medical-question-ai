@@ -22,6 +22,16 @@ object AnalysisResultParser {
         val optionsSeen = AnswerSemantics.SeenOptions.from(
             if (source.has("options_seen")) source.opt("options_seen") else null
         )
+        val pageCompleteness = AnswerSemantics.PageCompleteness.from(
+            questionCountPresent = source.has("question_count"),
+            questionCountRaw = source.opt("question_count"),
+            pageCompletePresent = source.has("page_complete"),
+            pageCompleteRaw = source.opt("page_complete")
+        )
+        val imageObservations = AnswerSemantics.ImageObservationEvidence.from(
+            raw = if (source.has("image_observations")) source.opt("image_observations") else null,
+            fieldPresent = source.has("image_observations")
+        )
         val evaluation = AnswerSemantics.evaluate(
             status = parsed.status,
             questionType = parsed.questionType,
@@ -32,7 +42,11 @@ object AnalysisResultParser {
             selectedType = draft.questionType,
             optionAnalysisOptions = parsed.optionAnalyses.map { it.option },
             optionsSeen = optionsSeen,
-            requireChoiceEvidence = true
+            requireChoiceEvidence = true,
+            pageCompleteness = pageCompleteness,
+            imageObservationEvidence = imageObservations,
+            expectedImageCount = draft.images.size,
+            requireCompletenessEvidence = true
         )
         val normalizedType = evaluation.normalizedType
         val statusValue = source.opt("status") as? String
@@ -63,6 +77,10 @@ object AnalysisResultParser {
         evaluation.optionAnalysisIssue?.let { issue ->
             warnings += issue
         }
+        warnings += evaluation.pageCompletenessIssues
+        evaluation.imageObservationIssue?.let { issue ->
+            warnings += issue
+        }
         if (parsed.status == "answered" && parsed.answer.isEmpty() && parsed.answerText.isBlank()) {
             warnings += "没有提取到明确答案。"
         }
@@ -71,9 +89,6 @@ object AnalysisResultParser {
         }
         if (parsed.recognizedQuestion.isBlank() && draft.images.isNotEmpty() && draft.text.isBlank()) {
             warnings += "没有完整识别出题干，请确认图片是否清晰完整。"
-        }
-        if (draft.images.isNotEmpty() && parsed.imageObservations.isEmpty()) {
-            warnings += "模型没有逐张说明图片观察结果，请重点核对题干和图中细节。"
         }
         if (normalizedType in setOf("single", "multiple") && parsed.optionAnalyses.isEmpty()) {
             warnings += "模型没有给出逐项分析，选项辨析请结合教材核对。"
@@ -95,6 +110,8 @@ object AnalysisResultParser {
         return parsed.copy(
             status = status,
             questionType = normalizedType,
+            questionCount = evaluation.questionCount,
+            pageComplete = evaluation.pageComplete,
             optionsSeen = optionsSeen.values,
             answer = if (conflict) emptyList() else evaluation.normalizedAnswer,
             answerText = if (conflict) "" else parsed.answerText,

@@ -147,7 +147,11 @@ class QuestionAnalyzer(
                             content.append(event.text)
                             if (content.length - lastPreviewLength >= 48) {
                                 lastPreviewLength = content.length
-                                previewParser.feed(content.toString(), draft.questionType)?.let {
+                                previewParser.feed(
+                                    content.toString(),
+                                    draft.questionType,
+                                    draft.images.size
+                                )?.let {
                                     if (firstAnswerAt == null && !it.answerInvalid &&
                                         (it.answer.isNotEmpty() || it.answerText.isNotBlank())
                                     ) {
@@ -167,7 +171,7 @@ class QuestionAnalyzer(
             if (!sawDone) {
                 throw ApiException("连接提前中断，未收到完整结束标记，请重试。")
             }
-            previewParser.feed(content.toString(), draft.questionType)?.let {
+            previewParser.feed(content.toString(), draft.questionType, draft.images.size)?.let {
                 if (firstAnswerAt == null && !it.answerInvalid &&
                     (it.answer.isNotEmpty() || it.answerText.isNotBlank())
                 ) {
@@ -405,7 +409,7 @@ class QuestionAnalyzer(
 
 
     companion object {
-        const val PROMPT_VERSION = "device-feedback-v2"
+        const val PROMPT_VERSION = "device-feedback-v3"
         internal const val MAX_FOLLOW_UP_HISTORY_CHARS = 12_000
         internal const val MAX_QUESTION_CONTEXT_CHARS = 8_000
         private const val MAX_TOTAL_IMAGE_BYTES = 18L * 1024 * 1024
@@ -493,20 +497,24 @@ class QuestionAnalyzer(
 
 工作原则：
 1. 只依据用户提供的题干、选项和图片中可见的信息作答。看不清、缺选项、关键数值缺失或题目明显残缺时，必须明确说明，不得猜测或编造。
-2. 先识别题型：单选题（single）、多选题（multiple）、填空题（fill）、简答题（short）或其他；无法判断时用 unknown。
-3. 医学题常考“最可能”“首选”“禁忌”“错误的是”等限定词。请抓住否定词、年龄、性别、病程、实验室单位和剂量，避免因漏读而答错。
-4. 多选题必须给出全部正确选项；单选题只给一个选项。若多个选项看似都正确，请说明鉴别依据和最终取舍。
-5. 推理步骤要像老师讲题：先翻译题干考点，再列鉴别点，最后落到答案。不要写空泛套话。
-6. 不确定就降低 confidence，并在 warnings 中说明需要核对什么。不要虚构指南、文献、剂量或诊断标准。
-7. 填空题要按空的顺序逐空作答，answer_text 用“第1空：……；第2空：……”的格式；简答题要按要点分条，先给结论再给依据，突出关键词和逻辑。
-8. 这是学习辅助，不替代临床诊疗。
-9. 只处理医学及医学相关学习内容。若题目明显与医学无关，status 使用 "out_of_scope"，answer_text 用一句礼貌中文说明本助手只解答医学学习问题，不要给出无关答案。
+2. 先判断这一页或这组图片中可见的题目数量，question_count 必须如实填写整数。当前只支持单题解析；如果可见多道题，不得只答其中一题后仍标 answered，必须把 status 设为 needs_confirmation，并在 warnings 中说明检测到多题、需要裁剪或补拍。
+3. 同时判断题干和选项是否完整可见。page_complete 只有在题干与选项都完整、没有被裁剪或拍漏时才填 true；任何一项不完整都必须填 false，并把 status 设为 needs_confirmation。此时禁止静默脑补缺失题干或缺失选项，必须在 warnings 中说明缺少什么。
+4. 先识别题型：单选题（single）、多选题（multiple）、填空题（fill）、简答题（short）或其他；无法判断时用 unknown。
+5. 医学题常考“最可能”“首选”“禁忌”“错误的是”等限定词。请抓住否定词、年龄、性别、病程、实验室单位和剂量，避免因漏读而答错。
+6. 多选题必须给出全部正确选项；单选题只给一个选项。若多个选项看似都正确，请说明鉴别依据和最终取舍。
+7. 推理步骤要像老师讲题：先翻译题干考点，再列鉴别点，最后落到答案。不要写空泛套话。
+8. 不确定就降低 confidence，并在 warnings 中说明需要核对什么。不要虚构指南、文献、剂量或诊断标准。
+9. 填空题要按空的顺序逐空作答，answer_text 用“第1空：……；第2空：……”的格式；简答题要按要点分条，先给结论再给依据，突出关键词和逻辑。
+10. 这是学习辅助，不替代临床诊疗。
+11. 只处理医学及医学相关学习内容。若题目明显与医学无关，status 使用 "out_of_scope"，answer_text 用一句礼貌中文说明本助手只解答医学学习问题，不要给出无关答案。
 
 只输出一个合法 JSON 对象，不要输出 Markdown 代码块、前后解释或注释。JSON 结构必须为：
 {
   "status": "answered",
   "question_type": "single",
   "recognized_question": "你从文字和图片中识别出的完整题干（保留关键限定词和选项）",
+  "question_count": 1,
+  "page_complete": true,
   "options_seen": [
     {"letter": "A", "text": "从题面逐字抄录的选项 A 原文，不得脑补或改写"},
     {"letter": "B", "text": "从题面逐字抄录的选项 B 原文，不得脑补或改写"}
@@ -529,9 +537,9 @@ class QuestionAnalyzer(
   "warnings": ["需要用户核对的信息；没有则为空数组"]
 }
 
-字段取值说明（只取其中一个值，不要照抄说明文字）：status 取 answered、needs_confirmation、out_of_scope；question_type 取 single、multiple、fill、short、unknown；option_analysis.verdict 取 正确、错误、无法判断；confidence 取 high、medium、low。
+字段取值说明（只取其中一个值，不要照抄说明文字）：status 取 answered、needs_confirmation、out_of_scope；question_type 取 single、multiple、fill、short、unknown；question_count 填写画面中可见的题目数量（正整数）；page_complete 填写题干与选项是否完整可见（布尔值）；option_analysis.verdict 取 正确、错误、无法判断；confidence 取 high、medium、low。
 
-要求：有图片时必须填写 image_observations，逐张说明实际可见信息与不确定处，不能把看不清的内容写成确定事实。选择题（single、multiple）必须填写 options_seen，逐项抄录题面中实际可见的选项字母和原文，禁止脑补或改写题意；answer 必须使用 options_seen 中的选项字母。选择题还必须填写 option_analysis，逐项给出 verdict 和 reason。非选择题的 options_seen 可以为空数组。reasoning_steps 通常 3 到 8 步；key_points 和 pitfalls 各 1 到 5 条。若题目信息不足，answer 可以为空数组，status 为 needs_confirmation，并在 warnings 中说明缺失内容。
+要求：有图片时，image_observations 必须覆盖每一张图，条数等于图片数量；按上传顺序使用从 1 开始的 image_index，每张图恰好一条且 observation 不得为空，不能把看不清的内容写成确定事实。选择题（single、multiple）必须填写 options_seen，逐项抄录题面中实际可见的选项字母和原文，禁止脑补或改写题意；answer 必须使用 options_seen 中的选项字母。选择题还必须填写 option_analysis，逐项给出 verdict 和 reason。非选择题的 options_seen 可以为空数组。reasoning_steps 通常 3 到 8 步；key_points 和 pitfalls 各 1 到 5 条。单道完整题目填写 question_count 为 1、page_complete 为 true。若题目信息不足、存在多题，或题干/选项被截断、拍漏，answer 可以为空数组，status 必须为 needs_confirmation，并在 warnings 中写明缺失内容或多题情况。
         """.trimIndent()
     }
 }

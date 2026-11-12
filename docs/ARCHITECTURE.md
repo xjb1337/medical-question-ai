@@ -80,6 +80,12 @@ MainViewModel
   "status": "answered",
   "question_type": "single",
   "recognized_question": "……",
+  "question_count": 1,
+  "page_complete": true,
+  "options_seen": [
+    {"letter": "A", "text": "……"},
+    {"letter": "B", "text": "……"}
+  ],
   "image_observations": [
     {"image_index": 1, "observation": "……", "uncertainty": "……"}
   ],
@@ -95,6 +101,8 @@ MainViewModel
   "warnings": []
 }
 ```
+
+本地校验要求正常答案同时满足 `question_count=1` 与 `page_complete=true`；缺字段、非法类型、多题或页面不完整都会降级为 `needs_confirmation`。有图片时，`image_observations` 必须按上传顺序用 `image_index=1..N` 覆盖每一张图，且观察文本不能为空。
 
 解析器容忍 Markdown 代码围栏、字段别名、字符串形式的步骤和对象形式的选项表；对明显不属于医学学习范围的输入，模型返回 `out_of_scope`，界面以“非医学题目”卡片礼貌说明，不展示把握程度。
 
