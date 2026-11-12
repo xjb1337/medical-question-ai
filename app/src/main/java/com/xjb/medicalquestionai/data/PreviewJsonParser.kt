@@ -8,6 +8,7 @@ data class AnalysisPreview(
     val status: String = "",
     val questionType: String = "unknown",
     val recognizedQuestion: String = "",
+    val optionsSeen: List<SeenOption> = emptyList(),
     val answer: List<String> = emptyList(),
     val answerText: String = "",
     val confidence: String = "",
@@ -20,10 +21,15 @@ data class AnalysisPreview(
     val semanticIssue: String? = null,
     val selectedType: QuestionType = QuestionType.AUTO,
     /** 已经确定语义非法（题型/答案/选项冲突）；此类预览不能展示为确定答案。 */
-    val answerInvalid: Boolean = false
+    val answerInvalid: Boolean = false,
+    /** 语义非法到必须隐藏答案；选项原文缺失时只降级，仍保留答案供用户核对。 */
+    val suppressAnswer: Boolean = false
 ) {
     val hasUsefulContent: Boolean
-        get() = recognizedQuestion.isNotBlank() || answer.any(String::isNotBlank) || answerText.isNotBlank()
+        get() = recognizedQuestion.isNotBlank() ||
+            optionsSeen.isNotEmpty() ||
+            answer.any(String::isNotBlank) ||
+            answerText.isNotBlank()
 
     /**
      * 预览必须等 status、question_type、answer/answer_text、warnings 都完整到达，
@@ -47,8 +53,9 @@ data class AnalysisPreview(
         status = if (answerInvalid) "needs_confirmation" else status,
         questionType = questionType,
         recognizedQuestion = recognizedQuestion,
-        answer = if (answerInvalid) emptyList() else answer,
-        answerText = if (answerInvalid) "" else answerText,
+        optionsSeen = optionsSeen,
+        answer = if (suppressAnswer) emptyList() else answer,
+        answerText = if (suppressAnswer) "" else answerText,
         confidence = confidence.ifBlank { "medium" },
         warnings = if (answerInvalid && semanticIssue != null && semanticIssue !in warnings) {
             warnings + semanticIssue
@@ -79,6 +86,9 @@ class PreviewJsonParser {
         val confidence = fields.stringValue("confidence")
         val warnings = fields.arrayValue("warnings")
         val optionAnalysisOptions = fields.optionAnalysisOptions()
+        val optionsSeen = AnswerSemantics.SeenOptions.from(
+            if (fields.containsKey("options_seen")) fields["options_seen"] else null
+        )
         val warningsFieldPresent = fields.containsKey("warnings")
         val warningsFieldValid = fields["warnings"]?.let { raw ->
             runCatching { JSONArray(raw) }.isSuccess
@@ -91,12 +101,15 @@ class PreviewJsonParser {
             warningsFieldPresent = warningsFieldPresent,
             warningsFieldValid = warningsFieldValid,
             selectedType = selectedType,
-            optionAnalysisOptions = optionAnalysisOptions
+            optionAnalysisOptions = optionAnalysisOptions,
+            optionsSeen = optionsSeen,
+            requireChoiceEvidence = rootClosed
         )
         val preview = AnalysisPreview(
             status = status,
             questionType = evaluation.normalizedType,
             recognizedQuestion = question,
+            optionsSeen = optionsSeen.values,
             answer = evaluation.normalizedAnswer,
             answerText = answerText,
             confidence = confidence,
@@ -108,7 +121,8 @@ class PreviewJsonParser {
             rootClosed = rootClosed,
             semanticIssue = evaluation.previewIssue,
             selectedType = selectedType,
-            answerInvalid = evaluation.isAnswerInvalid
+            answerInvalid = evaluation.isAnswerInvalid,
+            suppressAnswer = evaluation.suppressesAnswer
         )
         // 运行中先展示“预览”，完整性与语义问题由 isComplete/semanticIssue 标记；
         // 不能等到根对象闭合才显示答案，否则答案卡会永远停在占位状态。

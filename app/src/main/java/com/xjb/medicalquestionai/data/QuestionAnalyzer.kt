@@ -405,7 +405,7 @@ class QuestionAnalyzer(
 
 
     companion object {
-        const val PROMPT_VERSION = "device-feedback-v1"
+        const val PROMPT_VERSION = "device-feedback-v2"
         internal const val MAX_FOLLOW_UP_HISTORY_CHARS = 12_000
         internal const val MAX_QUESTION_CONTEXT_CHARS = 8_000
         private const val MAX_TOTAL_IMAGE_BYTES = 18L * 1024 * 1024
@@ -507,13 +507,18 @@ class QuestionAnalyzer(
   "status": "answered",
   "question_type": "single",
   "recognized_question": "你从文字和图片中识别出的完整题干（保留关键限定词和选项）",
+  "options_seen": [
+    {"letter": "A", "text": "从题面逐字抄录的选项 A 原文，不得脑补或改写"},
+    {"letter": "B", "text": "从题面逐字抄录的选项 B 原文，不得脑补或改写"}
+  ],
   "answer": ["B"],
   "answer_text": "最终答案的文字表述；填空题、简答题可写在这里",
   "image_observations": [
     {"image_index": 1, "observation": "这一张图中实际可见的题干、选项、波形、影像特征", "uncertainty": "看不清、无法确认的部分；没有则留空"}
   ],
   "option_analysis": [
-    {"option": "A", "verdict": "正确", "reason": "该选项对错的依据"}
+    {"option": "A", "verdict": "错误", "reason": "该选项对错的依据"},
+    {"option": "B", "verdict": "正确", "reason": "正确选项的依据"}
   ],
   "reasoning_steps": [
     {"title": "步骤标题", "detail": "这一步骤的具体推理、鉴别点和依据"}
@@ -526,7 +531,7 @@ class QuestionAnalyzer(
 
 字段取值说明（只取其中一个值，不要照抄说明文字）：status 取 answered、needs_confirmation、out_of_scope；question_type 取 single、multiple、fill、short、unknown；option_analysis.verdict 取 正确、错误、无法判断；confidence 取 high、medium、low。
 
-要求：有图片时必须填写 image_observations，逐张说明实际可见信息与不确定处，不能把看不清的内容写成确定事实；选择题必须填写 option_analysis，逐项给出 verdict 和 reason。reasoning_steps 通常 3 到 8 步；key_points 和 pitfalls 各 1 到 5 条；answer 必须使用题干中的选项字母或选项原文。若题目信息不足，answer 可以为空数组，status 为 needs_confirmation，并在 warnings 中说明缺失内容。
+要求：有图片时必须填写 image_observations，逐张说明实际可见信息与不确定处，不能把看不清的内容写成确定事实。选择题（single、multiple）必须填写 options_seen，逐项抄录题面中实际可见的选项字母和原文，禁止脑补或改写题意；answer 必须使用 options_seen 中的选项字母。选择题还必须填写 option_analysis，逐项给出 verdict 和 reason。非选择题的 options_seen 可以为空数组。reasoning_steps 通常 3 到 8 步；key_points 和 pitfalls 各 1 到 5 条。若题目信息不足，answer 可以为空数组，status 为 needs_confirmation，并在 warnings 中说明缺失内容。
         """.trimIndent()
     }
 }

@@ -13,6 +13,11 @@ class ModelsTest {
             status = "answered",
             questionType = "multiple",
             recognizedQuestion = "以下关于急性心肌梗死的心电图表现，正确的是？",
+            optionsSeen = listOf(
+                SeenOption("A", "相邻导联 ST 段抬高"),
+                SeenOption("B", "单纯 T 波倒置"),
+                SeenOption("C", "病理性 Q 波形成")
+            ),
             answer = listOf("A", "C"),
             answerText = "A、C",
             imageObservations = listOf(
@@ -40,6 +45,7 @@ class ModelsTest {
         assertEquals(original.imageObservations, restored.imageObservations)
         assertEquals(original.optionAnalyses, restored.optionAnalyses)
         assertEquals(original.recognizedQuestion, restored.recognizedQuestion)
+        assertEquals(original.optionsSeen, restored.optionsSeen)
         assertEquals(original.reasoningSteps, restored.reasoningSteps)
         assertEquals(original.keyPoints, restored.keyPoints)
         assertEquals(original.pitfalls, restored.pitfalls)

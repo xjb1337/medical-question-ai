@@ -19,6 +19,9 @@ object AnalysisResultParser {
         val warningsFieldPresent = source.has("warnings")
         val warningsRaw = source.opt("warnings")
         val warningsFieldValid = warningsRaw is org.json.JSONArray
+        val optionsSeen = AnswerSemantics.SeenOptions.from(
+            if (source.has("options_seen")) source.opt("options_seen") else null
+        )
         val evaluation = AnswerSemantics.evaluate(
             status = parsed.status,
             questionType = parsed.questionType,
@@ -27,12 +30,14 @@ object AnalysisResultParser {
             warningsFieldPresent = warningsFieldPresent,
             warningsFieldValid = warningsFieldValid,
             selectedType = draft.questionType,
-            optionAnalysisOptions = parsed.optionAnalyses.map { it.option }
+            optionAnalysisOptions = parsed.optionAnalyses.map { it.option },
+            optionsSeen = optionsSeen,
+            requireChoiceEvidence = true
         )
         val normalizedType = evaluation.normalizedType
         val statusValue = source.opt("status") as? String
         val statusFieldValid = !statusValue.isNullOrBlank() && evaluation.statusValid
-        var answerInvalid = evaluation.isAnswerInvalid
+        val answerInvalid = evaluation.isAnswerInvalid
 
         if (!statusFieldValid) {
             warnings += "模型返回的状态字段无效，已按待确认处理，请核对答案。"
@@ -50,6 +55,12 @@ object AnalysisResultParser {
             warnings += "模型返回的 warnings 字段格式异常，请核对结果。"
         }
         evaluation.answerIssue?.let { issue ->
+            warnings += issue
+        }
+        evaluation.optionsSeenIssue?.let { issue ->
+            warnings += issue
+        }
+        evaluation.optionAnalysisIssue?.let { issue ->
             warnings += issue
         }
         if (parsed.status == "answered" && parsed.answer.isEmpty() && parsed.answerText.isBlank()) {
@@ -84,6 +95,7 @@ object AnalysisResultParser {
         return parsed.copy(
             status = status,
             questionType = normalizedType,
+            optionsSeen = optionsSeen.values,
             answer = if (conflict) emptyList() else evaluation.normalizedAnswer,
             answerText = if (conflict) "" else parsed.answerText,
             warnings = (warnings + if (conflict) listOf("模型答案因题型与用户选择冲突未采用，请核对题型后重试。") else emptyList()).distinct(),

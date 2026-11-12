@@ -1,5 +1,7 @@
 package com.xjb.medicalquestionai.data
 
+import org.json.JSONArray
+
 /**
  * 解析结果与流式预览共用的答案语义校验。
  *
@@ -10,6 +12,56 @@ object AnswerSemantics {
     val allowedStatuses = setOf("answered", "needs_confirmation", "out_of_scope")
     val allowedTypes = setOf("single", "multiple", "fill", "short")
 
+    data class SeenOptions(
+        val fieldPresent: Boolean,
+        val fieldValid: Boolean,
+        val itemsValid: Boolean,
+        val values: List<SeenOption>
+    ) {
+        val usable: Boolean
+            get() = fieldPresent && fieldValid && itemsValid && values.isNotEmpty()
+
+        companion object {
+            val absent = SeenOptions(false, false, false, emptyList())
+
+            fun from(raw: Any?): SeenOptions {
+                if (raw == null) return absent
+                val array = when (raw) {
+                    is JSONArray -> raw
+                    is String -> runCatching { JSONArray(raw) }.getOrNull()
+                    else -> null
+                } ?: return SeenOptions(
+                    fieldPresent = true,
+                    fieldValid = false,
+                    itemsValid = false,
+                    values = emptyList()
+                )
+                var itemsValid = array.length() > 0
+                val values = mutableListOf<SeenOption>()
+                for (index in 0 until array.length()) {
+                    val item = array.optJSONObject(index)
+                    if (item == null) {
+                        itemsValid = false
+                        continue
+                    }
+                    val letter = seenOptionLetter(item.opt("letter"))
+                    val text = (item.opt("text") as? String)?.trim().orEmpty()
+                    if (letter == null || text.isBlank()) {
+                        itemsValid = false
+                        continue
+                    }
+                    values += SeenOption(letter, text)
+                }
+                return SeenOptions(
+                    fieldPresent = true,
+                    fieldValid = true,
+                    itemsValid = itemsValid,
+                    values = values
+                )
+            }
+        }
+    }
+
     data class Evaluation(
         val normalizedType: String,
         val normalizedAnswer: List<String>,
@@ -17,10 +69,18 @@ object AnswerSemantics {
         val typeValid: Boolean,
         val typeConflict: Boolean,
         val answerIssue: String?,
+        val optionsSeenIssue: String?,
+        val optionAnalysisIssue: String?,
+        val suppressesAnswer: Boolean,
         val warningsIssue: String?
     ) {
         val isAnswerInvalid: Boolean
-            get() = !statusValid || !typeValid || typeConflict || answerIssue != null
+            get() = !statusValid ||
+                !typeValid ||
+                typeConflict ||
+                answerIssue != null ||
+                optionsSeenIssue != null ||
+                optionAnalysisIssue != null
 
         val previewIssue: String?
             get() = when {
@@ -28,6 +88,8 @@ object AnswerSemantics {
                 !typeValid -> "题型字段缺失或无效"
                 typeConflict -> "题型与用户选择不一致"
                 answerIssue != null -> answerIssue
+                optionsSeenIssue != null -> optionsSeenIssue
+                optionAnalysisIssue != null -> optionAnalysisIssue
                 warningsIssue != null -> warningsIssue
                 else -> null
             }
@@ -65,6 +127,8 @@ object AnswerSemantics {
      * @param warningsFieldPresent 字段是否在 JSON 中出现
      * @param warningsFieldValid 字段出现时是否为 JSON 数组（错类型不能静默当成空数组）
      * @param optionAnalysisOptions 逐项分析里出现的选项；为空表示字段缺失，不做额外推断
+     * @param optionsSeen 选择题识别到的选项原文；非选择题不参与校验
+     * @param requireChoiceEvidence 根对象已经完整时，选择题必须具备选项原文与逐项分析
      */
     fun evaluate(
         status: String,
@@ -74,7 +138,9 @@ object AnswerSemantics {
         warningsFieldPresent: Boolean,
         warningsFieldValid: Boolean,
         selectedType: QuestionType,
-        optionAnalysisOptions: List<String> = emptyList()
+        optionAnalysisOptions: List<String> = emptyList(),
+        optionsSeen: SeenOptions = SeenOptions.absent,
+        requireChoiceEvidence: Boolean = false
     ): Evaluation {
         val modelType = normalizeQuestionType(questionType)
         val statusValid = status.isNotBlank() && status in allowedStatuses
@@ -92,7 +158,8 @@ object AnswerSemantics {
         }
         val letters = normalizedAnswer.mapNotNull(::optionLetter)
         val analyzedLetters = optionAnalysisOptions.mapNotNull(::optionLetter).toSet()
-        val optionAnalysisIssue = if (
+        val optionAnalysisMismatch = if (
+            status != "out_of_scope" &&
             normalizedType in setOf("single", "multiple") &&
             analyzedLetters.isNotEmpty() &&
             letters.isNotEmpty() &&
@@ -100,6 +167,30 @@ object AnswerSemantics {
         ) {
             "答案选项与逐项分析不一致，请核对选项。"
         } else null
+        val optionsSeenIssue = if (
+            status != "out_of_scope" &&
+            normalizedType in setOf("single", "multiple")
+        ) {
+            when {
+                !optionsSeen.fieldPresent -> if (requireChoiceEvidence) {
+                    "选择题缺少 options_seen（识别到的选项原文），请核对选项后重试。"
+                } else null
+                !optionsSeen.fieldValid -> "options_seen 格式异常（应为数组），请核对选项。"
+                !optionsSeen.itemsValid || optionsSeen.values.isEmpty() ->
+                    "options_seen 中存在缺少字母或原文为空的选项，请核对。"
+                letters.isNotEmpty() && letters.any { it !in optionsSeen.values.map { option -> option.letter } } ->
+                    "答案字母不在识别到的选项列表中，请核对。"
+                else -> null
+            }
+        } else null
+        val optionAnalysisIssue = when {
+            status == "out_of_scope" -> null
+            normalizedType !in setOf("single", "multiple") -> null
+            optionAnalysisMismatch != null -> optionAnalysisMismatch
+            requireChoiceEvidence && optionAnalysisOptions.isEmpty() ->
+                "选择题缺少 option_analysis 逐项分析，请核对选项。"
+            else -> null
+        }
         val answerIssue = if (status == "answered") {
             when {
                 !typeValid -> "模型返回的题型字段缺失或无效，请手动选择题型或补充题干。"
@@ -108,7 +199,7 @@ object AnswerSemantics {
                     when {
                         normalizedAnswer.size != 1 -> "单选题应只有一个答案，当前答案数量异常，请核对。"
                         letters.size != normalizedAnswer.size -> "答案中包含无法识别的选项，请核对选项字母。"
-                        else -> optionAnalysisIssue
+                        else -> null
                     }
                 }
                 normalizedType == "multiple" -> {
@@ -116,7 +207,7 @@ object AnswerSemantics {
                         normalizedAnswer.size < 2 -> "多选题的答案少于两个，请核对是否漏选。"
                         letters.size != normalizedAnswer.size -> "答案中包含无法识别的选项，请核对选项字母。"
                         letters.toSet().size != letters.size -> "答案中存在重复选项，请核对。"
-                        else -> optionAnalysisIssue
+                        else -> null
                     }
                 }
                 normalizedType == "fill" -> if (answerText.isBlank()) {
@@ -140,8 +231,25 @@ object AnswerSemantics {
             typeValid = typeValid,
             typeConflict = typeConflict,
             answerIssue = answerIssue,
+            optionsSeenIssue = optionsSeenIssue,
+            optionAnalysisIssue = optionAnalysisIssue,
+            suppressesAnswer = !statusValid ||
+                !typeValid ||
+                typeConflict ||
+                answerIssue != null ||
+                optionAnalysisMismatch != null ||
+                warningsIssue != null,
             warningsIssue = warningsIssue
         )
+    }
+
+    private fun seenOptionLetter(value: Any?): String? {
+        val text = value as? String ?: return null
+        val normalized = text.trim()
+        if (normalized.length != 1) return null
+        val letter = normalized[0]
+        if (letter !in 'A'..'Z' && letter !in 'a'..'z') return null
+        return letter.uppercase()
     }
 
     private fun optionLetter(value: String): String? {

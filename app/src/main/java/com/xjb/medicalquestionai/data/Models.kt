@@ -68,6 +68,11 @@ data class OptionAnalysis(
     val reason: String
 )
 
+data class SeenOption(
+    val letter: String,
+    val text: String
+)
+
 data class FollowUp(
     val id: String,
     val questionId: String,
@@ -110,6 +115,7 @@ data class AnalysisResult(
     val status: String = "answered",
     val questionType: String = "unknown",
     val recognizedQuestion: String = "",
+    val optionsSeen: List<SeenOption> = emptyList(),
     val answer: List<String> = emptyList(),
     val answerText: String = "",
     val imageObservations: List<ImageObservation> = emptyList(),
@@ -145,6 +151,14 @@ data class AnalysisResult(
         put("status", status)
         put("question_type", questionType)
         put("recognized_question", recognizedQuestion)
+        put("options_seen", JSONArray().apply {
+            optionsSeen.forEach {
+                put(JSONObject().apply {
+                    put("letter", it.letter)
+                    put("text", it.text)
+                })
+            }
+        })
         put("answer", JSONArray(answer))
         put("answer_text", answerText)
         put("image_observations", JSONArray().apply {
@@ -259,6 +273,17 @@ data class AnalysisResult(
                     }
                 }
             }
+            val optionsSeen = mutableListOf<SeenOption>()
+            obj.optJSONArray("options_seen")?.let { array ->
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    val letter = text(item, "letter", text(item, "option"))
+                    val optionText = text(item, "text", text(item, "content"))
+                    if (letter.isNotBlank() && optionText.isNotBlank()) {
+                        optionsSeen += SeenOption(letter, optionText)
+                    }
+                }
+            }
             val options = mutableListOf<OptionAnalysis>()
             fun addOption(item: JSONObject, fallbackLabel: String) {
                 val option = text(item, "option", text(item, "label"))
@@ -289,6 +314,7 @@ data class AnalysisResult(
                 status = text(obj, "status", "answered"),
                 questionType = text(obj, "question_type", text(obj, "type", "unknown")),
                 recognizedQuestion = text(obj, "recognized_question", text(obj, "question")),
+                optionsSeen = optionsSeen,
                 answer = stringList("answer"),
                 answerText = text(obj, "answer_text", text(obj, "answerText")),
                 imageObservations = observations,

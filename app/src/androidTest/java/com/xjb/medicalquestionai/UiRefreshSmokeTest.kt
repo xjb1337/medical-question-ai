@@ -21,6 +21,7 @@ import com.xjb.medicalquestionai.data.OptionAnalysis
 import com.xjb.medicalquestionai.data.Question
 import com.xjb.medicalquestionai.data.QuestionRepository
 import com.xjb.medicalquestionai.data.ReasoningStep
+import com.xjb.medicalquestionai.data.SeenOption
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -105,6 +106,12 @@ class UiRefreshSmokeTest {
             result = AnalysisResult(
                 questionType = "single", recognizedQuestion = "$title\nA. 体温 B. 血型 C. 身高 D. 体重",
                 answer = listOf("A"), answerText = "体温属于常用生命体征。",
+                optionsSeen = listOf(
+                    SeenOption("A", "体温"),
+                    SeenOption("B", "血型"),
+                    SeenOption("C", "身高"),
+                    SeenOption("D", "体重")
+                ),
                 confidence = "high",
                 optionAnalyses = listOf(OptionAnalysis("A", "正确", "体温是常用生命体征之一。")),
                 reasoningSteps = listOf(ReasoningStep("识别概念", "区分生命体征与其他身体资料。")),
@@ -118,7 +125,8 @@ class UiRefreshSmokeTest {
         screenshot("history-sample")
         compose.onNodeWithText(title, substring = true).performClick()
         compose.onNodeWithText("参考答案").assertIsDisplayed()
-        compose.onNodeWithText("A").assertIsDisplayed()
+        compose.onNodeWithText("识别到的选项").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("体温").assertIsDisplayed()
         compose.onNodeWithText("拍摄下一题").assertIsDisplayed()
         screenshot("result")
     }
