@@ -8,6 +8,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -120,9 +122,9 @@ class ResultScreenContentTest {
         compose.onNodeWithText("检测到画面中可能有 2 道题", substring = true).assertIsDisplayed()
         compose.onNodeWithText("只保留一道题", substring = true).assertIsDisplayed()
 
-        compose.onNodeWithTag("result-list").performScrollToNode(hasText("修改题干"))
-        compose.onNodeWithText("修改题干").assertIsDisplayed()
-        compose.onNodeWithText("补充图片").assertIsDisplayed()
+        compose.onNodeWithTag("result-list").performScrollToNode(hasText("重新解析"))
+        compose.onAllNodesWithText("修改题干").onFirst().assertIsDisplayed()
+        compose.onAllNodesWithText("补充图片").onFirst().assertIsDisplayed()
         compose.onNodeWithText("重新解析").assertIsDisplayed()
     }
 
