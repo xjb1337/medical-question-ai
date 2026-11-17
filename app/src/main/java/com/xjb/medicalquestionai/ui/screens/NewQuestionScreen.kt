@@ -28,6 +28,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.CameraAlt
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Crop
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.PhotoLibrary
@@ -238,12 +239,15 @@ fun NewQuestionScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                "已暂存上一份草稿，图片和文字仍在。",
+                                "有未提交的暂存草稿",
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.weight(1f)
                             )
                             TextButton(onClick = { viewModel.restoreParkedDraft() }) {
                                 Text("恢复草稿")
+                            }
+                            TextButton(onClick = { viewModel.clearParkedDraft() }) {
+                                Text("清空", color = MaterialTheme.colorScheme.error)
                             }
                         }
                     }
@@ -276,14 +280,7 @@ fun NewQuestionScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    if (draft.images.isEmpty()) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "支持多图，点按图片可裁剪、旋转和排序。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
+                    if (draft.images.isNotEmpty()) {
                         Spacer(Modifier.height(10.dp))
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             items(draft.images, key = { it.id }, contentType = { "draft-image" }) { image ->
@@ -294,16 +291,14 @@ fun NewQuestionScreen(
                                     onOpen = {
                                         editingImageStartInCrop = false
                                         editingImageId = image.id
-                                    }
+                                    },
+                                    onRemove = { viewModel.removeImage(image.id) }
                                 )
                             }
                         }
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "共 ${draft.images.size} 张 · 约 ${formatBytes(draft.images.sumOf { it.sizeBytes })}"
-                        )
-                        Text(
-                            "拍完可裁剪本题，默认用裁剪后的图替换原图；点按图片可旋转、排序或删除。",
+                            "共 ${draft.images.size} 张 · 约 ${formatBytes(draft.images.sumOf { it.sizeBytes })}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -364,15 +359,9 @@ fun NewQuestionScreen(
                             minLines = 3,
                             maxLines = 10,
                             enabled = !analyzing,
-                            placeholder = { Text("例如：题干、选项、患者表现、化验值，或希望重点关注的知识点……") },
+                            placeholder = { Text("输入题干、选项或关键数值…") },
                             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                             shape = MaterialTheme.shapes.medium
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "只输入文字也可以解析；题干中的否定词、数值、单位和选项请尽量完整保留。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     } else {
                         Text(
@@ -398,11 +387,13 @@ fun NewQuestionScreen(
                     AnswerModeSelector(
                         selected = settings.answerMode,
                         onSelected = viewModel::saveAnswerMode,
-                        enabled = !analyzing
+                        enabled = !analyzing,
+                        showDescription = false
                     )
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(6.dp))
                     Text(
-                        "当前模型：${settings.modelLabel}" + if (settings.modelSupportsImages) " · 支持图片" else " · 仅文字",
+                        "${settings.answerMode.description} · ${settings.modelLabel}" +
+                            if (settings.modelSupportsImages) " · 支持图片" else " · 仅文字",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -573,7 +564,8 @@ private fun DraftImagePreview(
     image: DraftImage,
     index: Int,
     enabled: Boolean,
-    onOpen: () -> Unit
+    onOpen: () -> Unit,
+    onRemove: () -> Unit
 ) {
     Card(
         modifier = Modifier.width(142.dp),
@@ -605,13 +597,33 @@ private fun DraftImagePreview(
                         Text("$index", style = MaterialTheme.typography.labelLarge)
                     }
                 }
+                if (enabled) {
+                    Surface(
+                        onClick = onRemove,
+                        color = Color.Black.copy(alpha = 0.62f),
+                        contentColor = Color.White,
+                        shape = CircleShape,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(6.dp)
+                            .size(24.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Outlined.Close,
+                                contentDescription = "删除图片 $index",
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+                }
                 if (image.warnings.isNotEmpty()) {
                     Icon(
                         Icons.Outlined.WarningAmber,
                         contentDescription = "图片有提示",
                         tint = MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier
-                            .align(Alignment.TopEnd)
+                            .align(Alignment.BottomEnd)
                             .padding(6.dp)
                             .size(20.dp)
                     )

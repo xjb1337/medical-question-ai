@@ -30,7 +30,6 @@ import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Memory
-import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.BrightnessAuto
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.LightMode
@@ -68,14 +67,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavController
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xjb.medicalquestionai.BuildConfig
 import com.xjb.medicalquestionai.MainViewModel
@@ -91,23 +87,20 @@ import com.xjb.medicalquestionai.ui.components.DeepSeekBindingGuide
 import com.xjb.medicalquestionai.ui.components.InfoBanner
 import com.xjb.medicalquestionai.ui.components.SectionCard
 import com.xjb.medicalquestionai.ui.components.UpdateSection
-import com.xjb.medicalquestionai.ui.theme.BrandGradient
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SettingsScreen(
     viewModel: MainViewModel,
-    navController: NavController,
     updateViewModel: UpdateViewModel
 ) {
     val settings by viewModel.settings.collectAsState()
     val historyCount by viewModel.historyCount.collectAsStateWithLifecycle()
     val isTesting by viewModel.isTestingKey.collectAsState()
-    val isCheckingConnection by viewModel.isCheckingConnection.collectAsState()
-    val isVerifyingModel by viewModel.isVerifyingModel.collectAsState()
     val isAnalyzing by viewModel.isAnalyzing.collectAsState()
     val followUpSendingIds by viewModel.followUpSendingIds.collectAsState()
+    val notice by viewModel.draftNotice.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -120,14 +113,18 @@ fun SettingsScreen(
     var localError by remember { mutableStateOf<String?>(null) }
     var connectionStatus by remember { mutableStateOf<String?>(null) }
     var connectionOk by remember { mutableStateOf<Boolean?>(null) }
-    var modelVerifyStatus by remember { mutableStateOf<String?>(null) }
-    var modelVerifyOk by remember { mutableStateOf<Boolean?>(null) }
     var exportingHistory by remember { mutableStateOf(false) }
-    // Only tutorial visibility is saveable. Never put the plaintext key into saved instance state.
     var guideExpanded by rememberSaveable { mutableStateOf(!settings.apiKeyConfigured) }
     var focusKeyRequested by remember { mutableStateOf(false) }
     val keyFocusRequester = remember { FocusRequester() }
     val keyBringIntoViewRequester = remember { BringIntoViewRequester() }
+
+    LaunchedEffect(notice) {
+        notice?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.consumeDraftNotice()
+        }
+    }
 
     LaunchedEffect(focusKeyRequested) {
         if (focusKeyRequested) {
@@ -141,8 +138,6 @@ fun SettingsScreen(
     LaunchedEffect(settings.apiKeyHint, settings.baseUrl, settings.model) {
         connectionStatus = null
         connectionOk = null
-        modelVerifyStatus = null
-        modelVerifyOk = null
     }
 
     Scaffold(
@@ -169,38 +164,6 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Surface(
-                        shape = MaterialTheme.shapes.large,
-                        color = MaterialTheme.colorScheme.primary,
-                        contentColor = Color.White
-                    ) {
-                        Box(Modifier.background(Brush.linearGradient(BrandGradient))) {
-                            Row(
-                                Modifier.fillMaxWidth().padding(20.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Outlined.AutoAwesome,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(30.dp)
-                                )
-                                Spacer(Modifier.width(14.dp))
-                                Column {
-                                    Text(
-                                        "让学习更顺手",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = Color.White
-                                    )
-                                    Text(
-                                        "连接模型，选择你的解题节奏",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Color.White
-                                    )
-                                }
-                            }
-                        }
-                    }
             SectionCard(title = "外观") {
                 Text(
                     "主题模式",
@@ -320,48 +283,24 @@ fun SettingsScreen(
                         onClick = {
                             connectionStatus = null
                             connectionOk = null
-                            modelVerifyStatus = null
-                            modelVerifyOk = null
-                            viewModel.checkSavedConnection { message, ok ->
+                            viewModel.testSavedConnection { error ->
+                                val ok = error == null
+                                val message = error ?: "连接与模型验证通过"
                                 connectionOk = ok
                                 connectionStatus = message
                                 scope.launch { snackbarHostState.showSnackbar(message) }
                             }
                         },
-                        enabled = settings.apiKeyConfigured && !isCheckingConnection && !isTesting,
+                        enabled = settings.apiKeyConfigured && !isTesting,
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp)
                     ) {
-                        if (isCheckingConnection) {
+                        if (isTesting) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                             Spacer(Modifier.width(6.dp))
                         }
-                        Text(if (isCheckingConnection) "检查中…" else "检查连接")
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = {
-                            modelVerifyStatus = null
-                            modelVerifyOk = null
-                            viewModel.verifySavedModel { message, ok ->
-                                modelVerifyOk = ok
-                                modelVerifyStatus = message
-                                scope.launch { snackbarHostState.showSnackbar(message) }
-                            }
-                        },
-                        enabled = settings.apiKeyConfigured && !isVerifyingModel && !isTesting,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                    ) {
-                        if (isVerifyingModel) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            Spacer(Modifier.width(6.dp))
-                        }
-                        Text(if (isVerifyingModel) "验证中…" else "验证模型（发一次极短文字请求）")
+                        Text(if (isTesting) "测试中…" else "测试连接")
                     }
                 }
                 if (connectionStatus != null) {
@@ -391,33 +330,6 @@ fun SettingsScreen(
                         }
                     }
                 }
-                if (modelVerifyStatus != null) {
-                    Spacer(Modifier.height(8.dp))
-                    val ok = modelVerifyOk == true
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        color = if (ok) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
-                        shape = MaterialTheme.shapes.medium
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                if (ok) Icons.Outlined.CheckCircle else Icons.Outlined.ErrorOutline,
-                                contentDescription = null,
-                                modifier = Modifier.size(17.dp),
-                                tint = if (ok) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                modelVerifyStatus!!,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (ok) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        }
-                    }
-                }
                 if (settings.apiKeyConfigured) {
                     Spacer(Modifier.height(4.dp))
                     TextButton(onClick = { showRemoveDialog = true }, enabled = !isTesting) {
@@ -436,7 +348,7 @@ fun SettingsScreen(
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        "密钥使用 Android Keystore 加密后保存在本机，不会写入日志或历史记录。检查连接只查询模型列表；验证模型会发送极短文字请求，可能产生少量 API 费用。",
+                        "密钥使用 Android Keystore 加密保存在本机，不会写入日志或历史记录。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -444,12 +356,6 @@ fun SettingsScreen(
             }
 
             SectionCard(title = "做题模式") {
-                Text(
-                    "做题模式决定思考强度与输出长度；可在首页随时切换。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(10.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     AnswerMode.entries.forEach { mode ->
                         ModeCard(
@@ -468,12 +374,6 @@ fun SettingsScreen(
                     TextButton(onClick = viewModel::dismissModelMigrationNote) { Text("知道了") }
                     Spacer(Modifier.height(6.dp))
                 }
-                Text(
-                    "拍题优先使用支持图片的 Flash；Pro 仅用于纯文字题。旧模型名已移出预设。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(10.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ModelCatalog.models.forEach { spec ->
                         ModelCard(
@@ -499,7 +399,7 @@ fun SettingsScreen(
                     Column(Modifier.weight(1f)) {
                         Text("保存解析历史", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                         Text(
-                            "关闭后仍会生成当前解析，但不会显示在历史记录中；收藏的题目仍会保留。",
+                            "关闭后仍会生成当前解析，但不会自动保存到题库；手动收藏的题目仍会保留。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -552,7 +452,7 @@ fun SettingsScreen(
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "题目图片保存在应用私有目录，卸载应用会一并删除。导出内容只包含文字，不包含图片。",
+                    "导出只包含文字，不包含图片。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -636,12 +536,6 @@ fun SettingsScreen(
                         enabled = !isTesting
                     ) { Text("保存") }
                 }
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "自定义模型默认按不支持图片、非流式处理；如服务端确认支持，可在此声明能力，官方模型始终按官方能力表处理。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -727,7 +621,6 @@ fun SettingsScreen(
                 TextButton(onClick = {
                     showClearDialog = false
                     viewModel.clearHistory()
-                    scope.launch { snackbarHostState.showSnackbar("历史记录已清空") }
                 }) { Text("清空", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { showClearDialog = false }) { Text("取消") } }

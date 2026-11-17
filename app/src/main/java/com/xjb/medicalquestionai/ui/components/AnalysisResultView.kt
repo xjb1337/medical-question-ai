@@ -25,6 +25,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -71,7 +72,12 @@ fun AnalysisResultView(
 
 /** 多题或题干/选项不完整时的明确提示；操作入口复用结果页底部的编辑、补图与重新解析。 */
 @Composable
-fun CaptureCompletenessCard(result: AnalysisResult, modifier: Modifier = Modifier) {
+fun CaptureCompletenessCard(
+    result: AnalysisResult,
+    modifier: Modifier = Modifier,
+    onAddImages: (() -> Unit)? = null,
+    onEditQuestion: (() -> Unit)? = null
+) {
     if (!result.needsCaptureCompletenessReview) return
     Surface(
         modifier = modifier
@@ -115,12 +121,24 @@ fun CaptureCompletenessCard(result: AnalysisResult, modifier: Modifier = Modifie
             pageMessage?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall)
             }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "可使用下方“修改题干”修正识别内容，“补充图片”补拍缺失部分，然后点“重新解析”。",
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Medium
-            )
+            if (onAddImages != null || onEditQuestion != null) {
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    onAddImages?.let {
+                        OutlinedButton(onClick = it) { Text("补充图片") }
+                    }
+                    onEditQuestion?.let {
+                        OutlinedButton(onClick = it) { Text("修改题干") }
+                    }
+                }
+            } else {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "可使用下方“修改题干”修正识别内容，“补充图片”补拍缺失部分，然后点“重新解析”。",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium
+                )
+            }
         }
     }
 }

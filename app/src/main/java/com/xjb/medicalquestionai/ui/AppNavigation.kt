@@ -157,7 +157,6 @@ fun MedicalQuestionApp(
             composable("settings") {
                 SettingsScreen(
                     viewModel = viewModel,
-                    navController = navController,
                     updateViewModel = updateViewModel
                 )
             }

@@ -66,7 +66,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -261,7 +261,6 @@ fun CameraScreen(
         topBar = {
             AppTopBar(
                 title = if (source == "next_question") "拍摄下一题" else "拍摄题目",
-                subtitle = "对准题干与选项，保持清晰完整",
                 onBack = { exitCamera() }
             )
         },
@@ -446,21 +445,6 @@ fun CameraScreen(
                         )
                     }
                 }
-            }
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(horizontal = 4.dp)) {
-                Icon(
-                    Icons.Outlined.Lightbulb,
-                    contentDescription = null,
-                    modifier = Modifier.size(17.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "拍摄后可选择裁剪本题；不裁剪也可以直接使用原图。涉及患者信息时，请先遮挡姓名、住院号等。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
             Spacer(Modifier.height(14.dp))
         }

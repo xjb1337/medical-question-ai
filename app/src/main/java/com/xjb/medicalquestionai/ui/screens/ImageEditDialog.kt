@@ -216,12 +216,6 @@ internal fun ImageEditDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         if (cropMode) {
-                            Text(
-                                "双指缩放底图；单指拖动框外平移，拖动框内移动范围，拖动四角调整大小。" +
-                                    "保存后会从高清源图重新裁剪并替换当前图；如仍需完整原图，可选择保留并新增。",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 TextButton(
                                     onClick = {

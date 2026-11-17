@@ -48,8 +48,8 @@ data class QuestionDraft(
     val text: String = "",
     val images: List<DraftImage> = emptyList(),
     val privacyConfirmed: Boolean = false,
-    /** 草稿/相机会话身份；迟到的拍照回调不得写入其他草稿。 */
-    val sessionId: String = ""
+    val sessionId: String = "",
+    val imageSource: String? = null
 )
 
 data class ReasoningStep(

@@ -1,5 +1,6 @@
 package com.xjb.medicalquestionai.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CameraAlt
@@ -22,12 +24,16 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import coil.compose.AsyncImage
 import com.xjb.medicalquestionai.data.DraftImage
 import com.xjb.medicalquestionai.data.ImageReviewSource
+import com.xjb.medicalquestionai.ui.components.rememberFileImageRequest
 
 /**
  * Optional post-import step. Dismissing it keeps every image exactly as imported.
@@ -76,30 +82,51 @@ internal fun PostImportReviewDialog(
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold
                         )
-                        Text(
-                            if (images.size == 1) {
-                                "可裁剪本题，也可直接使用原图。"
-                            } else {
-                                "本次导入 ${images.size} 张，可逐张裁剪。"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        if (images.size > 1) {
+                            Text(
+                                "本次导入 ${images.size} 张，可逐张裁剪。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
 
-                if (images.size > 1) {
+                if (images.size == 1) {
+                    val single = images.first()
+                    AsyncImage(
+                        model = rememberFileImageRequest(single.path, single.revision),
+                        contentDescription = "已导入图片预览",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 200.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                    )
+                } else {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 180.dp)
-                            .verticalScroll(rememberScrollState())
+                            .heightIn(max = 200.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         images.forEachIndexed { index, image ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                AsyncImage(
+                                    model = rememberFileImageRequest(image.path, image.revision),
+                                    contentDescription = "第 ${index + 1} 张预览",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                )
+                                Spacer(Modifier.size(10.dp))
                                 Text(
                                     "第 ${index + 1} 张",
                                     style = MaterialTheme.typography.bodyMedium,

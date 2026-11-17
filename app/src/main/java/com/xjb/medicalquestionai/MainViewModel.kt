@@ -139,7 +139,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun exportHistoryText(): String? = historyCoordinator.exportText()
 
-    private var draftImageSource: String? = null
     private var analysisJob: Job? = null
     private var elapsedJob: Job? = null
     private var activeRequestId: String? = null
@@ -147,7 +146,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var cancelRequested = false
     private var pendingStopReason: StopReason? = null
     private var lastStopSaveFailure: String? = null
-    private val cropSavesInFlight = mutableSetOf<String>()
+    private val imageEditsInFlight = mutableSetOf<String>()
 
     init {
         // 进程被杀后，数据库里遗留的 analyzing/receiving/validating 不能继续显示为“正在解析”。
@@ -253,7 +252,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             val sessionId = UUID.randomUUID().toString()
             _draft.value = QuestionDraft(sessionId = sessionId)
-            draftImageSource = null
             _pendingImageReview.value = null
             _analysisError.value = null
             _draftNotice.value = null
@@ -287,10 +285,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _draft.value = _draft.value.copy(text = text)
     }
 
-    fun setPrivacyConfirmed(value: Boolean) {
-        _draft.value = _draft.value.copy(privacyConfirmed = value)
-    }
-
     fun addImages(uris: List<Uri>) {
         if (uris.isEmpty() || _isImporting.value) return
         val remaining = ImageStore.MAX_IMAGES - _draft.value.images.size
@@ -298,7 +292,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _draftNotice.value = "最多添加 ${ImageStore.MAX_IMAGES} 张图片"
             return
         }
-        draftImageSource = "gallery"
         val sessionId = _draft.value.sessionId
         _isImporting.value = true
         viewModelScope.launch {
@@ -318,7 +311,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             _draft.value = _draft.value.copy(
                 images = _draft.value.images + imported,
-                privacyConfirmed = if (imported.isEmpty()) _draft.value.privacyConfirmed else false
+                imageSource = if (imported.isNotEmpty()) (_draft.value.imageSource ?: "gallery") else _draft.value.imageSource
             )
             _isImporting.value = false
             if (imported.isNotEmpty()) {
@@ -374,7 +367,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _draftNotice.value = "最多添加 ${ImageStore.MAX_IMAGES} 张图片"
             return
         }
-        draftImageSource = "camera"
         _isImporting.value = true
         viewModelScope.launch {
             try {
@@ -388,7 +380,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 _draft.value = _draft.value.copy(
                     images = _draft.value.images + image,
-                    privacyConfirmed = false
+                    imageSource = "camera"
                 )
                 _pendingImageReview.value = PendingImageReview(
                     imageIds = listOf(image.id),
@@ -442,6 +434,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _draftNotice.value = "解析过程中不能修改题目图片"
             return
         }
+        if (id in imageEditsInFlight) {
+            _draftNotice.value = "图片正在保存编辑结果，请稍后再删除"
+            return
+        }
         val image = _draft.value.images.firstOrNull { it.id == id } ?: return
         imageStore.delete(image.path)
         _draft.value = _draft.value.copy(images = _draft.value.images.filterNot { it.id == id })
@@ -464,7 +460,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _draftNotice.value = "解析过程中不能修改题目图片"
             return
         }
-        val image = _draft.value.images.firstOrNull { it.id == id } ?: return
+        if (!imageEditsInFlight.add(id)) {
+            _draftNotice.value = "图片正在处理中，请稍候"
+            return
+        }
+        val image = _draft.value.images.firstOrNull { it.id == id }
+        if (image == null) {
+            imageEditsInFlight.remove(id)
+            return
+        }
         viewModelScope.launch {
             try {
                 val meta = imageStore.rotate(image.path, degrees)
@@ -483,6 +487,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 })
             } catch (e: Exception) {
                 _draftNotice.value = "旋转失败：${e.message ?: "请重试"}"
+            } finally {
+                imageEditsInFlight.remove(id)
             }
         }
     }
@@ -495,16 +501,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (_isAnalyzing.value) {
             return ImageCropResult.Failure("解析过程中不能修改题目图片")
         }
-        if (!cropSavesInFlight.add(id)) {
-            return ImageCropResult.Failure("正在保存裁剪结果，请稍候")
+        if (!imageEditsInFlight.add(id)) {
+            return ImageCropResult.Failure("图片正在处理中，请稍候")
         }
         val image = _draft.value.images.firstOrNull { it.id == id }
         if (image == null) {
-            cropSavesInFlight.remove(id)
+            imageEditsInFlight.remove(id)
             return ImageCropResult.Failure("这张图片已不存在，请重新选择")
         }
         if (keepOriginal && !ImageEditPolicy.canAddImage(_draft.value.images, ImageStore.MAX_IMAGES)) {
-            cropSavesInFlight.remove(id)
+            imageEditsInFlight.remove(id)
             return ImageCropResult.Failure(
                 "最多添加 ${ImageStore.MAX_IMAGES} 张图片，请先删除一张再裁剪"
             )
@@ -524,7 +530,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         imageStore.delete(cropped.path)
                         return ImageCropResult.Failure("这张图片已不存在，请重新选择")
                     }
-                    _draft.value = _draft.value.copy(images = images, privacyConfirmed = false)
+                    _draft.value = _draft.value.copy(images = images)
                 }
                 else -> {
                     val meta = imageStore.cropInPlace(image.path, rect)
@@ -550,7 +556,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) {
             ImageCropResult.Failure("裁剪失败：${e.message ?: "请重试"}")
         } finally {
-            cropSavesInFlight.remove(id)
+            imageEditsInFlight.remove(id)
         }
     }
 
@@ -589,7 +595,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             questionType = snapshot.questionType.storageValue,
             source = when {
                 snapshot.images.isEmpty() -> "text"
-                snapshot.text.isBlank() -> draftImageSource ?: "gallery"
+                snapshot.text.isBlank() -> snapshot.imageSource ?: "gallery"
                 else -> "mixed"
             },
             questionText = snapshot.text,
@@ -619,7 +625,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
             _draft.value = QuestionDraft(sessionId = UUID.randomUUID().toString())
-            draftImageSource = null
             _pendingImageReview.value = null
             onNavigate(questionId)
             runAnalysis(question, mode, clickedAt = clickedAt)
@@ -675,6 +680,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 repository.update(current)
             } catch (e: Exception) {
+                stopElapsedTicker()
+                activeRequestId = null
+                activeQuestionId = null
                 _analysisError.value = "无法创建解析任务：${e.message ?: "本地存储不可用"}"
                 _isAnalyzing.value = false
                 return

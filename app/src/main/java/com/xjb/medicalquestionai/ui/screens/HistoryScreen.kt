@@ -20,7 +20,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.StarBorder
@@ -28,16 +27,18 @@ import androidx.compose.material.icons.outlined.ZoomIn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xjb.medicalquestionai.ui.openTopLevel
@@ -45,6 +46,7 @@ import com.xjb.medicalquestionai.ui.openDetail
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,8 +76,21 @@ fun HistoryScreen(
 ) {
     val history by viewModel.history.collectAsStateWithLifecycle()
     val query by viewModel.historyQuery.collectAsState()
+    val notice by viewModel.draftNotice.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    var onlyFavorites by rememberSaveable { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
     var viewingImages by remember { mutableStateOf<List<String>?>(null) }
+    val visibleHistory = remember(history, onlyFavorites) {
+        if (onlyFavorites) history.filter { it.isFavorite } else history
+    }
+
+    LaunchedEffect(notice) {
+        notice?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.consumeDraftNotice()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -91,6 +106,7 @@ fun HistoryScreen(
                 }
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         Column(
@@ -114,15 +130,49 @@ fun HistoryScreen(
                     }
                 }
             )
-            if (history.isEmpty()) {
+            if (history.isNotEmpty() || onlyFavorites) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = !onlyFavorites,
+                        onClick = { onlyFavorites = false },
+                        label = { Text("全部 (${history.size})") }
+                    )
+                    FilterChip(
+                        selected = onlyFavorites,
+                        onClick = { onlyFavorites = true },
+                        label = { Text("仅收藏 (${history.count { it.isFavorite }})") }
+                    )
+                }
+            }
+            if (visibleHistory.isEmpty()) {
                 EmptyState(
-                    icon = if (query.isBlank()) Icons.Outlined.History else Icons.Outlined.Search,
-                    title = if (query.isBlank()) "还没有历史记录" else "没有找到匹配的题目",
-                    description = if (query.isBlank()) "拍一张题目，或者直接粘贴题干，解析完成后会自动保存在这里。"
-                    else "换一个关键词试试，或者清除搜索条件。",
-                    actionLabel = if (query.isBlank()) "去拍题" else "清除搜索",
+                    icon = if (onlyFavorites) Icons.Outlined.StarBorder else if (query.isBlank()) Icons.Outlined.History else Icons.Outlined.Search,
+                    title = when {
+                        onlyFavorites -> "还没有收藏的题目"
+                        query.isBlank() -> "还没有历史记录"
+                        else -> "没有找到匹配的题目"
+                    },
+                    description = when {
+                        onlyFavorites -> "在题目卡片或解析页点按星标，即可加入收藏。"
+                        query.isBlank() -> "拍一张题目，或者直接粘贴题干，解析完成后会自动保存在这里。"
+                        else -> "换一个关键词试试，或者清除搜索条件。"
+                    },
+                    actionLabel = when {
+                        onlyFavorites -> "查看全部"
+                        query.isBlank() -> "去拍题"
+                        else -> "清除搜索"
+                    },
                     onAction = {
-                        if (query.isBlank()) navController.openTopLevel("home") else viewModel.setHistoryQuery("")
+                        when {
+                            onlyFavorites -> onlyFavorites = false
+                            query.isBlank() -> navController.openTopLevel("home")
+                            else -> viewModel.setHistoryQuery("")
+                        }
                     }
                 )
             } else {
@@ -133,7 +183,7 @@ fun HistoryScreen(
                     ),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(history, key = { it.id }, contentType = { "question" }) { question ->
+                    items(visibleHistory, key = { it.id }, contentType = { "question" }) { question ->
                         HistoryCard(
                             question = question,
                             onViewImages = { viewingImages = question.imagePaths },
@@ -174,7 +224,6 @@ private fun HistoryCard(
     onToggleFavorite: () -> Unit,
     onDelete: () -> Unit
 ) {
-    var menuExpanded by remember { mutableStateOf(false) }
     val date = remember(question.createdAt) {
         SimpleDateFormat("MM月dd日 HH:mm", Locale.CHINA).format(Date(question.createdAt))
     }
@@ -228,42 +277,27 @@ private fun HistoryCard(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
-                    Box {
-                        IconButton(
-                            onClick = { menuExpanded = true },
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(Icons.Outlined.MoreVert, contentDescription = "更多", modifier = Modifier.size(18.dp))
-                        }
-                        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                            DropdownMenuItem(
-                                text = { Text(if (question.isFavorite) "取消收藏" else "收藏") },
-                                leadingIcon = {
-                                    Icon(
-                                        if (question.isFavorite) Icons.Outlined.Star else Icons.Outlined.StarBorder,
-                                        contentDescription = null
-                                    )
-                                },
-                                onClick = {
-                                    menuExpanded = false
-                                    onToggleFavorite()
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("删除", color = MaterialTheme.colorScheme.error) },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Outlined.DeleteOutline,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error
-                                    )
-                                },
-                                onClick = {
-                                    menuExpanded = false
-                                    onDelete()
-                                }
-                            )
-                        }
+                    IconButton(
+                        onClick = onToggleFavorite,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            if (question.isFavorite) Icons.Outlined.Star else Icons.Outlined.StarBorder,
+                            contentDescription = if (question.isFavorite) "取消收藏" else "收藏",
+                            tint = if (question.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.Outlined.DeleteOutline,
+                            contentDescription = "删除",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                 }
                 Spacer(Modifier.height(4.dp))

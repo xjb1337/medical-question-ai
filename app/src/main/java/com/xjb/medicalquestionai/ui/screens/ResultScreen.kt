@@ -63,6 +63,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -73,7 +74,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -93,13 +93,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavController
@@ -113,6 +113,7 @@ import com.xjb.medicalquestionai.StopPolicy
 import com.xjb.medicalquestionai.StopReason
 import com.xjb.medicalquestionai.WorkIdentity
 import com.xjb.medicalquestionai.data.AnalysisResult
+import com.xjb.medicalquestionai.data.AnswerMode
 import com.xjb.medicalquestionai.data.FollowUp
 import com.xjb.medicalquestionai.data.ModelCatalog
 import com.xjb.medicalquestionai.data.Question
@@ -162,6 +163,7 @@ fun ResultScreen(
     val question = questionState.question
     val questionLoading = questionState.loading
     val task by viewModel.analysisTask.collectAsState()
+    val analysisError by viewModel.analysisError.collectAsState()
     val isCancelling by viewModel.isCancelling.collectAsState()
     val sendingIds by viewModel.followUpSendingIds.collectAsState()
     val followUpError by viewModel.followUpError.collectAsState()
@@ -258,10 +260,37 @@ fun ResultScreen(
         topBar = {
             AppTopBar(
                 title = "题目解析",
-                subtitle = if (leavingResult) "正在停止任务…" else questionDate?.let { "$it · 学懂这道题" },
+                subtitle = if (leavingResult) "正在停止任务…" else questionDate,
                 onBack = { exitResult() },
                 actions = {
                     if (question != null) {
+                        TextButton(
+                            enabled = !preparingNext && !leavingResult,
+                            onClick = {
+                                if (preparingNext || leavingResult) return@TextButton
+                                preparingNext = true
+                                nextError = null
+                                scope.launch(Dispatchers.Main.immediate) {
+                                    val outcome = viewModel.prepareNextQuestion(questionId, workIdentity)
+                                    if (outcome.success && outcome.sessionId != null) {
+                                        preparingNext = false
+                                        navController.navigate(
+                                            "camera?source=next_question&sessionId=${outcome.sessionId}"
+                                        ) {
+                                            popUpTo("result/{questionId}") { inclusive = true }
+                                            launchSingleTop = true
+                                        }
+                                    } else {
+                                        preparingNext = false
+                                        nextError = outcome.message ?: "准备下一题失败，请重试"
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Outlined.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(if (preparingNext) "准备中…" else "下一题")
+                        }
                         IconButton(onClick = { viewModel.toggleFavorite(questionId) }) {
                             Icon(
                                 if (question.isFavorite) Icons.Outlined.Star else Icons.Outlined.StarBorder,
@@ -273,53 +302,25 @@ fun ResultScreen(
             )
         },
         bottomBar = {
-            if (question != null) {
-                Column {
-                    NextQuestionButton(
-                        preparing = preparingNext,
-                        onClick = {
-                            if (preparingNext || leavingResult) return@NextQuestionButton
-                            preparingNext = true
-                            nextError = null
-                            scope.launch(Dispatchers.Main.immediate) {
-                                val outcome = viewModel.prepareNextQuestion(questionId, workIdentity)
-                                if (outcome.success && outcome.sessionId != null) {
-                                    preparingNext = false
-                                    navController.navigate(
-                                        "camera?source=next_question&sessionId=${outcome.sessionId}"
-                                    ) {
-                                        popUpTo("result/{questionId}") { inclusive = true }
-                                        launchSingleTop = true
-                                    }
-                                } else {
-                                    preparingNext = false
-                                    nextError = outcome.message ?: "准备下一题失败，请重试"
-                                }
+            if (question != null && question.result != null) {
+                FollowUpInputBar(
+                    value = followUpInput,
+                    onValueChange = { followUpInput = it },
+                    sending = sendingFollowUp,
+                    enabled = canFollowUp,
+                    attachAvailable = question.imagePaths.isNotEmpty(),
+                    attachImages = attachImages,
+                    onAttachChange = { attachImages = it },
+                    onSend = {
+                        val text = followUpInput.trim()
+                        if (text.isNotEmpty() && !sendingFollowUp) {
+                            viewModel.sendFollowUp(questionId, text, attachImages) {
+                                if (followUpInput.trim() == text) followUpInput = ""
                             }
                         }
-                    )
-                    if (question.result != null) {
-                        FollowUpInputBar(
-                            value = followUpInput,
-                            onValueChange = { followUpInput = it },
-                            sending = sendingFollowUp,
-                            enabled = canFollowUp,
-                            attachAvailable = question.imagePaths.isNotEmpty(),
-                            attachImages = attachImages,
-                            onAttachChange = { attachImages = it },
-                            onSend = {
-                                val text = followUpInput.trim()
-                                if (text.isNotEmpty() && !sendingFollowUp) {
-                                    viewModel.sendFollowUp(questionId, text, attachImages) {
-                                        // 只有用户没有在等待期间改写输入时才清空，失败时保留原文供重试。
-                                        if (followUpInput.trim() == text) followUpInput = ""
-                                    }
-                                }
-                            },
-                            onStop = { viewModel.cancelFollowUp(questionId) }
-                        )
-                    }
-                }
+                    },
+                    onStop = { viewModel.cancelFollowUp(questionId) }
+                )
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -399,6 +400,11 @@ fun ResultScreen(
                         if (nextError != null) {
                             item(key = "next-error", contentType = "error") { ErrorBanner(nextError!!) }
                         }
+                        if (analysisError != null) {
+                            item(key = "analysis-error", contentType = "error") {
+                                ErrorBanner(analysisError!!, onDismiss = viewModel::consumeAnalysisError)
+                            }
+                        }
                         val banner = resolveStatusBanner(q, taskFailed, taskCancelled, taskInterrupted, running == null)
                         if (banner != null && running == null && result == null) {
                             item(key = "status-without-answer", contentType = "status") {
@@ -450,7 +456,15 @@ fun ResultScreen(
                             item(key = "answer", contentType = "answer") { AnalysisAnswerCard(result = result) }
                             if (result.needsCaptureCompletenessReview) {
                                 item(key = "capture-completeness", contentType = "notice") {
-                                    CaptureCompletenessCard(result)
+                                    CaptureCompletenessCard(
+                                        result = result,
+                                        onAddImages = {
+                                            imagePicker.launch(
+                                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                            )
+                                        },
+                                        onEditQuestion = { showEditDialog = true }
+                                    )
                                 }
                             }
                             if (result.recognizedQuestion.isNotBlank()) {
@@ -473,7 +487,8 @@ fun ResultScreen(
                             item(key = "answer-details", contentType = "details") {
                                 CollapsibleSection(
                                     title = "详细解析",
-                                    subtitle = "选项分析 · 解题思路 · 知识点"
+                                    subtitle = "选项分析 · 解题思路 · 知识点",
+                                    initiallyExpanded = q.mode == AnswerMode.DETAILED.storageValue
                                 ) {
                                     AnalysisDetails(result)
                                 }
@@ -663,16 +678,15 @@ private fun AnalysisProgressCard(
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Medium
             )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                when {
-                    previewComplete -> "预览答案已生成，正在核对完整性与格式…"
-                    elapsedSeconds >= 20 -> "仍在等待模型响应，请保持网络连接；可以取消后重试。"
-                    else -> "已进入结果页，完成后会自动显示，可随时取消。"
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (previewComplete || elapsedSeconds >= 20) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    if (previewComplete) "预览答案已生成，正在核对完整性与格式…"
+                    else "仍在等待模型响应，请保持网络连接；可以取消后重试。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             Spacer(Modifier.height(12.dp))
             ProgressStageLabels.forEachIndexed { index, label ->
                 StageRow(
@@ -886,32 +900,20 @@ private fun ResultStatusBanner(
 @Composable
 private fun ResultMetaLine(question: Question) {
     val duration = if (question.durationMs > 0) {
-        String.format(Locale.CHINA, "耗时 %.1f s", question.durationMs / 1000f)
+        String.format(Locale.CHINA, "%.1f s", question.durationMs / 1000f)
     } else {
-        "耗时未知"
+        null
     }
     val metrics = question.result?.metrics
     val requestModel = metrics?.requestModel?.takeIf { it.isNotBlank() } ?: question.model
     val responseModel = metrics?.responseModel.orEmpty()
     val modelLabel = if (responseModel.isNotBlank() && responseModel != requestModel) {
-        "${ModelCatalog.displayName(requestModel)}（响应 $responseModel）"
+        "${ModelCatalog.displayName(requestModel)}（$responseModel）"
     } else {
         ModelCatalog.displayName(requestModel)
     }
-    val transport = when {
-        metrics == null -> ""
-        metrics.streamed -> "流式"
-        else -> "非流式"
-    }
-    val thinking = metrics?.let { if (it.thinkingEnabled) "思考开" else "思考关" }.orEmpty()
-    val saveStatus = when (metrics?.saveStatus) {
-        "saved" -> "已保存"
-        "failed" -> "保存失败"
-        else -> ""
-    }
-    val finish = metrics?.finishReason?.takeIf { it.isNotBlank() }?.let { "· $it" } ?: ""
     Text(
-        listOf(question.modeLabel, modelLabel, transport, thinking, saveStatus, finish, duration)
+        listOfNotNull(question.modeLabel, modelLabel, duration)
             .filter { it.isNotBlank() }.joinToString(" · "),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -924,7 +926,7 @@ private fun QuestionImagesRow(paths: List<String>) {
     var viewingIndex by remember { mutableStateOf<Int?>(null) }
     SectionCard(title = "原题图片") {
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            itemsIndexed(paths, key = { index, path -> "$index:$path" }, contentType = { _, _ -> "image" }) { _, path ->
+            itemsIndexed(paths, key = { index, path -> "$index:$path" }, contentType = { _, _ -> "image" }) { index, path ->
                 AsyncImage(
                     model = rememberFileImageRequest(path),
                     contentDescription = "题目图片",
@@ -932,7 +934,7 @@ private fun QuestionImagesRow(paths: List<String>) {
                     modifier = Modifier
                         .size(96.dp)
                         .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
-                        .clickable { viewingIndex = paths.indexOf(path) }
+                        .clickable { viewingIndex = index }
                 )
             }
         }
@@ -1089,30 +1091,26 @@ private fun FollowUpInputBar(
                 .navigationBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            if (enabled && attachAvailable) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("附带原图", style = MaterialTheme.typography.labelMedium)
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        "需要查看图片时开启",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Switch(
-                        checked = attachImages,
-                        onCheckedChange = onAttachChange,
-                        enabled = !sending
-                    )
-                }
-            }
-            if (enabled && value.isBlank() && !sending) {
+            if (enabled && (attachAvailable || (value.isBlank() && !sending))) {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 2.dp)
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    items(listOf("排除其他选项", "解释关键概念", "梳理鉴别要点"), key = { it }, contentType = { "quick-question" }) { quick ->
-                        SuggestionChip(onClick = { onValueChange(quick) }, label = { Text(quick) })
+                    if (attachAvailable) {
+                        item(key = "attach-images", contentType = "attach-images") {
+                            FilterChip(
+                                selected = attachImages,
+                                onClick = { onAttachChange(!attachImages) },
+                                enabled = !sending,
+                                label = { Text("附带原图") }
+                            )
+                        }
+                    }
+                    if (value.isBlank() && !sending) {
+                        items(listOf("排除其他选项", "解释关键概念", "梳理鉴别要点"), key = { it }, contentType = { "quick-question" }) { quick ->
+                            SuggestionChip(onClick = { onValueChange(quick) }, label = { Text(quick) })
+                        }
                     }
                 }
             }
@@ -1172,15 +1170,7 @@ private fun LazyListScope.followUpItems(
     onDismissError: () -> Unit
 ) {
     item(key = "follow_up_header", contentType = "follow_up_header") {
-        SectionCard(title = "继续追问") {
-        if (messages.isEmpty() && !sending) {
-            Text(
-                "有没看懂的地方？可以围绕这道题继续问，系统会带着原题和上次解析一起回答。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        }
+        SectionCard(title = "继续追问") {}
     }
     items(messages, key = { "follow_up_${it.id}" }, contentType = { "follow_up_message" }) { message ->
         FollowUpBubble(message)
@@ -1327,23 +1317,6 @@ private fun FollowUpBubble(item: FollowUp) {
     }
 }
 
-@Composable
-private fun NextQuestionButton(preparing: Boolean, onClick: () -> Unit) {
-    OutlinedButton(
-        onClick = onClick,
-        enabled = !preparing,
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .padding(horizontal = 20.dp, vertical = 4.dp),
-        shape = MaterialTheme.shapes.medium
-    ) {
-        Icon(Icons.Outlined.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(if (preparing) "正在准备下一题…" else "拍摄下一题")
-    }
-}
-
 private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
@@ -1387,20 +1360,14 @@ private fun EditQuestionDialog(
         title = { Text("修改题目后重新解析") },
         text = {
             Column {
-                Text(
-                    "修正识别错误的题干，并确认题型。保存后会重新请求模型解析，旧结果会保留到新结果返回。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
                 if (!error.isNullOrBlank()) {
-                    Spacer(Modifier.height(8.dp))
                     Text(
                         error,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
+                    Spacer(Modifier.height(8.dp))
                 }
-                Spacer(Modifier.height(10.dp))
                 QuestionTypeChips(
                     selected = type,
                     onSelected = { type = it },
