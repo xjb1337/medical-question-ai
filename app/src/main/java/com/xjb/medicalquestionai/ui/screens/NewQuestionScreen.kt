@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -62,6 +63,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
@@ -72,8 +74,6 @@ import coil.compose.AsyncImage
 import com.xjb.medicalquestionai.MainViewModel
 import com.xjb.medicalquestionai.data.DraftImage
 import com.xjb.medicalquestionai.data.ImageCropResult
-import com.xjb.medicalquestionai.data.ImageEditPolicy
-import com.xjb.medicalquestionai.data.ImageReviewSource
 import com.xjb.medicalquestionai.data.ImageStore
 import com.xjb.medicalquestionai.ui.openDetail
 import com.xjb.medicalquestionai.ui.openTopLevel
@@ -99,18 +99,15 @@ fun NewQuestionScreen(
     val settings by viewModel.settings.collectAsState()
     val analyzing by viewModel.isAnalyzing.collectAsState()
     val isImporting by viewModel.isImporting.collectAsState()
+    val editsInFlight by viewModel.imageEditsInFlightIds.collectAsState()
     val analysisError by viewModel.analysisError.collectAsState()
     val notice by viewModel.draftNotice.collectAsState()
     val parkedDraft by viewModel.parkedDraft.collectAsState()
-    val pendingImageReview by viewModel.pendingImageReview.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var editingImageId by remember { mutableStateOf<String?>(null) }
     var editingImageStartInCrop by remember { mutableStateOf(false) }
     var textExpanded by rememberSaveable { mutableStateOf(false) }
     val editingImage = editingImageId?.let { id -> draft.images.firstOrNull { it.id == id } }
-    val pendingReviewImages = pendingImageReview?.let {
-        ImageEditPolicy.reviewImages(draft.images, it.imageIds)
-    }.orEmpty()
 
     val picker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(ImageStore.MAX_IMAGES)
@@ -128,6 +125,7 @@ fun NewQuestionScreen(
     val imageUnsupported = draft.images.isNotEmpty() && !settings.modelSupportsImages
     val submitBlockedReason = when {
         isImporting -> "正在导入图片…"
+        editsInFlight.isNotEmpty() -> "正在处理图片…"
         draft.text.isBlank() && draft.images.isEmpty() -> "未添加图片或文字"
         !settings.apiKeyConfigured -> "未配置密钥"
         imageUnsupported -> "当前模型不支持图片，请切换到 DeepSeek Flash"
@@ -287,9 +285,13 @@ fun NewQuestionScreen(
                                 DraftImagePreview(
                                     image = image,
                                     index = draft.images.indexOfFirst { it.id == image.id } + 1,
-                                    enabled = !analyzing,
+                                    enabled = !analyzing && image.id !in editsInFlight,
                                     onOpen = {
                                         editingImageStartInCrop = false
+                                        editingImageId = image.id
+                                    },
+                                    onCrop = {
+                                        editingImageStartInCrop = true
                                         editingImageId = image.id
                                     },
                                     onRemove = { viewModel.removeImage(image.id) }
@@ -447,40 +449,16 @@ fun NewQuestionScreen(
             onMoveRight = { viewModel.moveImage(editingImage.id, 1) },
             onRotate = { degrees -> viewModel.rotateImage(editingImage.id, degrees) },
             onCrop = { rect, keepOriginal ->
-                viewModel.cropImage(editingImage.id, rect, keepOriginal).also { result ->
-                    if (result is ImageCropResult.Success) {
-                        viewModel.markPendingImageReviewHandled(editingImage.id)
-                    }
-                }
+                viewModel.cropImage(editingImage.id, rect, keepOriginal)
             },
             startInCropMode = editingImageStartInCrop,
+            isProcessing = editingImage.id in editsInFlight,
             onDelete = {
-                viewModel.removeImage(editingImage.id)
-                editingImageId = null
-                editingImageStartInCrop = false
-            }
-        )
-    }
-
-    if (editingImage == null && pendingImageReview != null && pendingReviewImages.isNotEmpty()) {
-        PostImportReviewDialog(
-            images = pendingReviewImages,
-            source = pendingImageReview!!.source,
-            onCropImage = { imageId ->
-                editingImageStartInCrop = true
-                editingImageId = imageId
-            },
-            onUseOriginal = viewModel::useOriginalPendingImageReview,
-            onRetakeOrReselect = {
-                if (pendingImageReview!!.source == ImageReviewSource.CAMERA) {
-                    viewModel.discardPendingImageReviewImages()
-                    navController.openDetail("camera?source=home&sessionId=${draft.sessionId}")
-                } else {
-                    viewModel.discardPendingImageReviewImages()
-                    picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                if (viewModel.removeImage(editingImage.id)) {
+                    editingImageId = null
+                    editingImageStartInCrop = false
                 }
-            },
-            onDismiss = viewModel::useOriginalPendingImageReview
+            }
         )
     }
 }
@@ -502,7 +480,7 @@ private fun CameraHeroCard(enabled: Boolean, compact: Boolean, onClick: () -> Un
                 Column(Modifier.weight(1f)) {
                     Text("继续拍摄", style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer)
-                    Text("拍完可直接裁剪本题", style = MaterialTheme.typography.bodySmall,
+                    Text("继续添加题目照片", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f))
                 }
                 Icon(Icons.AutoMirrored.Outlined.ArrowForward, contentDescription = null,
@@ -565,6 +543,7 @@ private fun DraftImagePreview(
     index: Int,
     enabled: Boolean,
     onOpen: () -> Unit,
+    onCrop: () -> Unit,
     onRemove: () -> Unit
 ) {
     Card(
@@ -646,6 +625,36 @@ private fun DraftImagePreview(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+            Surface(
+                onClick = onCrop,
+                enabled = enabled,
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f),
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 34.dp)
+                    .testTag("draft-crop-${image.id}")
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Outlined.Crop,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "裁剪",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
         }
     }

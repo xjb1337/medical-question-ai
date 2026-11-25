@@ -146,7 +146,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var cancelRequested = false
     private var pendingStopReason: StopReason? = null
     private var lastStopSaveFailure: String? = null
-    private val imageEditsInFlight = mutableSetOf<String>()
+    private val _imageEditsInFlight = MutableStateFlow<Set<String>>(emptySet())
+    val imageEditsInFlightIds: StateFlow<Set<String>> = _imageEditsInFlight.asStateFlow()
+
+    private fun tryBeginImageEdit(id: String): Boolean {
+        if (id in _imageEditsInFlight.value) return false
+        _imageEditsInFlight.update { it + id }
+        return true
+    }
+
+    private fun finishImageEdit(id: String) {
+        _imageEditsInFlight.update { it - id }
+    }
 
     init {
         // 进程被杀后，数据库里遗留的 analyzing/receiving/validating 不能继续显示为“正在解析”。
@@ -230,7 +241,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return NextQuestionResult(false, message = "正在准备下一题，请稍候")
         }
         try {
-            if (_isImporting.value) {
+            if (_isImporting.value || _imageEditsInFlight.value.isNotEmpty()) {
                 return NextQuestionResult(false, message = "图片仍在处理中，请稍后再试")
             }
             val current = _draft.value
@@ -263,7 +274,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 恢复被“拍摄下一题”暂存的草稿；当前草稿会互换保存，避免丢图片。 */
     fun restoreParkedDraft(): Boolean {
-        if (_isImporting.value) return false
+        if (_isImporting.value || _imageEditsInFlight.value.isNotEmpty()) return false
         val parked = _parkedDraft.value ?: return false
         val current = _draft.value
         _parkedDraft.value = current.takeIf { it.text.isNotBlank() || it.images.isNotEmpty() }
@@ -314,12 +325,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 imageSource = if (imported.isNotEmpty()) (_draft.value.imageSource ?: "gallery") else _draft.value.imageSource
             )
             _isImporting.value = false
-            if (imported.isNotEmpty()) {
-                _pendingImageReview.value = PendingImageReview(
-                    imageIds = imported.map { it.id },
-                    source = ImageReviewSource.GALLERY
-                )
-            }
             if (uris.size > remaining) {
                 _draftNotice.value = "最多添加 ${ImageStore.MAX_IMAGES} 张图片，已忽略多余图片"
             } else if (failed > 0) {
@@ -382,10 +387,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     images = _draft.value.images + image,
                     imageSource = "camera"
                 )
-                _pendingImageReview.value = PendingImageReview(
-                    imageIds = listOf(image.id),
-                    source = ImageReviewSource.CAMERA
-                )
                 activeCameraTokens.remove(captureToken)
                 onComplete()
             } catch (e: Exception) {
@@ -429,22 +430,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _pendingImageReview.value = null
     }
 
-    fun removeImage(id: String) {
+    fun removeImage(id: String): Boolean {
         if (_isAnalyzing.value) {
             _draftNotice.value = "解析过程中不能修改题目图片"
-            return
+            return false
         }
-        if (id in imageEditsInFlight) {
+        if (id in _imageEditsInFlight.value) {
             _draftNotice.value = "图片正在保存编辑结果，请稍后再删除"
-            return
+            return false
         }
-        val image = _draft.value.images.firstOrNull { it.id == id } ?: return
+        val image = _draft.value.images.firstOrNull { it.id == id } ?: return false
         imageStore.delete(image.path)
         _draft.value = _draft.value.copy(images = _draft.value.images.filterNot { it.id == id })
         markPendingImageReviewHandled(id)
+        return true
     }
 
     fun moveImage(id: String, delta: Int) {
+        if (_isAnalyzing.value || id in _imageEditsInFlight.value) return
         val images = _draft.value.images.toMutableList()
         val index = images.indexOfFirst { it.id == id }
         if (index < 0) return
@@ -460,13 +463,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _draftNotice.value = "解析过程中不能修改题目图片"
             return
         }
-        if (!imageEditsInFlight.add(id)) {
+        if (!tryBeginImageEdit(id)) {
             _draftNotice.value = "图片正在处理中，请稍候"
             return
         }
         val image = _draft.value.images.firstOrNull { it.id == id }
         if (image == null) {
-            imageEditsInFlight.remove(id)
+            finishImageEdit(id)
             return
         }
         viewModelScope.launch {
@@ -488,7 +491,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 _draftNotice.value = "旋转失败：${e.message ?: "请重试"}"
             } finally {
-                imageEditsInFlight.remove(id)
+                finishImageEdit(id)
             }
         }
     }
@@ -501,16 +504,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (_isAnalyzing.value) {
             return ImageCropResult.Failure("解析过程中不能修改题目图片")
         }
-        if (!imageEditsInFlight.add(id)) {
+        if (!tryBeginImageEdit(id)) {
             return ImageCropResult.Failure("图片正在处理中，请稍候")
         }
         val image = _draft.value.images.firstOrNull { it.id == id }
         if (image == null) {
-            imageEditsInFlight.remove(id)
+            finishImageEdit(id)
             return ImageCropResult.Failure("这张图片已不存在，请重新选择")
         }
         if (keepOriginal && !ImageEditPolicy.canAddImage(_draft.value.images, ImageStore.MAX_IMAGES)) {
-            imageEditsInFlight.remove(id)
+            finishImageEdit(id)
             return ImageCropResult.Failure(
                 "最多添加 ${ImageStore.MAX_IMAGES} 张图片，请先删除一张再裁剪"
             )
@@ -556,7 +559,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) {
             ImageCropResult.Failure("裁剪失败：${e.message ?: "请重试"}")
         } finally {
-            imageEditsInFlight.remove(id)
+            finishImageEdit(id)
         }
     }
 
@@ -569,6 +572,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val snapshot = _draft.value
         if (_isAnalyzing.value || _retryingIds.value.isNotEmpty()) {
             _analysisError.value = "已有解析任务正在进行，请先取消或等待完成"
+            return
+        }
+        if (_isImporting.value || _imageEditsInFlight.value.isNotEmpty()) {
+            _analysisError.value = "图片仍在处理中，请稍候再解析"
             return
         }
         if (snapshot.text.isBlank() && snapshot.images.isEmpty()) {
@@ -636,17 +643,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         mode: AnswerMode,
         previous: Question? = null,
         clickedAt: Long = SystemClock.elapsedRealtime()
-    ) {
+    ): Boolean {
         val apiKey = settingsRepository.apiKey()
         if (apiKey.isNullOrBlank()) {
             _analysisError.value = "尚未配置 API 密钥，请先到设置中填写"
             _isAnalyzing.value = false
-            return
+            return false
         }
         val requestId = UUID.randomUUID().toString()
         activeRequestId = requestId
         activeQuestionId = question.id
         cancelRequested = false
+        pendingStopReason = null
+        var completedSuccessfully = false
         val startedAt = clickedAt
         val titles = stageTitles(mode)
         val requestModel = question.model.ifBlank { settings.value.model }
@@ -685,7 +694,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 activeQuestionId = null
                 _analysisError.value = "无法创建解析任务：${e.message ?: "本地存储不可用"}"
                 _isAnalyzing.value = false
-                return
+                return false
             }
         }
 
@@ -898,6 +907,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             _analysisError.value = message
                             stopElapsedTicker()
                             _isAnalyzing.value = false
+                            _isCancelling.value = false
+                            pendingStopReason = null
+                            cancelRequested = false
                             activeRequestId = null
                             activeQuestionId = null
                         } else {
@@ -988,9 +1000,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             } else {
                                 logMetrics("completed", current.durationMs)
                                 updateTaskStatus(AnalysisTaskStatus.COMPLETED, titles = titles, allDone = true, preview = null)
+                                completedSuccessfully = true
                             }
                             stopElapsedTicker()
                             _isAnalyzing.value = false
+                            _isCancelling.value = false
+                            pendingStopReason = null
+                            cancelRequested = false
                             activeRequestId = null
                             activeQuestionId = null
                         }
@@ -1009,6 +1025,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _analysisError.value = event.message
                         stopElapsedTicker()
                         _isAnalyzing.value = false
+                        _isCancelling.value = false
+                        pendingStopReason = null
+                        cancelRequested = false
                         activeRequestId = null
                         activeQuestionId = null
                     }
@@ -1091,8 +1110,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _isCancelling.value = false
                 activeRequestId = null
                 activeQuestionId = null
+                pendingStopReason = null
+                cancelRequested = false
             }
         }
+        return completedSuccessfully
     }
 
     fun cancelAnalysis() {
@@ -1137,7 +1159,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         return@launch
                     }
                 }
-                runAnalysis(
+                val succeeded = runAnalysis(
                     previous.copy(
                         model = targetModel,
                         baseUrl = settings.value.baseUrl,
@@ -1147,7 +1169,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     previous = previous,
                     clickedAt = clickedAt
                 )
-                onSuccess?.invoke()
+                if (succeeded) onSuccess?.invoke()
             } finally {
                 _retryingIds.update { it - id }
                 if (activeRequestId == null) {
@@ -1174,6 +1196,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (_isAnalyzing.value && activeQuestionId == id) {
             val message = "解析进行中，暂时不能修改题干；请先取消或等待完成"
+            _analysisError.value = message
+            onError(message)
+            return
+        }
+        if (followUpJobs[id]?.isActive == true) {
+            val message = "这道题的追问仍在生成，请先停止追问再修改"
             _analysisError.value = message
             onError(message)
             return

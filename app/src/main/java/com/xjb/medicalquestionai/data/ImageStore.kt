@@ -309,16 +309,19 @@ class ImageStore(private val context: Context) {
     private fun decodeCrop(sourceFile: File, rect: android.graphics.RectF): Bitmap {
         val bounds = decodeBounds(sourceFile) ?: error("图片解码失败")
         val region = normalizedCrop(bounds.outWidth, bounds.outHeight, rect)
-        @Suppress("DEPRECATION")
-        val decoder = BitmapRegionDecoder.newInstance(sourceFile.absolutePath, false)
-        return try {
-            val options = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
-            decoder.decodeRegion(
-                android.graphics.Rect(region[0], region[1], region[0] + region[2], region[1] + region[3]),
-                options
-            ) ?: error("裁剪图片解码失败")
-        } finally {
-            decoder.recycle()
+        return java.io.FileInputStream(sourceFile).use { stream ->
+            @Suppress("DEPRECATION")
+            val decoder = BitmapRegionDecoder.newInstance(stream, false)
+                ?: error("无法解码图片裁剪区域")
+            try {
+                val options = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
+                decoder.decodeRegion(
+                    android.graphics.Rect(region[0], region[1], region[0] + region[2], region[1] + region[3]),
+                    options
+                ) ?: error("裁剪图片解码失败")
+            } finally {
+                decoder.recycle()
+            }
         }
     }
 
@@ -342,7 +345,8 @@ class ImageStore(private val context: Context) {
     private fun writeBitmap(file: File, bitmap: Bitmap, quality: Int) {
         val parent = file.parentFile ?: error("图片目录不存在")
         parent.mkdirs()
-        val temp = File.createTempFile("${file.nameWithoutExtension}_", ".tmp", parent)
+        val prefix = "${file.nameWithoutExtension}_".let { if (it.length < 3) it.padEnd(3, '_') else it }
+        val temp = File.createTempFile(prefix, ".tmp", parent)
         try {
             val compressed = FileOutputStream(temp).use { out ->
                 bitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)
