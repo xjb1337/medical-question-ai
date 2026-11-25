@@ -110,7 +110,8 @@ fun SettingsScreen(
     var showClearDialog by remember { mutableStateOf(false) }
     var baseUrlInput by remember(settings.baseUrl) { mutableStateOf(settings.baseUrl) }
     var modelInput by remember(settings.model) { mutableStateOf(settings.model) }
-    var localError by remember { mutableStateOf<String?>(null) }
+    var apiKeyError by remember { mutableStateOf<String?>(null) }
+    var baseUrlError by remember { mutableStateOf<String?>(null) }
     var connectionStatus by remember { mutableStateOf<String?>(null) }
     var connectionOk by remember { mutableStateOf<Boolean?>(null) }
     var exportingHistory by remember { mutableStateOf(false) }
@@ -224,7 +225,7 @@ fun SettingsScreen(
                     value = apiKeyInput,
                     onValueChange = {
                         apiKeyInput = it
-                        localError = null
+                        apiKeyError = null
                         connectionStatus = null
                         connectionOk = null
                     },
@@ -247,9 +248,9 @@ fun SettingsScreen(
                     },
                     shape = MaterialTheme.shapes.medium
                 )
-                if (localError != null) {
+                if (apiKeyError != null) {
                     Spacer(Modifier.height(6.dp))
-                    Text(localError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    Text(apiKeyError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -257,7 +258,7 @@ fun SettingsScreen(
                         onClick = {
                             val key = apiKeyInput.trim()
                             if (key.isBlank()) {
-                                localError = "请先粘贴 API 密钥"
+                                apiKeyError = "请先粘贴 API 密钥"
                                 return@Button
                             }
                             viewModel.saveApiKey(key) { error ->
@@ -268,7 +269,7 @@ fun SettingsScreen(
                                     connectionOk = null
                                     scope.launch { snackbarHostState.showSnackbar("密钥已保存，建议测试连接") }
                                 } else {
-                                    localError = error
+                                    apiKeyError = error
                                 }
                             }
                         },
@@ -466,7 +467,7 @@ fun SettingsScreen(
                     value = baseUrlInput,
                     onValueChange = {
                         baseUrlInput = it
-                        localError = null
+                        baseUrlError = null
                     },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Base URL") },
@@ -489,18 +490,19 @@ fun SettingsScreen(
                         onClick = {
                             val validation = SettingsRepository.validateBaseUrl(baseUrlInput)
                             if (validation != null) {
-                                localError = validation
+                                baseUrlError = validation
                             } else if (viewModel.saveBaseUrl(SettingsRepository.normalizeBaseUrl(baseUrlInput))) {
-                                localError = null
+                                baseUrlError = null
                                 scope.launch { snackbarHostState.showSnackbar("接口地址已保存") }
                             } else {
-                                localError = "接口地址保存失败，请检查格式"
+                                baseUrlError = "接口地址保存失败，请检查格式"
                             }
                         },
                         enabled = !isTesting
                     ) { Text("保存地址") }
                     TextButton(onClick = {
                         baseUrlInput = SettingsRepository.DEFAULT_BASE_URL
+                        baseUrlError = null
                         viewModel.saveBaseUrl(SettingsRepository.DEFAULT_BASE_URL)
                     }) { Text("恢复默认") }
                 }
@@ -559,9 +561,9 @@ fun SettingsScreen(
                         enabled = !isTesting
                     )
                 }
-                if (localError != null) {
+                if (baseUrlError != null) {
                     Spacer(Modifier.height(6.dp))
-                    Text(localError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    Text(baseUrlError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
             }
 

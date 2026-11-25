@@ -82,6 +82,7 @@ internal fun ImageEditDialog(
     onRotate: (Int) -> Unit,
     onCrop: suspend (android.graphics.RectF, Boolean) -> ImageCropResult,
     startInCropMode: Boolean = false,
+    isProcessing: Boolean = false,
     onDelete: () -> Unit
 ) {
     var cropMode by remember(image.id, startInCropMode) { mutableStateOf(startInCropMode) }
@@ -97,8 +98,13 @@ internal fun ImageEditDialog(
         cropMode = false
     }
 
+    fun exitCropMode() {
+        cropError = null
+        if (startInCropMode) onDismiss() else leaveCropMode()
+    }
+
     fun saveCrop(keepOriginal: Boolean) {
-        if (cropSaving) return
+        if (cropSaving || isProcessing) return
         val savedRect = cropRect
         cropSaving = true
         cropError = null
@@ -118,8 +124,8 @@ internal fun ImageEditDialog(
 
     Dialog(
         onDismissRequest = {
-            if (!cropSaving) {
-                if (cropMode) leaveCropMode() else onDismiss()
+            if (!cropSaving && !isProcessing) {
+                if (cropMode && !startInCropMode) leaveCropMode() else onDismiss()
             }
         },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
@@ -218,10 +224,7 @@ internal fun ImageEditDialog(
                         if (cropMode) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 TextButton(
-                                    onClick = {
-                                        cropError = null
-                                        leaveCropMode()
-                                    },
+                                    onClick = ::exitCropMode,
                                     enabled = !cropSaving,
                                     modifier = Modifier.weight(1f).heightIn(min = 48.dp)
                                 ) { Text("取消") }
@@ -266,7 +269,7 @@ internal fun ImageEditDialog(
                             }
                             Button(
                                 onClick = { saveCrop(keepOriginal = false) },
-                                enabled = !cropSaving,
+                                enabled = !cropSaving && !isProcessing,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .heightIn(min = 48.dp)
@@ -276,7 +279,7 @@ internal fun ImageEditDialog(
                             }
                             OutlinedButton(
                                 onClick = { saveCrop(keepOriginal = true) },
-                                enabled = !cropSaving,
+                                enabled = !cropSaving && !isProcessing,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .heightIn(min = 48.dp)
@@ -284,12 +287,12 @@ internal fun ImageEditDialog(
                             ) { Text("保留原图并添加") }
                         } else {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                OutlinedButton(onClick = onMoveLeft, enabled = enableMoveLeft, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("前移") }
-                                OutlinedButton(onClick = onMoveRight, enabled = enableMoveRight, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("后移") }
+                                OutlinedButton(onClick = onMoveLeft, enabled = enableMoveLeft && !isProcessing, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("前移") }
+                                OutlinedButton(onClick = onMoveRight, enabled = enableMoveRight && !isProcessing, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("后移") }
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                OutlinedButton(onClick = { onRotate(-90) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("左转") }
-                                OutlinedButton(onClick = { onRotate(90) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("右转") }
+                                OutlinedButton(onClick = { onRotate(-90) }, enabled = !isProcessing, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("左转") }
+                                OutlinedButton(onClick = { onRotate(90) }, enabled = !isProcessing, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("右转") }
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Button(
@@ -298,9 +301,14 @@ internal fun ImageEditDialog(
                                         cropViewport = CropViewport()
                                         cropMode = true
                                     },
+                                    enabled = !isProcessing,
                                     modifier = Modifier.weight(1f).heightIn(min = 48.dp)
                                 ) { Text("裁剪") }
-                                TextButton(onClick = { confirmDelete = true }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                                TextButton(
+                                    onClick = { confirmDelete = true },
+                                    enabled = !isProcessing,
+                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                                ) {
                                     Text("删除", color = MaterialTheme.colorScheme.error)
                                 }
                             }

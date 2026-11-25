@@ -3,12 +3,12 @@ package com.xjb.medicalquestionai
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.RectF
 import android.net.Uri
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.xjb.medicalquestionai.data.ImageReviewSource
-import com.xjb.medicalquestionai.data.PendingImageReview
+import com.xjb.medicalquestionai.data.ImageCropResult
 import com.xjb.medicalquestionai.ui.AuditKeyStore
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -30,79 +30,57 @@ class PostImportReviewViewModelTest {
     private val app = ApplicationProvider.getApplicationContext<Application>()
 
     @Test
-    fun cameraImportCreatesReviewAndRetakeRemovesOnlyTheNewImage() {
+    fun galleryAndCameraImportsUseImagesDirectlyWithoutPopupReview() {
         val viewModel = MainViewModel(app)
         val older = imageFile("older.jpg")
         viewModel.addImages(listOf(Uri.fromFile(older)))
-        val olderImage = awaitReview(viewModel).let { review ->
-            assertEquals(ImageReviewSource.GALLERY, review.source)
-            viewModel.draft.value.images.single()
-        }
-        viewModel.useOriginalPendingImageReview()
+        awaitImageCount(viewModel, 1)
+        assertNull(viewModel.pendingImageReview.value)
+        val olderImage = viewModel.draft.value.images.single()
 
-        val target = viewModel.createCaptureTarget()
-        writeImage(target.file, 700, 900)
+        val captureFile = File(app.cacheDir, "captures/camera_test.jpg").apply {
+            parentFile?.mkdirs()
+            writeImage(this, 700, 900)
+        }
         val token = viewModel.beginCameraCapture()
         var completed = false
         viewModel.addCameraImage(
-            target.uri,
-            target.file,
+            Uri.fromFile(captureFile),
+            captureFile,
             viewModel.draft.value.sessionId,
             token
         ) { completed = true }
 
-        val review = awaitReview(viewModel)
-        assertEquals(ImageReviewSource.CAMERA, review.source)
-        assertEquals(2, viewModel.draft.value.images.size)
+        awaitImageCount(viewModel, 2)
+        assertNull(viewModel.pendingImageReview.value)
         assertTrue(completed)
         val newImage = viewModel.draft.value.images.single { it.id != olderImage.id }
         assertTrue(File(newImage.path).exists())
         assertTrue(File(requireNotNull(newImage.sourcePath)).exists())
-
-        viewModel.discardPendingImageReviewImages()
-
-        assertNull(viewModel.pendingImageReview.value)
-        assertEquals(listOf(olderImage.id), viewModel.draft.value.images.map { it.id })
-        assertTrue(File(olderImage.path).exists())
-        assertFalse(File(newImage.path).exists())
-        assertFalse(File(requireNotNull(newImage.sourcePath)).exists())
+        assertFalse(captureFile.exists())
     }
 
     @Test
-    fun multiGalleryReselectRemovesEveryNewFileButPreservesOlderDraftImage() {
+    fun optionalCropInPlaceReplacesOnlySelectedImageWhenChosen() = runBlocking {
         val viewModel = MainViewModel(app)
-        viewModel.addImages(listOf(Uri.fromFile(imageFile("older-gallery.jpg"))))
-        val older = awaitReview(viewModel).let { viewModel.draft.value.images.single() }
-        viewModel.useOriginalPendingImageReview()
+        viewModel.addImages(listOf(Uri.fromFile(imageFile("direct-crop.jpg"))))
+        awaitImageCount(viewModel, 1)
+        val target = viewModel.draft.value.images.single()
 
-        viewModel.addImages(
-            listOf(
-                Uri.fromFile(imageFile("new-gallery-1.jpg")),
-                Uri.fromFile(imageFile("new-gallery-2.jpg"))
-            )
-        )
-        val review = awaitReview(viewModel)
-        val newImages = viewModel.draft.value.images.filter { it.id != older.id }
-        assertEquals(ImageReviewSource.GALLERY, review.source)
-        assertEquals(2, review.imageIds.size)
-        assertEquals(2, newImages.size)
-
-        viewModel.discardPendingImageReviewImages()
-
-        assertEquals(listOf(older.id), viewModel.draft.value.images.map { it.id })
-        assertTrue(File(older.path).exists())
-        newImages.forEach {
-            assertFalse(File(it.path).exists())
-            assertFalse(File(requireNotNull(it.sourcePath)).exists())
-        }
+        val result = viewModel.cropImage(target.id, RectF(0.1f, 0.1f, 0.6f, 0.6f), keepOriginal = false)
+        assertEquals(ImageCropResult.Success, result)
+        val updated = viewModel.draft.value.images.single()
+        assertEquals(target.id, updated.id)
+        assertEquals(400, updated.width)
+        assertEquals(300, updated.height)
     }
 
     @Test
     fun clearingAParkedDraftRemovesBothImageCopies() = runBlocking {
         val viewModel = MainViewModel(app)
         viewModel.addImages(listOf(Uri.fromFile(imageFile("parked.jpg"))))
-        val image = awaitReview(viewModel).let { viewModel.draft.value.images.single() }
-        viewModel.useOriginalPendingImageReview()
+        awaitImageCount(viewModel, 1)
+        val image = viewModel.draft.value.images.single()
 
         val prepared = viewModel.prepareNextQuestion("fictional-question")
         assertTrue(prepared.success)
@@ -115,15 +93,16 @@ class PostImportReviewViewModelTest {
         assertFalse(File(requireNotNull(image.sourcePath)).exists())
     }
 
-    private fun awaitReview(viewModel: MainViewModel): PendingImageReview {
+    private fun awaitImageCount(viewModel: MainViewModel, expectedCount: Int) {
         val deadline = System.currentTimeMillis() + 10_000
         while (System.currentTimeMillis() < deadline) {
             shadowOf(Looper.getMainLooper()).idle()
-            viewModel.pendingImageReview.value?.let { return it }
+            if (!viewModel.isImporting.value && viewModel.draft.value.images.size >= expectedCount) {
+                return
+            }
             Thread.sleep(10)
         }
-        assertNotNull("Image import did not finish", viewModel.pendingImageReview.value)
-        return requireNotNull(viewModel.pendingImageReview.value)
+        assertEquals("Image import did not reach $expectedCount", expectedCount, viewModel.draft.value.images.size)
     }
 
     private fun imageFile(name: String): File =

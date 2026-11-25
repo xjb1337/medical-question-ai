@@ -229,7 +229,7 @@ fun ResultScreen(
     val runningPreview = running?.preview
     val runningPreviewResult = remember(runningPreview) { runningPreview?.toResult() }
     val previewHasAnswer = runningPreviewResult?.hasAnswerPreview() == true
-    val canFollowUp = question?.result != null && !question.isAnswerStale
+    val canFollowUp = question?.result != null && !question.isAnswerStale && running == null
     val sendingFollowUp = followUpStreams[questionId]?.sending == true || questionId in sendingIds
     val followUpStream = followUpStreams[questionId]
     val messages by remember(viewModel, questionId, question?.answerRevision) {
@@ -456,14 +456,19 @@ fun ResultScreen(
                             item(key = "answer", contentType = "answer") { AnalysisAnswerCard(result = result) }
                             if (result.needsCaptureCompletenessReview) {
                                 item(key = "capture-completeness", contentType = "notice") {
+                                    val canEditNow = running == null
                                     CaptureCompletenessCard(
                                         result = result,
-                                        onAddImages = {
-                                            imagePicker.launch(
-                                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                            )
-                                        },
-                                        onEditQuestion = { showEditDialog = true }
+                                        onAddImages = if (canEditNow) {
+                                            {
+                                                imagePicker.launch(
+                                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                                )
+                                            }
+                                        } else null,
+                                        onEditQuestion = if (canEditNow) {
+                                            { showEditDialog = true }
+                                        } else null
                                     )
                                 }
                             }
@@ -505,6 +510,7 @@ fun ResultScreen(
                             }
                             item(key = "answer-actions", contentType = "actions") {
                                 ResultActions(
+                                    busy = running != null,
                                     addingImages = addingImages,
                                     onCopy = {
                                         val copyText = if (q.isAnswerStale) {
@@ -543,7 +549,11 @@ fun ResultScreen(
                                             type = "text/plain"
                                             putExtra(Intent.EXTRA_TEXT, shareText)
                                         }
-                                        context.startActivity(Intent.createChooser(intent, "分享解析"))
+                                        runCatching {
+                                            context.startActivity(Intent.createChooser(intent, "分享解析"))
+                                        }.onFailure {
+                                            scope.launch { snackbarHostState.showSnackbar("当前设备无法打开分享面板") }
+                                        }
                                     },
                                     onEditQuestion = { showEditDialog = true },
                                     onAddImages = {
@@ -840,7 +850,7 @@ private fun resolveStatusBanner(
         "上次解析被中断",
         "应用退出或任务结束后解析未完成，可以重新解析；旧结果会保留。"
     )
-    "analyzing" -> if (noRunningTask) StatusBannerModel(
+    "analyzing", "receiving", "validating", "preparing", "uploading" -> if (noRunningTask) StatusBannerModel(
         BannerTone.WARNING,
         "解析任务未在运行",
         "上次解析没有完成。点击“重新解析”重新发起请求。"
@@ -947,6 +957,7 @@ private fun QuestionImagesRow(paths: List<String>) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ResultActions(
+    busy: Boolean,
     addingImages: Boolean,
     onCopy: () -> Unit,
     onShare: () -> Unit,
@@ -979,6 +990,7 @@ private fun ResultActions(
         }
         OutlinedButton(
             onClick = onEditQuestion,
+            enabled = !busy,
             modifier = Modifier.heightIn(min = 44.dp),
             contentPadding = PaddingValues(horizontal = 14.dp)
         ) {
@@ -988,7 +1000,7 @@ private fun ResultActions(
         }
         OutlinedButton(
             onClick = onAddImages,
-            enabled = !addingImages,
+            enabled = !busy && !addingImages,
             modifier = Modifier.heightIn(min = 44.dp),
             contentPadding = PaddingValues(horizontal = 14.dp)
         ) {
@@ -1002,6 +1014,7 @@ private fun ResultActions(
         }
         OutlinedButton(
             onClick = onRetry,
+            enabled = !busy,
             modifier = Modifier.heightIn(min = 44.dp),
             contentPadding = PaddingValues(horizontal = 14.dp)
         ) {

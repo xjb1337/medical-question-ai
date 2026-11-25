@@ -149,6 +149,17 @@ class ImageEditDialogTest {
     }
 
     @Test
+    fun cancellingDirectCropModeDismissesDialogInsteadOfOpeningEditor() {
+        render(startInCropMode = true)
+
+        compose.onNodeWithTag("crop-overlay").assertIsDisplayed()
+        compose.onNodeWithText("取消").performClick()
+
+        compose.waitUntil(5_000) { dismisses == 1 }
+        assertTrue(crops.isEmpty())
+    }
+
+    @Test
     fun twoFingerPinchZoomsTheBaseImageWithoutChangingTheSavedCropRect() {
         render()
         compose.onNodeWithText("裁剪").performClick()
