@@ -237,6 +237,9 @@ class ResultScreenContentTest {
             compose.onAllNodes(hasText("解析完成后可继续追问…", substring = true))
                 .fetchSemanticsNodes().isEmpty()
         )
+        compose.onNodeWithTag("result-list").performScrollToNode(hasText("修改题干"))
+        compose.onNodeWithText("修改题干").assertIsDisplayed()
+        compose.onNodeWithText("补充图片").assertIsDisplayed()
     }
 
     private fun openResult() {

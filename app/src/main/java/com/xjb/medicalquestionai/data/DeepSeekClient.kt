@@ -137,14 +137,14 @@ internal fun buildChatPayload(request: ChatRequest, stream: Boolean = true): JSO
     }
 }
 
-class DeepSeekClient {
-    private val client = OkHttpClient.Builder()
+class DeepSeekClient internal constructor(private val client: OkHttpClient) {
+    constructor() : this(OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         // 流式回答的耗时由调用侧 withTimeout 按快速/标准/详细档位控制；
         // 这里不能设 45s 固定读超时，否则长答案会在模式超时前被 OkHttp 截断。
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
-        .build()
+        .build())
 
     /**
      * 真正的流式请求：OkHttp enqueue + callbackFlow。
@@ -393,26 +393,6 @@ class DeepSeekClient {
                 e.message
             }
         }
-
-    /** 兼容旧调用：先检查 /models，再做一次极短文字验证。 */
-    suspend fun verifyConnection(baseUrl: String, apiKey: String, model: String): String? {
-        val check = try {
-            checkConnection(baseUrl, apiKey, model)
-        } catch (e: ApiException) {
-            return e.message
-        }
-        if (!check.modelListAvailable) {
-            // /models 为空不能说明模型一定不存在；继续用一次极短生成请求验证真实可用性。
-            return verifyModel(baseUrl, apiKey, model)
-        }
-        if (!check.selectedModelFound) {
-            return "接口可用，但模型 $model 不在返回列表中。请检查模型名或账号权限。"
-        }
-        return verifyModel(baseUrl, apiKey, model)
-    }
-
-    suspend fun verifyKey(baseUrl: String, apiKey: String): String? =
-        verifyConnection(baseUrl, apiKey, ModelCatalog.FLASH.id)
 
     private fun buildHttpRequest(request: ChatRequest, stream: Boolean): Request {
         val endpoint = buildEndpoint(request.baseUrl, "/chat/completions")

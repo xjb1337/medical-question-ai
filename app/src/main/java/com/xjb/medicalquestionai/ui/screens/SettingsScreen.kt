@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -96,8 +97,11 @@ fun SettingsScreen(
     updateViewModel: UpdateViewModel
 ) {
     val settings by viewModel.settings.collectAsState()
-    val historyCount by viewModel.historyCount.collectAsStateWithLifecycle()
-    val isTesting by viewModel.isTestingKey.collectAsState()
+    val hasStoredQuestions by viewModel.hasStoredQuestions.collectAsStateWithLifecycle()
+    val clearingHistory by viewModel.isClearingHistory.collectAsStateWithLifecycle()
+    val isCheckingConnection by viewModel.isCheckingConnection.collectAsStateWithLifecycle()
+    val isVerifyingModel by viewModel.isVerifyingModel.collectAsStateWithLifecycle()
+    val isTesting = isCheckingConnection || isVerifyingModel
     val isAnalyzing by viewModel.isAnalyzing.collectAsState()
     val followUpSendingIds by viewModel.followUpSendingIds.collectAsState()
     val notice by viewModel.draftNotice.collectAsState()
@@ -119,6 +123,11 @@ fun SettingsScreen(
     var focusKeyRequested by remember { mutableStateOf(false) }
     val keyFocusRequester = remember { FocusRequester() }
     val keyBringIntoViewRequester = remember { BringIntoViewRequester() }
+
+    fun showConnectionResult(message: String, ok: Boolean) {
+        connectionStatus = message
+        connectionOk = ok
+    }
 
     LaunchedEffect(notice) {
         notice?.let {
@@ -267,7 +276,7 @@ fun SettingsScreen(
                                     guideExpanded = false
                                     connectionStatus = null
                                     connectionOk = null
-                                    scope.launch { snackbarHostState.showSnackbar("密钥已保存，建议测试连接") }
+                                    scope.launch { snackbarHostState.showSnackbar("密钥已保存，可以检查连接") }
                                 } else {
                                     apiKeyError = error
                                 }
@@ -284,25 +293,42 @@ fun SettingsScreen(
                         onClick = {
                             connectionStatus = null
                             connectionOk = null
-                            viewModel.testSavedConnection { error ->
-                                val ok = error == null
-                                val message = error ?: "连接与模型验证通过"
-                                connectionOk = ok
-                                connectionStatus = message
-                                scope.launch { snackbarHostState.showSnackbar(message) }
-                            }
+                            viewModel.checkSavedConnection(::showConnectionResult)
                         },
                         enabled = settings.apiKeyConfigured && !isTesting,
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp)
                     ) {
-                        if (isTesting) {
+                        if (isCheckingConnection) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                             Spacer(Modifier.width(6.dp))
                         }
-                        Text(if (isTesting) "测试中…" else "测试连接")
+                        Text(if (isCheckingConnection) "检查中…" else "检查连接")
                     }
+                }
+                if (settings.apiKeyConfigured) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            connectionStatus = null
+                            connectionOk = null
+                            viewModel.verifySavedModel(::showConnectionResult)
+                        },
+                        enabled = !isTesting,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    ) {
+                        if (isVerifyingModel) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        Text(if (isVerifyingModel) "验证中…" else "验证模型")
+                    }
+                    Text(
+                        "验证模型会发送一次简短的文字请求，可能产生少量 API 费用。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 if (connectionStatus != null) {
                     Spacer(Modifier.height(10.dp))
@@ -400,7 +426,7 @@ fun SettingsScreen(
                     Column(Modifier.weight(1f)) {
                         Text("保存解析历史", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                         Text(
-                            "关闭后仍会生成当前解析，但不会自动保存到题库；手动收藏的题目仍会保留。",
+                            "关闭后，题库仅显示收藏。解析仍会暂存在本机，可用下方的“清空历史”删除。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -436,19 +462,19 @@ fun SettingsScreen(
                                 }
                             }
                         },
-                        enabled = !exportingHistory,
+                        enabled = !exportingHistory && !clearingHistory,
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp)
                     ) { Text(if (exportingHistory) "正在导出…" else "导出历史") }
                     OutlinedButton(
                         onClick = { showClearDialog = true },
-                        enabled = historyCount > 0,
+                        enabled = hasStoredQuestions && !clearingHistory,
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp)
                     ) {
-                        Text("清空历史", color = MaterialTheme.colorScheme.error)
+                        Text(if (clearingHistory) "正在清空…" else "清空历史")
                     }
                 }
                 Spacer(Modifier.height(8.dp))

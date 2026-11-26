@@ -114,10 +114,8 @@ class UiUxScreenshotTest {
             }
         }
         compose.waitUntil(15_000) { nav.currentDestination != null }
-        compose.mainClock.autoAdvance = false
         if (route != "home") {
             compose.runOnUiThread { nav.navigate(route) }
-            compose.mainClock.advanceTimeBy(1_000)
         }
         val readyText = when (screen) {
             "result" -> "识别到的题目"

@@ -5,18 +5,18 @@ import com.xjb.medicalquestionai.data.Question
 import com.xjb.medicalquestionai.data.QuestionRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
+
+data class HistoryResults(val total: Int, val matches: List<Question>)
 
 /**
  * Owns history query/filter/export state so MainViewModel can stay focused on task orchestration.
@@ -29,26 +29,26 @@ class HistoryCoordinator(
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
-    val history: StateFlow<List<Question>> = combine(
+    val history: StateFlow<HistoryResults?> = combine(
         repository.observeAll(),
         _query,
         settings.map { it.saveHistory }.distinctUntilChanged()
-    ) { all, query, saveHistory ->
+    ) { all, rawQuery, saveHistory ->
         val visible = if (saveHistory) all else all.filter { it.isFavorite }
-        if (query.isBlank()) visible else visible.filter { question ->
+        val query = rawQuery.trim()
+        val matches = if (query.isEmpty()) visible else visible.filter { question ->
             question.questionText.contains(query, ignoreCase = true) ||
                 question.result?.answer?.joinToString().orEmpty().contains(query, ignoreCase = true) ||
                 question.result?.answerText.orEmpty().contains(query, ignoreCase = true) ||
                 question.result?.recognizedQuestion.orEmpty().contains(query, ignoreCase = true) ||
                 question.result?.keyPoints?.joinToString().orEmpty().contains(query, ignoreCase = true)
         }
+        HistoryResults(visible.size, matches)
     }.flowOn(Dispatchers.Default)
-        .stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        .stateIn(scope, SharingStarted.WhileSubscribed(5_000), null)
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val count: StateFlow<Int> = settings.map { it.saveHistory }.distinctUntilChanged()
-        .flatMapLatest { repository.observeCount(onlyFavorites = !it) }
-        .stateIn(scope, SharingStarted.WhileSubscribed(5_000), 0)
+    val hasStoredQuestions = repository.observeHasStoredQuestions()
+        .stateIn(scope, SharingStarted.WhileSubscribed(5_000), false)
 
     suspend fun exportText(): String? = withContext(Dispatchers.Default) {
         val keepHistory = settings.value.saveHistory
@@ -61,7 +61,10 @@ class HistoryCoordinator(
                 appendLine()
                 appendLine("【${question.typeLabel}】${question.shortQuestion}")
                 appendLine("状态：${question.status} · ${question.modeLabel} · ${question.modelLabel}")
-                question.result?.let { appendLine("答案：${it.answerDisplay}") }
+                question.result?.let {
+                    if (question.isAnswerStale) appendLine("旧答案（题目已修改，待重新解析）：${it.answerDisplay}")
+                    else appendLine("答案：${it.answerDisplay}")
+                }
             }
         }
     }

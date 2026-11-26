@@ -72,7 +72,7 @@ class UiRefreshSmokeTest {
         compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("题目图片"))[0].performScrollTo().performClick()
         compose.onNodeWithText("原题图片 1/2").assertIsDisplayed()
         compose.onNodeWithContentDescription("关闭图片查看").performClick()
-        compose.onNodeWithText("拍摄下一题").assertIsDisplayed()
+        compose.onNodeWithText("下一题").assertIsDisplayed()
     }
 
     @Test fun navigationAndTextEntryRemainUsable() {
@@ -83,7 +83,7 @@ class UiRefreshSmokeTest {
         screenshot("history-empty")
         compose.onNodeWithText("设置").performClick()
         compose.onNodeWithText("学习设置").assertIsDisplayed()
-        compose.onNodeWithText("让学习更顺手").assertIsDisplayed()
+        compose.onNodeWithText("外观").assertIsDisplayed()
         screenshot("settings")
         compose.onNodeWithText("拍题").performClick()
         compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("文字题目"))
@@ -127,7 +127,7 @@ class UiRefreshSmokeTest {
         compose.onNodeWithText("参考答案").assertIsDisplayed()
         compose.onNodeWithText("识别到的选项").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("体温").assertIsDisplayed()
-        compose.onNodeWithText("拍摄下一题").assertIsDisplayed()
+        compose.onNodeWithText("下一题").assertIsDisplayed()
         screenshot("result")
     }
 

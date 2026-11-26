@@ -22,7 +22,8 @@ import java.util.Locale
 class UpdateViewModel internal constructor(
     application: Application,
     private val checkRelease: suspend () -> UpdateCheckResult,
-    private val isOnline: () -> Boolean
+    private val isOnline: () -> Boolean,
+    private val repository: UpdateRepository = UpdateRepository()
 ) : AndroidViewModel(application) {
     constructor(application: Application) : this(
         application,
@@ -38,7 +39,6 @@ class UpdateViewModel internal constructor(
         private const val KEY_IGNORED_VERSION = "ignored_version_code"
     }
 
-    private val repository = UpdateRepository()
     private val networkMonitor = UpdateNetworkMonitor(application)
     internal val connectivity = networkMonitor.connectivity
     private val prefs = application.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -52,7 +52,9 @@ class UpdateViewModel internal constructor(
     val state: StateFlow<UpdateUiState> = _state.asStateFlow()
 
     private var checking = false
+    @Volatile
     private var downloading = false
+    private val downloadLock = Any()
     private var downloadJob: Job? = null
     private var activeDownloadCall: okhttp3.Call? = null
     private var downloadToken = 0L
@@ -60,7 +62,7 @@ class UpdateViewModel internal constructor(
     private var dismissedVersionCode: Long? = null
 
     fun checkManually() {
-        if (checking) return
+        if (checking || downloading || _state.value.status == UpdateStatus.INSTALLING) return
         check(manual = true)
     }
 
@@ -141,34 +143,37 @@ class UpdateViewModel internal constructor(
         }
     }
 
-    fun download() {
+    fun download(): Unit = synchronized(downloadLock) {
         val release = _state.value.update ?: return
-        if (downloading) return
+        if (downloading || checking || _state.value.status == UpdateStatus.INSTALLING) return
         val token = ++downloadToken
         activeDownloadToken = token
         downloading = true
+        _state.update {
+            it.copy(
+                status = UpdateStatus.DOWNLOADING,
+                progressPercent = null,
+                downloadedBytes = 0L,
+                totalBytes = release.manifest.apkSizeBytes,
+                message = "正在下载更新",
+                showPrompt = false,
+                showProgress = true,
+                installReady = false,
+                downloadedFile = null
+            )
+        }
         downloadJob = viewModelScope.launch(Dispatchers.IO) {
-            _state.update {
-                it.copy(
-                    status = UpdateStatus.DOWNLOADING,
-                    progressPercent = null,
-                    downloadedBytes = 0L,
-                    totalBytes = release.manifest.apkSizeBytes,
-                    message = "正在下载更新",
-                    showPrompt = false,
-                    showProgress = true,
-                    installReady = false,
-                    downloadedFile = null
-                )
-            }
+            var unclaimedFile: File? = null
             try {
                 val file = repository.downloadApk(
                     context = getApplication(),
                     release = release,
                     downloadId = "task-$token",
-                    onCall = { call -> if (activeDownloadToken == token) activeDownloadCall = call }
+                    onCall = { call ->
+                        if (!withActiveDownload(token) { activeDownloadCall = call }) call?.cancel()
+                    }
                 ) { downloaded, total ->
-                    if (activeDownloadToken == token) {
+                    withActiveDownload(token) {
                         _state.update {
                             it.copy(
                                 downloadedBytes = downloaded,
@@ -178,14 +183,15 @@ class UpdateViewModel internal constructor(
                         }
                     }
                 }
-                if (activeDownloadToken == token) {
+                unclaimedFile = file
+                withActiveDownload(token) {
                     _state.update { it.copy(status = UpdateStatus.VERIFYING, message = "正在校验更新包") }
                 }
                 withContext(Dispatchers.IO) {
                     ApkVerifier.verify(getApplication(), file, release.manifest, BuildConfig.VERSION_CODE.toLong())
                         .getOrThrow()
                 }
-                if (activeDownloadToken == token) {
+                withActiveDownload(token) {
                     _state.update {
                         it.copy(
                             status = UpdateStatus.READY_TO_INSTALL,
@@ -198,9 +204,10 @@ class UpdateViewModel internal constructor(
                             showProgress = true
                         )
                     }
+                    unclaimedFile = null
                 }
             } catch (e: CancellationException) {
-                if (activeDownloadToken == token) {
+                withActiveDownload(token) {
                     _state.update {
                         it.copy(
                             status = if (it.update != null) UpdateStatus.AVAILABLE else UpdateStatus.IDLE,
@@ -214,7 +221,7 @@ class UpdateViewModel internal constructor(
                     }
                 }
             } catch (e: Exception) {
-                if (activeDownloadToken == token) {
+                withActiveDownload(token) {
                     _state.update {
                         it.copy(
                             status = UpdateStatus.FAILED,
@@ -226,7 +233,8 @@ class UpdateViewModel internal constructor(
                     }
                 }
             } finally {
-                if (activeDownloadToken == token) {
+                unclaimedFile?.delete()
+                withActiveDownload(token) {
                     downloading = false
                     activeDownloadCall = null
                     downloadJob = null
@@ -236,16 +244,21 @@ class UpdateViewModel internal constructor(
         }
     }
 
-    fun cancelDownload() {
-        val token = activeDownloadToken ?: return
+    private inline fun withActiveDownload(token: Long, action: () -> Unit): Boolean =
+        synchronized(downloadLock) {
+            if (activeDownloadToken != token) return@synchronized false
+            action()
+            true
+        }
+
+    fun cancelDownload(): Unit = synchronized(downloadLock) {
+        if (activeDownloadToken == null) return
+        activeDownloadToken = null
         activeDownloadCall?.cancel()
         downloadJob?.cancel()
-        if (activeDownloadToken == token) {
-            activeDownloadToken = null
-            downloading = false
-            downloadJob = null
-            activeDownloadCall = null
-        }
+        downloading = false
+        downloadJob = null
+        activeDownloadCall = null
         _state.update {
             it.copy(
                 status = if (it.update != null) UpdateStatus.AVAILABLE else UpdateStatus.IDLE,

@@ -109,6 +109,7 @@ import com.xjb.medicalquestionai.AnalysisTaskStatus
 import com.xjb.medicalquestionai.FollowUpStreamState
 import com.xjb.medicalquestionai.LifecycleStopEvent
 import com.xjb.medicalquestionai.MainViewModel
+import com.xjb.medicalquestionai.data.ImageStore
 import com.xjb.medicalquestionai.StopPolicy
 import com.xjb.medicalquestionai.StopReason
 import com.xjb.medicalquestionai.WorkIdentity
@@ -144,6 +145,7 @@ private data class QuestionUiState(
     val question: Question?
 )
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ResultScreen(
     questionId: String,
@@ -163,6 +165,8 @@ fun ResultScreen(
     val question = questionState.question
     val questionLoading = questionState.loading
     val task by viewModel.analysisTask.collectAsState()
+    val inputEdits by viewModel.questionInputEdits.collectAsStateWithLifecycle()
+    val retryingIds by viewModel.retryingIds.collectAsStateWithLifecycle()
     val analysisError by viewModel.analysisError.collectAsState()
     val isCancelling by viewModel.isCancelling.collectAsState()
     val sendingIds by viewModel.followUpSendingIds.collectAsState()
@@ -180,7 +184,6 @@ fun ResultScreen(
     var showEditDialog by remember { mutableStateOf(false) }
     var editSaving by remember { mutableStateOf(false) }
     var editError by remember { mutableStateOf<String?>(null) }
-    var addingImages by remember { mutableStateOf(false) }
     var preparingNext by remember { mutableStateOf(false) }
     var nextError by remember { mutableStateOf<String?>(null) }
     var leavingResult by remember { mutableStateOf(false) }
@@ -214,9 +217,7 @@ fun ResultScreen(
         contract = ActivityResultContracts.PickMultipleVisualMedia(9)
     ) { uris ->
         if (uris.isNotEmpty()) {
-            addingImages = true
             viewModel.addImagesToQuestion(questionId, uris) { message ->
-                addingImages = false
                 scope.launch { snackbarHostState.showSnackbar(message) }
             }
         }
@@ -229,8 +230,15 @@ fun ResultScreen(
     val runningPreview = running?.preview
     val runningPreviewResult = remember(runningPreview) { runningPreview?.toResult() }
     val previewHasAnswer = runningPreviewResult?.hasAnswerPreview() == true
-    val canFollowUp = question?.result != null && !question.isAnswerStale && running == null
     val sendingFollowUp = followUpStreams[questionId]?.sending == true || questionId in sendingIds
+    val savingInput = questionId in inputEdits
+    val addingImages = savingInput && !editSaving
+    val questionBusy = running != null || questionId in retryingIds || savingInput
+    val canChangeQuestion = !questionBusy && !sendingFollowUp
+    val canFollowUp = question?.result != null && !question.isAnswerStale && !questionBusy
+    val openImagePicker = {
+        imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    }
     val followUpStream = followUpStreams[questionId]
     val messages by remember(viewModel, questionId, question?.answerRevision) {
         viewModel.followUps(questionId, question?.answerRevision ?: 0L)
@@ -239,7 +247,7 @@ fun ResultScreen(
         question?.let { SimpleDateFormat("MM月dd日 HH:mm", Locale.CHINA).format(Date(it.createdAt)) }
     }
     fun exitResult() {
-        if (leavingResult || preparingNext) return
+        if (leavingResult || preparingNext || editSaving) return
         leavingResult = true
         scope.launch(Dispatchers.Main.immediate) {
             try {
@@ -405,6 +413,11 @@ fun ResultScreen(
                                 ErrorBanner(analysisError!!, onDismiss = viewModel::consumeAnalysisError)
                             }
                         }
+                        if (addingImages) {
+                            item(key = "adding-images", contentType = "status") {
+                                InfoBanner("正在添加题目图片…")
+                            }
+                        }
                         val banner = resolveStatusBanner(q, taskFailed, taskCancelled, taskInterrupted, running == null)
                         if (banner != null && running == null && result == null) {
                             item(key = "status-without-answer", contentType = "status") {
@@ -412,7 +425,8 @@ fun ResultScreen(
                                     tone = banner.tone,
                                     title = banner.title,
                                     message = banner.message,
-                                    onRetry = { viewModel.retryAnalysis(questionId) {} }
+                                    retryEnabled = canChangeQuestion,
+                                    onRetry = { viewModel.retryAnalysis(questionId) }
                                 )
                             }
                         }
@@ -443,9 +457,6 @@ fun ResultScreen(
                                     SeenOptionsCard(q.checkpoint)
                                 }
                             }
-                            if (q.imagePaths.isNotEmpty()) {
-                                item(key = "checkpoint-images", contentType = "images") { QuestionImagesRow(q.imagePaths) }
-                            }
                         }
                         if (result != null) {
                             if (q.isAnswerStale) {
@@ -456,19 +467,11 @@ fun ResultScreen(
                             item(key = "answer", contentType = "answer") { AnalysisAnswerCard(result = result) }
                             if (result.needsCaptureCompletenessReview) {
                                 item(key = "capture-completeness", contentType = "notice") {
-                                    val canEditNow = running == null
                                     CaptureCompletenessCard(
                                         result = result,
-                                        onAddImages = if (canEditNow) {
-                                            {
-                                                imagePicker.launch(
-                                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                                )
-                                            }
-                                        } else null,
-                                        onEditQuestion = if (canEditNow) {
-                                            { showEditDialog = true }
-                                        } else null
+                                        onAddImages = openImagePicker.takeIf { q.imagePaths.size < ImageStore.MAX_IMAGES },
+                                        onEditQuestion = { showEditDialog = true },
+                                        actionsEnabled = canChangeQuestion
                                     )
                                 }
                             }
@@ -504,14 +507,16 @@ fun ResultScreen(
                                         tone = banner.tone,
                                         title = banner.title,
                                         message = banner.message,
-                                        onRetry = { viewModel.retryAnalysis(questionId) {} }
+                                        retryEnabled = canChangeQuestion,
+                                        onRetry = { viewModel.retryAnalysis(questionId) }
                                     )
                                 }
                             }
                             item(key = "answer-actions", contentType = "actions") {
                                 ResultActions(
-                                    busy = running != null,
+                                    busy = !canChangeQuestion,
                                     addingImages = addingImages,
+                                    canAddImages = q.imagePaths.size < ImageStore.MAX_IMAGES,
                                     onCopy = {
                                         val copyText = if (q.isAnswerStale) {
                                             "注意：题目已修改，本答案对应修改前的题目，尚未重新解析。\n${result.answerDisplay}"
@@ -556,12 +561,8 @@ fun ResultScreen(
                                         }
                                     },
                                     onEditQuestion = { showEditDialog = true },
-                                    onAddImages = {
-                                        imagePicker.launch(
-                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                        )
-                                    },
-                                    onRetry = { viewModel.retryAnalysis(questionId) {} }
+                                    onAddImages = openImagePicker,
+                                    onRetry = { viewModel.retryAnalysis(questionId) }
                                 )
                             }
                             followUpItems(
@@ -572,12 +573,38 @@ fun ResultScreen(
                                     onStop = { viewModel.cancelFollowUp(questionId) },
                                     onDismissError = { viewModel.consumeFollowUpError() }
                                 )
-                        } else if (running == null && q.status == "completed") {
-                            item(key = "empty-result", contentType = "empty") {
-                                EmptyResultCard(
-                                    retrying = taskFailed != null,
-                                    onRetry = { viewModel.retryAnalysis(questionId) {} }
-                                )
+                        } else if (running == null) {
+                            if (banner == null) {
+                                item(key = "empty-result", contentType = "empty") {
+                                    EmptyResultCard(
+                                        retryEnabled = canChangeQuestion,
+                                        onRetry = { viewModel.retryAnalysis(questionId) }
+                                    )
+                                }
+                            }
+                            if (q.questionText.isNotBlank() && q.checkpoint?.recognizedQuestion.isNullOrBlank()) {
+                                item(key = "saved-question-text", contentType = "question") {
+                                    SectionCard(title = "原题文字") { Text(q.questionText) }
+                                }
+                            }
+                            if (q.imagePaths.isNotEmpty()) {
+                                item(key = "saved-question-images", contentType = "images") {
+                                    QuestionImagesRow(q.imagePaths)
+                                }
+                            }
+                            item(key = "input-actions", contentType = "actions") {
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(
+                                        onClick = { showEditDialog = true },
+                                        enabled = canChangeQuestion,
+                                        modifier = Modifier.heightIn(min = 48.dp)
+                                    ) { Text("修改题干") }
+                                    OutlinedButton(
+                                        onClick = openImagePicker,
+                                        enabled = canChangeQuestion && q.imagePaths.size < ImageStore.MAX_IMAGES,
+                                        modifier = Modifier.heightIn(min = 48.dp)
+                                    ) { Text(if (addingImages) "正在添加…" else "补充图片") }
+                                }
                             }
                         }
                         item(key = "result-end", contentType = "spacer") { Spacer(Modifier.height(8.dp)) }
@@ -867,6 +894,7 @@ private fun ResultStatusBanner(
     tone: BannerTone,
     title: String,
     message: String,
+    retryEnabled: Boolean,
     onRetry: () -> Unit
 ) {
     val container = when (tone) {
@@ -895,6 +923,7 @@ private fun ResultStatusBanner(
             Spacer(Modifier.height(10.dp))
             Button(
                 onClick = onRetry,
+                enabled = retryEnabled,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp)
@@ -959,6 +988,7 @@ private fun QuestionImagesRow(paths: List<String>) {
 private fun ResultActions(
     busy: Boolean,
     addingImages: Boolean,
+    canAddImages: Boolean,
     onCopy: () -> Unit,
     onShare: () -> Unit,
     onEditQuestion: () -> Unit,
@@ -1000,7 +1030,7 @@ private fun ResultActions(
         }
         OutlinedButton(
             onClick = onAddImages,
-            enabled = !busy && !addingImages,
+            enabled = !busy && canAddImages,
             modifier = Modifier.heightIn(min = 44.dp),
             contentPadding = PaddingValues(horizontal = 14.dp)
         ) {
@@ -1062,20 +1092,20 @@ private fun MissingQuestionCard(onBack: () -> Unit, modifier: Modifier = Modifie
 }
 
 @Composable
-private fun EmptyResultCard(retrying: Boolean, onRetry: () -> Unit) {
+private fun EmptyResultCard(retryEnabled: Boolean, onRetry: () -> Unit) {
     Column {
         InfoBanner("这道题暂时没有解析内容。可以检查 API 设置和网络后重新解析。")
         Spacer(Modifier.height(10.dp))
         Button(
             onClick = onRetry,
-            enabled = !retrying,
+            enabled = retryEnabled,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp)
         ) {
             Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(17.dp))
             Spacer(Modifier.width(6.dp))
-            Text(if (retrying) "正在重新解析…" else "重新解析")
+            Text("重新解析")
         }
     }
 }

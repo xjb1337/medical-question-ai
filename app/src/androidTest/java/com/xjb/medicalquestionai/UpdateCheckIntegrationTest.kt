@@ -4,14 +4,24 @@ import android.app.Application
 import android.content.Context
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewModelScope
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.xjb.medicalquestionai.data.update.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
+import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -47,12 +57,12 @@ class UpdateCheckIntegrationTest {
         Unit
     }
 
-    private suspend fun model(): UpdateViewModel = withContext(Dispatchers.Main) {
+    private suspend fun model(repository: UpdateRepository = UpdateRepository()): UpdateViewModel = withContext(Dispatchers.Main) {
         val store = ViewModelStore().also { stores.add(it) }
         ViewModelProvider(store, object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T =
-                UpdateViewModel(application, { requests++; response }, { online }) as T
+                UpdateViewModel(application, { requests++; response }, { online }, repository) as T
         })[UpdateViewModel::class.java]
     }
 
@@ -131,5 +141,53 @@ class UpdateCheckIntegrationTest {
         assertTrue(recreated.state.value.showPrompt)
         check(recreated, manual = true)
         assertEquals(UpdateStatus.AVAILABLE, recreated.state.value.status)
+    }
+
+    @Test fun cancelledDownloadCannotOverwriteRetryState(): Unit = runBlocking {
+        val firstStarted = CountDownLatch(1)
+        val releaseFirst = CountDownLatch(1)
+        val calls = AtomicInteger()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            if (calls.incrementAndGet() == 1) {
+                firstStarted.countDown()
+                releaseFirst.await(5, TimeUnit.SECONDS)
+                throw IOException("late first download")
+            }
+            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
+                .code(503).message("fixture").body("".toResponseBody()).build()
+        }.build()
+        online = true
+        response = UpdateCheckResult.Available(UpdateRelease(
+            UpdateManifest(1, application.packageName, 200_000, "test", 26,
+                "medical-question-ai.apk", 1, "a".repeat(64), "b".repeat(64), "c".repeat(40), "", "Test"),
+            "https://github.com/xjb1337/medical-question-ai/releases/download/fixture/medical-question-ai.apk",
+            "fixture"
+        ))
+        val model = model(UpdateRepository(client))
+        check(model, manual = true)
+        val previousDownload = withContext(Dispatchers.Main) {
+            val existingJobs = model.viewModelScope.coroutineContext.job.children.toSet()
+            model.download()
+            assertEquals(UpdateStatus.DOWNLOADING, model.state.value.status)
+            model.viewModelScope.coroutineContext.job.children.first { it !in existingJobs }
+        }
+        try {
+            assertTrue(withContext(Dispatchers.IO) { firstStarted.await(5, TimeUnit.SECONDS) })
+            withContext(Dispatchers.Main) {
+                model.cancelDownload()
+                assertEquals(UpdateStatus.AVAILABLE, model.state.value.status)
+                assertFalse(model.state.value.showProgress)
+                model.download()
+            }
+            withTimeout(5_000) {
+                while (model.state.value.status != UpdateStatus.FAILED) delay(10)
+            }
+        } finally {
+            releaseFirst.countDown()
+        }
+        withTimeout(5_000) { previousDownload.join() }
+        assertEquals(UpdateStatus.FAILED, model.state.value.status)
+        assertEquals("下载失败（HTTP 503）", model.state.value.message)
+        assertEquals(2, calls.get())
     }
 }

@@ -1,5 +1,8 @@
 package com.xjb.medicalquestionai.ui.components
 
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.heightIn
 import com.xjb.medicalquestionai.toReadablePlainText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.BorderStroke
@@ -71,12 +74,14 @@ fun AnalysisResultView(
 }
 
 /** 多题或题干/选项不完整时的明确提示；操作入口复用结果页底部的编辑、补图与重新解析。 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CaptureCompletenessCard(
     result: AnalysisResult,
     modifier: Modifier = Modifier,
     onAddImages: (() -> Unit)? = null,
-    onEditQuestion: (() -> Unit)? = null
+    onEditQuestion: (() -> Unit)? = null,
+    actionsEnabled: Boolean = true
 ) {
     if (!result.needsCaptureCompletenessReview) return
     Surface(
@@ -123,12 +128,16 @@ fun CaptureCompletenessCard(
             }
             if (onAddImages != null || onEditQuestion != null) {
                 Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     onAddImages?.let {
-                        OutlinedButton(onClick = it) { Text("补充图片") }
+                        OutlinedButton(onClick = it, enabled = actionsEnabled, modifier = Modifier.heightIn(min = 48.dp)) {
+                            Text("补充图片")
+                        }
                     }
                     onEditQuestion?.let {
-                        OutlinedButton(onClick = it) { Text("修改题干") }
+                        OutlinedButton(onClick = it, enabled = actionsEnabled, modifier = Modifier.heightIn(min = 48.dp)) {
+                            Text("修改题干")
+                        }
                     }
                 }
             } else {

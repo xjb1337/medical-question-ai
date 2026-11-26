@@ -15,6 +15,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
@@ -45,9 +46,9 @@ class DeepSeekBindingGuideTest {
     }
 
     @Test fun firstBindingShortcutFocusesKeyAndCollapseSurvivesRecreation() {
-        compose.onNodeWithText("1 · 登录 DeepSeek 开放平台").performScrollTo().assertIsDisplayed()
+        step(1).performScrollTo().assertIsDisplayed()
         screenshot("guide-start")
-        compose.onNodeWithText("已有 API Key，直接填写").performScrollTo().performClick()
+        compose.onNodeWithTag("guide-existing-key").performScrollTo().performClick()
         compose.onNode(hasSetTextAction() and hasText("粘贴 API 密钥")).assertIsFocused()
         screenshot("key-entry")
         compose.onNode(hasSetTextAction() and hasText("粘贴 API 密钥"))
@@ -59,7 +60,7 @@ class DeepSeekBindingGuideTest {
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")))
         assertNull(SecureKeyStore(instrumentation.targetContext).getApiKey())
         compose.onNodeWithText("查看详细绑定步骤").performClick()
-        compose.onNodeWithText("1 · 登录 DeepSeek 开放平台").performScrollTo().assertIsDisplayed()
+        step(1).performScrollTo().assertIsDisplayed()
     }
 
     @Test fun officialLinksUseBrowserAndKeepTutorialAvailable() {
@@ -74,12 +75,13 @@ class DeepSeekBindingGuideTest {
         instrumentation.addMonitor(monitor)
         try {
             val buttons = listOf(
-                "打开官方平台 / 登录" to DeepSeekGuideLink.PLATFORM,
-                "查看余额 / 充值" to DeepSeekGuideLink.BALANCE,
-                "打开 API keys 页面" to DeepSeekGuideLink.API_KEYS,
-                "查看官方使用文档" to DeepSeekGuideLink.DOCUMENTATION
+                Triple(1, "打开官方平台 / 登录", DeepSeekGuideLink.PLATFORM),
+                Triple(2, "查看余额 / 充值", DeepSeekGuideLink.BALANCE),
+                Triple(3, "打开 API keys 页面", DeepSeekGuideLink.API_KEYS),
+                Triple(5, "查看官方使用文档", DeepSeekGuideLink.DOCUMENTATION)
             )
-            buttons.forEach { (label, link) ->
+            buttons.forEach { (index, label, link) ->
+                if (index != 1) step(index).performScrollTo().performClick()
                 compose.onNodeWithText(label).performScrollTo().performClick()
                 compose.waitForIdle()
                 assertEquals(link.url, intents.last().dataString)
@@ -87,7 +89,7 @@ class DeepSeekBindingGuideTest {
                 assertNull(intents.last().extras)
             }
             assertEquals(4, intents.size)
-            compose.onNodeWithText("4 · 返回 App，粘贴并保存").performScrollTo().assertIsDisplayed()
+            step(4).performScrollTo().performClick()
             screenshot("guide-return")
             compose.onNodeWithText("我已复制，去粘贴密钥").performScrollTo().performClick()
             compose.onNode(hasSetTextAction() and hasText("粘贴 API 密钥")).assertIsFocused()
@@ -97,12 +99,15 @@ class DeepSeekBindingGuideTest {
     }
 
     @Test fun expandedTutorialAndScrollSurviveActivityRecreation() {
-        compose.onNodeWithText("3 · 创建并复制 API Key").performScrollTo().assertIsDisplayed()
+        step(3).performScrollTo().performClick()
+        compose.onNodeWithText("打开 API keys 页面").performScrollTo().assertIsDisplayed()
         compose.activityRule.scenario.recreate()
-        compose.onNodeWithText("3 · 创建并复制 API Key").assertIsDisplayed()
-        compose.onNodeWithText("5 · 检查连接，再验证模型").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("打开 API keys 页面").assertIsDisplayed()
+        step(5).performScrollTo().assertIsDisplayed()
         screenshot("guide-checks")
     }
+
+    private fun step(index: Int) = compose.onNodeWithTag("guide-step-$index")
 
     @Test fun unavailableBrowserOffersCopyableOfficialAddress() {
         val monitor = object : Instrumentation.ActivityMonitor() {

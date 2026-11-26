@@ -3,6 +3,11 @@ package com.xjb.medicalquestionai.data
 import com.xjb.medicalquestionai.LifecycleStopEvent
 import com.xjb.medicalquestionai.StopPolicy
 import com.xjb.medicalquestionai.WorkIdentity
+import kotlinx.coroutines.runBlocking
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -14,6 +19,28 @@ import org.junit.Assert.fail
 import org.junit.Test
 
 class DeviceFeedbackCoreTest {
+
+    @Test
+    fun connectionCheckAndModelVerificationUseSeparateRequests() = runBlocking {
+        val requests = mutableListOf<String>()
+        val client = DeepSeekClient(OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            requests += "${request.method} ${request.url.encodedPath}"
+            val json = when (request.url.encodedPath) {
+                "/v1/models" -> """{"data":[{"id":"fixture"}]}"""
+                else -> """{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}]}"""
+            }
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1)
+                .code(200).message("OK").body(json.toResponseBody()).build()
+        }.build())
+        val base = "https://model.example.test/v1"
+
+        assertTrue(client.checkConnection(base, "test-key", "fixture").selectedModelFound)
+        assertEquals(listOf("GET /v1/models"), requests)
+
+        assertNull(client.verifyModel(base, "test-key", "fixture"))
+        assertEquals(listOf("GET /v1/models", "POST /v1/chat/completions"), requests)
+    }
 
     // ---------- 模型配置 ----------
 

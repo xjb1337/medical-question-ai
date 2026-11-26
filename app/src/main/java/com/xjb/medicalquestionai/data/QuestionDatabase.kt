@@ -14,6 +14,7 @@ import androidx.room.Update
 import androidx.room.migration.Migration
 import com.xjb.medicalquestionai.hasRepeatedJsonNullPrefix
 import com.xjb.medicalquestionai.isJsonNullLiteral
+import com.xjb.medicalquestionai.MedicalQuestionApplication
 import androidx.sqlite.db.SupportSQLiteDatabase
 import android.content.Context
 import kotlinx.coroutines.flow.Flow
@@ -47,6 +48,22 @@ data class QuestionEntity(
     val checkpointJson: String? = null
 )
 
+data class QuestionAnalysisUpdate(
+    val id: String,
+    val updatedAt: Long,
+    val status: String,
+    val answerJson: String?,
+    val checkpointJson: String?,
+    val model: String,
+    val errorMessage: String?,
+    val mode: String,
+    val durationMs: Long,
+    val promptVersion: String,
+    val baseUrl: String,
+    val answerInputRevision: Long,
+    val answerRevision: Long
+)
+
 @Entity(tableName = "follow_ups")
 data class FollowUpEntity(
     @PrimaryKey val id: String,
@@ -63,8 +80,8 @@ data class FollowUpEntity(
 
 @Dao
 interface QuestionDao {
-    @Query("SELECT COUNT(*) FROM questions WHERE isEphemeral = 0 AND (:onlyFavorites = 0 OR isFavorite = 1)")
-    fun observeCount(onlyFavorites: Boolean): Flow<Int>
+    @Query("SELECT EXISTS(SELECT 1 FROM questions)")
+    fun observeHasStoredQuestions(): Flow<Boolean>
 
     @Query("SELECT * FROM questions WHERE isEphemeral = 0 ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<QuestionEntity>>
@@ -78,11 +95,38 @@ interface QuestionDao {
     @Query("SELECT * FROM questions ORDER BY createdAt DESC")
     suspend fun getAll(): List<QuestionEntity>
 
+    @Query("SELECT imagePaths FROM questions WHERE id = :id")
+    suspend fun getImagePaths(id: String): String?
+
+    @Query("SELECT imagePaths FROM questions")
+    suspend fun getAllImagePaths(): List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entity: QuestionEntity)
 
-    @Update
-    suspend fun update(entity: QuestionEntity)
+    @Update(entity = QuestionEntity::class)
+    suspend fun updateAnalysis(update: QuestionAnalysisUpdate): Int
+
+    @Query("""
+        UPDATE questions SET isFavorite = NOT isFavorite,
+            isEphemeral = CASE WHEN isFavorite = 0 THEN 0 ELSE isEphemeral END
+        WHERE id = :id
+    """)
+    suspend fun toggleFavorite(id: String)
+
+    @Query("""
+        UPDATE questions SET questionText = :text, questionType = COALESCE(:type, questionType),
+            inputRevision = inputRevision + 1, updatedAt = :updatedAt, checkpointJson = NULL
+        WHERE id = :id
+    """)
+    suspend fun updateText(id: String, text: String, type: String?, updatedAt: Long): Int
+
+    @Query("""
+        UPDATE questions SET imagePaths = :paths, inputRevision = inputRevision + 1,
+            updatedAt = :updatedAt, checkpointJson = NULL
+        WHERE id = :id AND inputRevision = :expectedRevision
+    """)
+    suspend fun updateImages(id: String, paths: String, expectedRevision: Long, updatedAt: Long): Int
 
     @Query("UPDATE questions SET checkpointJson = :json WHERE id = :id")
     suspend fun updateCheckpoint(id: String, json: String?)
@@ -147,9 +191,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun followUpDao(): FollowUpDao
 
     companion object {
-        @Volatile
-        private var instance: AppDatabase? = null
-
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -213,8 +254,11 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        fun get(context: Context): AppDatabase = instance ?: synchronized(this) {
-            instance ?: Room.databaseBuilder(
+        fun get(context: Context): AppDatabase =
+            (context.applicationContext as MedicalQuestionApplication).database
+
+        internal fun create(context: Context): AppDatabase =
+            Room.databaseBuilder(
                 context.applicationContext,
                 AppDatabase::class.java,
                 "medical_question.db"
@@ -224,13 +268,11 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
                 )
                 .build()
-                .also { instance = it }
-        }
     }
 }
 
 class QuestionRepository(private val dao: QuestionDao) {
-    fun observeCount(onlyFavorites: Boolean): Flow<Int> = dao.observeCount(onlyFavorites)
+    fun observeHasStoredQuestions(): Flow<Boolean> = dao.observeHasStoredQuestions()
     fun observeAll(): Flow<List<Question>> = dao.observeAll().mapEntities()
 
     fun observeById(id: String): Flow<Question?> = dao.observeById(id).mapEntity()
@@ -239,11 +281,42 @@ class QuestionRepository(private val dao: QuestionDao) {
 
     suspend fun getAll(): List<Question> = withContext(Dispatchers.Default) { dao.getAll().map { it.toDomain() } }
 
+    suspend fun getImagePaths(id: String): List<String> = dao.getImagePaths(id)?.decodeImagePaths().orEmpty()
+
+    suspend fun getAllImagePaths(): List<String> = dao.getAllImagePaths().flatMap { it.decodeImagePaths() }
+
     suspend fun markInterrupted() = dao.markInterrupted()
 
     suspend fun insert(question: Question) = withContext(Dispatchers.Default) { dao.insert(question.toEntity()) }
 
-    suspend fun update(question: Question) = withContext(Dispatchers.Default) { dao.update(question.toEntity()) }
+    suspend fun updateAnalysis(question: Question) = withContext(Dispatchers.Default) {
+        val count = dao.updateAnalysis(
+            QuestionAnalysisUpdate(
+                id = question.id,
+                updatedAt = System.currentTimeMillis(),
+                status = question.status,
+                answerJson = question.result?.toStoredAnswerJson(),
+                checkpointJson = question.checkpoint?.toJson(),
+                model = question.model,
+                errorMessage = question.errorMessage,
+                mode = question.mode,
+                durationMs = question.durationMs,
+                promptVersion = question.promptVersion,
+                baseUrl = question.baseUrl,
+                answerInputRevision = question.answerInputRevision,
+                answerRevision = question.answerRevision
+            )
+        )
+        check(count == 1) { "题目不存在或已被删除" }
+    }
+
+    suspend fun toggleFavorite(id: String) = dao.toggleFavorite(id)
+
+    suspend fun updateText(id: String, text: String, type: String?): Boolean =
+        dao.updateText(id, text, type, System.currentTimeMillis()) == 1
+
+    suspend fun updateImages(id: String, paths: List<String>, expectedRevision: Long): Boolean =
+        dao.updateImages(id, org.json.JSONArray(paths).toString(), expectedRevision, System.currentTimeMillis()) == 1
 
     suspend fun updateCheckpoint(id: String, json: String?) = dao.updateCheckpoint(id, json)
 
@@ -318,10 +391,7 @@ fun QuestionEntity.toDomain(): Question = Question(
     questionType = questionType,
     source = source,
     questionText = questionText,
-    imagePaths = runCatching {
-        val array = org.json.JSONArray(imagePaths)
-        (0 until array.length()).map { array.getString(it) }
-    }.getOrDefault(emptyList()),
+    imagePaths = imagePaths.decodeImagePaths(),
     status = status,
     result = answerJson?.let { AnalysisResult.fromJson(it) },
     model = model,
@@ -347,12 +417,7 @@ fun Question.toEntity(): QuestionEntity = QuestionEntity(
     questionText = questionText,
     imagePaths = org.json.JSONArray(imagePaths).toString(),
     status = status,
-    // 旧记录必须保留原始 answerJson，避免用当前模型反序列化后再序列化导致字段丢失/变空；
-    // 新解析结果带 metrics 时必须写入完整结构（含保存状态/传输信息），否则指标会随 rawJson 丢失。
-    answerJson = result?.let { parsed ->
-        if (parsed.metrics != null) parsed.toJson()
-        else parsed.rawJson.takeIf { it.isNotBlank() } ?: parsed.toJson()
-    },
+    answerJson = result?.toStoredAnswerJson(),
     model = model,
     errorMessage = errorMessage,
     isFavorite = isFavorite,
@@ -366,3 +431,12 @@ fun Question.toEntity(): QuestionEntity = QuestionEntity(
     answerRevision = answerRevision,
     checkpointJson = checkpoint?.toJson()
 )
+
+// 旧记录保留原始答案，新解析结果写入包含保存状态和传输指标的完整结构。
+private fun AnalysisResult.toStoredAnswerJson(): String =
+    if (metrics != null || rawJson.isBlank()) toJson() else rawJson
+
+private fun String.decodeImagePaths(): List<String> = runCatching {
+    val array = org.json.JSONArray(this)
+    (0 until array.length()).map { array.getString(it) }
+}.getOrDefault(emptyList())

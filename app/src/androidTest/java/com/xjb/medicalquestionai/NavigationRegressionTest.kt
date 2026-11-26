@@ -114,14 +114,40 @@ class NavigationRegressionTest {
         compose.runOnIdle { assertEquals("home", nav.previousBackStackEntry?.destination?.route) }
     }
 
+    @Test fun historyKeepsFiltersWhenSearchHasNoMatchesAndConfirmsDeletion() {
+        compose.runOnIdle {
+            model.setHistoryQuery("不会命中的搜索词")
+            nav.openTopLevel("history")
+        }
+        val allFilter = compose.onNodeWithText("全部 (0)")
+        compose.waitUntil(5_000) { compose.onAllNodes(hasText("全部 (0)")).fetchSemanticsNodes().isNotEmpty() }
+        allFilter.assertIsDisplayed()
+        compose.onNodeWithText("没有找到匹配的题目").assertIsDisplayed()
+        compose.onNodeWithText("仅收藏 (0)").performClick()
+        compose.onNodeWithText("没有匹配的收藏").assertIsDisplayed()
+
+        compose.onNodeWithContentDescription("清除搜索词").performClick()
+        val card = hasText("导航验证样例") and !hasSetTextAction()
+        compose.waitUntil(5_000) { compose.onAllNodes(card).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("删除题目").performClick()
+        compose.onNodeWithText("删除这道题？").assertIsDisplayed()
+        compose.onNodeWithText("取消").performClick()
+        compose.onNode(card).assertIsDisplayed()
+        compose.onNodeWithContentDescription("删除题目").performClick()
+        compose.onNodeWithText("删除", ignoreCase = false).performClick()
+        compose.waitUntil(5_000) { compose.onAllNodes(card).fetchSemanticsNodes().isEmpty() }
+        assertNull(runBlocking { repository.getById(fixtureId) })
+    }
+
     @Test fun exportIncludesRecordsOutsideSearchButExcludesEphemeralDrafts(): Unit = runBlocking {
         val original = repository.getById(fixtureId)!!
-        repository.insert(original.copy(id = "$fixtureId-export", questionText = "另一条导出记录"))
+        repository.insert(original.copy(id = "$fixtureId-export", questionText = "另一条导出记录", inputRevision = 1))
         repository.insert(original.copy(id = "$fixtureId-hidden", questionText = "不应导出的临时记录", isEphemeral = true))
         compose.runOnIdle { model.setHistoryQuery("没有匹配项的搜索") }
         val text = model.exportHistoryText()!!
         assertTrue(text.contains("导航验证样例"))
         assertTrue(text.contains("另一条导出记录"))
+        assertEquals(1, text.lineSequence().count { it.startsWith("旧答案（题目已修改，待重新解析）：") })
         assertFalse(text.contains("不应导出的临时记录"))
     }
 
@@ -150,7 +176,8 @@ class NavigationRegressionTest {
             model.updateDraftText("应保留的首页草稿")
             nav.openDetail("result/$fixtureId")
         }
-        compose.onNodeWithText("拍摄下一题").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodes(hasText("下一题")).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("下一题").performClick()
         compose.waitUntil(5_000) { nav.currentDestination?.route?.startsWith("camera?") == true }
         systemBack()
         compose.onNodeWithText("医学拍题").assertIsDisplayed()

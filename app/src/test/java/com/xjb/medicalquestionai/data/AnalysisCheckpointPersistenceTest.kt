@@ -6,7 +6,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -90,6 +93,43 @@ class AnalysisCheckpointPersistenceTest {
         val restored = AnalysisResult.fromJson(dao.getById(QUESTION_ID)!!.checkpointJson!!)
         assertEquals("最新题干", restored.recognizedQuestion)
         assertEquals(listOf("C"), restored.answer)
+    }
+
+    @Test
+    fun savingAnalysisDoesNotUndoFavoriteOrInputChanges() = runBlocking {
+        val repository = QuestionRepository(db.questionDao())
+        val original = question().toDomain().copy(isEphemeral = true)
+        repository.insert(original)
+        repository.toggleFavorite(original.id)
+        assertTrue(repository.updateText(original.id, "修改后的题干", "short"))
+        assertTrue(repository.updateImages(original.id, listOf("stand-in.jpg"), original.inputRevision + 1))
+
+        repository.updateAnalysis(original.copy(status = "completed", result = checkpoint("旧题干")))
+        val stored = repository.getById(original.id)!!
+        assertEquals("修改后的题干", stored.questionText)
+        assertEquals("short", stored.questionType)
+        assertEquals(listOf("stand-in.jpg"), stored.imagePaths)
+        assertTrue(stored.isFavorite)
+        assertFalse(stored.isEphemeral)
+        assertTrue(stored.isAnswerStale)
+    }
+
+    @Test
+    fun inputChangeInvalidatesCheckpointAndRejectsStaleOrDeletedImageWrites() = runBlocking {
+        val repository = QuestionRepository(db.questionDao())
+        val original = question().toDomain().copy(checkpoint = checkpoint("旧题干"))
+        repository.insert(original)
+        assertTrue(repository.updateText(original.id, "新题干", null))
+        assertFalse(repository.updateImages(original.id, listOf("stale.jpg"), original.inputRevision))
+        val stored = repository.getById(original.id)!!
+        assertNull(stored.checkpoint)
+        assertEquals(original.questionType, stored.questionType)
+        assertTrue(stored.imagePaths.isEmpty())
+
+        repository.delete(original.id)
+        assertFalse(repository.updateText(original.id, "已删除的题干", null))
+        assertFalse(repository.updateImages(original.id, listOf("deleted.jpg"), stored.inputRevision))
+        assertNull(repository.getById(original.id))
     }
 
     private fun question(): QuestionEntity = Question(

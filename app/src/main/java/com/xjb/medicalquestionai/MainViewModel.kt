@@ -6,6 +6,7 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
 import com.xjb.medicalquestionai.data.AnalysisMetrics
 import com.xjb.medicalquestionai.data.AnalysisPreview
 import com.xjb.medicalquestionai.data.AnalysisResult
@@ -35,9 +36,12 @@ import com.xjb.medicalquestionai.data.SecureKeyStore
 import com.xjb.medicalquestionai.data.SettingsRepository
 import com.xjb.medicalquestionai.data.ThemeMode
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -110,12 +114,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         scope = viewModelScope
     )
 
-    val isTestingKey: StateFlow<Boolean> = settingsCoordinator.isTestingKey
     val isCheckingConnection: StateFlow<Boolean> = settingsCoordinator.isCheckingConnection
     val isVerifyingModel: StateFlow<Boolean> = settingsCoordinator.isVerifyingModel
 
     private val _retryingIds = MutableStateFlow<Set<String>>(emptySet())
     val retryingIds: StateFlow<Set<String>> = _retryingIds.asStateFlow()
+
+    private val _questionInputEdits = MutableStateFlow<Set<String>>(emptySet())
+    val questionInputEdits: StateFlow<Set<String>> = _questionInputEdits.asStateFlow()
+
+    private val _isClearingHistory = MutableStateFlow(false)
+    val isClearingHistory: StateFlow<Boolean> = _isClearingHistory.asStateFlow()
+    private val deletingQuestionIds = mutableSetOf<String>()
 
     private val _followUpStreams = MutableStateFlow<Map<String, FollowUpStreamState>>(emptyMap())
     val followUpStreams: StateFlow<Map<String, FollowUpStreamState>> = _followUpStreams.asStateFlow()
@@ -134,8 +144,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val historyCoordinator = HistoryCoordinator(repository, settingsRepository.settings, viewModelScope)
 
     val historyQuery: StateFlow<String> = historyCoordinator.query
-    val history: StateFlow<List<Question>> = historyCoordinator.history
-    val historyCount: StateFlow<Int> = historyCoordinator.count
+    val history: StateFlow<HistoryResults?> = historyCoordinator.history
+    val hasStoredQuestions: StateFlow<Boolean> = historyCoordinator.hasStoredQuestions
 
     suspend fun exportHistoryText(): String? = historyCoordinator.exportText()
 
@@ -570,6 +580,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun startAnalysis(onNavigate: (String) -> Unit) {
         val clickedAt = SystemClock.elapsedRealtime()
         val snapshot = _draft.value
+        if (_isClearingHistory.value) {
+            _analysisError.value = "正在清空历史，请稍候再解析"
+            return
+        }
         if (_isAnalyzing.value || _retryingIds.value.isNotEmpty()) {
             _analysisError.value = "已有解析任务正在进行，请先取消或等待完成"
             return
@@ -685,18 +699,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
         var lastCheckpointAt = 0L
         var latestCheckpoint = current.checkpoint
-        if (previous == null) {
-            try {
-                repository.update(current)
-            } catch (e: Exception) {
-                stopElapsedTicker()
-                activeRequestId = null
-                activeQuestionId = null
-                _analysisError.value = "无法创建解析任务：${e.message ?: "本地存储不可用"}"
-                _isAnalyzing.value = false
-                return false
-            }
-        }
 
         // B0 埋点：只写 ID、耗时和用量，不写题干、答案、图片或密钥。
         fun logMetrics(
@@ -888,7 +890,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         )
                         val saveFailure = try {
                             // 结果已进入最终提交阶段：取消请求也要先完成这一笔不可分割的本地写入。
-                            withContext(NonCancellable) { repository.update(provisional) }
+                            withContext(NonCancellable) { repository.updateAnalysis(provisional) }
                             null
                         } catch (e: Exception) {
                             e
@@ -926,7 +928,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 )
                             )
                             val finalSaveFailure = try {
-                                withContext(NonCancellable) { repository.update(finalQuestion) }
+                                withContext(NonCancellable) { repository.updateAnalysis(finalQuestion) }
                                 null
                             } catch (e: Exception) {
                                 e
@@ -945,7 +947,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     )
                                 )
                                 val settledFailure = try {
-                                    withContext(NonCancellable) { repository.update(settled) }
+                                    withContext(NonCancellable) { repository.updateAnalysis(settled) }
                                     null
                                 } catch (e: Exception) {
                                     e
@@ -962,7 +964,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                             )
                                         )
                                     )
-                                    runCatching { repository.update(failed) }
+                                    runCatching { repository.updateAnalysis(failed) }
                                     _analysisError.value =
                                         "答案已生成，但最终指标保存失败：${settledFailure.message ?: "本地存储不可用"}。请检查存储空间后重试。"
                                     logMetrics("save_failed", finalSaveEnd - clickedAt, failed.result?.metrics)
@@ -978,7 +980,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                         )
                                     )
                                 )
-                                runCatching { repository.update(failed) }
+                                runCatching { repository.updateAnalysis(failed) }
                                 _analysisError.value =
                                     "答案已生成，但最终保存失败：${finalSaveFailure.message ?: "本地存储不可用"}。请检查存储空间后重试。"
                                 logMetrics("save_failed", firstSaveEnd - clickedAt, failed.result?.metrics)
@@ -1057,7 +1059,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 withContext(NonCancellable) {
                     if (previous == null) {
                         try {
-                            repository.update(
+                            repository.updateAnalysis(
                                 current.copy(
                                     status = if (cancelledByUser || cancelledByExit) "cancelled" else "interrupted",
                                     errorMessage = stopMessage,
@@ -1127,12 +1129,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun retryAnalysis(id: String, onSuccess: (() -> Unit)? = null) {
         val clickedAt = SystemClock.elapsedRealtime()
+        questionEditConflict(id)?.let {
+            _analysisError.value = it
+            return
+        }
         if (id in _retryingIds.value) return
         if (_isAnalyzing.value || _retryingIds.value.isNotEmpty()) {
             _analysisError.value = "已有解析任务正在进行，请先取消或等待完成"
             return
         }
-        if (followUpJobs[id]?.isActive == true) {
+        if (followUpJobs[id]?.isCompleted == false) {
             _analysisError.value = "这道题的追问仍在生成，请先停止追问再重答"
             return
         }
@@ -1151,7 +1157,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _analysisElapsedMs.value = 0L
         analysisJob = viewModelScope.launch {
             try {
-                val previous = repository.getById(id) ?: return@launch
+                val previous = repository.getById(id) ?: run {
+                    _analysisError.value = "题目不存在或已被删除"
+                    return@launch
+                }
                 val targetModel = settings.value.model
                 imageCapabilityError(targetModel)?.let { message ->
                     if (previous.imagePaths.isNotEmpty()) {
@@ -1180,6 +1189,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun questionEditConflict(id: String): String? = when {
+        _isClearingHistory.value || id in deletingQuestionIds -> "正在删除题目，请稍候"
+        id in _questionInputEdits.value -> "题目修改仍在保存，请稍候"
+        else -> null
+    }
+
+    private fun canEditQuestion(id: String): String? = questionEditConflict(id) ?: when {
+        activeQuestionId == id || id in _retryingIds.value ->
+            "解析进行中，请先取消或等待完成"
+        followUpJobs[id]?.isCompleted == false ->
+            "追问正在处理，请先停止追问或等待完成"
+        else -> null
+    }
+
     fun updateQuestionTextAndRetry(
         id: String,
         newText: String,
@@ -1194,37 +1217,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             onError(message)
             return
         }
-        if (_isAnalyzing.value && activeQuestionId == id) {
-            val message = "解析进行中，暂时不能修改题干；请先取消或等待完成"
+        canEditQuestion(id)?.let { message ->
             _analysisError.value = message
             onError(message)
             return
         }
-        if (followUpJobs[id]?.isActive == true) {
-            val message = "这道题的追问仍在生成，请先停止追问再修改"
-            _analysisError.value = message
-            onError(message)
-            return
-        }
+        _questionInputEdits.update { it + id }
         viewModelScope.launch {
-            val question = repository.getById(id)
-            if (question == null) {
-                val message = "题目不存在或已被删除"
-                _analysisError.value = message
-                onError(message)
-                return@launch
-            }
-            val updated = question.copy(
-                questionText = trimmed,
-                questionType = (newType ?: QuestionType.fromStorage(question.questionType)).storageValue,
-                inputRevision = question.inputRevision + 1
-            )
-            try {
-                repository.update(updated)
+            val error = try {
+                if (repository.updateText(id, trimmed, newType?.storageValue)) null
+                else "题目不存在或已被删除"
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                val message = "题目修改保存失败：${e.message ?: "本地存储不可用"}，请检查存储空间后重试"
-                _analysisError.value = message
-                onError(message)
+                "题目修改保存失败，请检查存储空间后重试"
+            } finally {
+                _questionInputEdits.update { it - id }
+            }
+            if (error != null) {
+                _analysisError.value = error
+                onError(error)
                 return@launch
             }
             onSaved()
@@ -1237,51 +1249,60 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             onDone("没有选择图片")
             return
         }
-        if (_isAnalyzing.value && activeQuestionId == id) {
-            onDone("解析进行中，暂时不能修改题目图片；请先取消或等待完成")
+        canEditQuestion(id)?.let {
+            onDone(it)
             return
         }
+        _questionInputEdits.update { it + id }
         viewModelScope.launch {
-            val question = repository.getById(id)
-            if (question == null) {
-                onDone("题目不存在或已被删除")
-                return@launch
+            val message = try {
+                appendQuestionImages(id, uris)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                "题目图片保存失败，请检查存储空间后重试"
+            } finally {
+                _questionInputEdits.update { it - id }
             }
-            val remaining = ImageStore.MAX_IMAGES - question.imagePaths.size
-            if (remaining <= 0) {
-                onDone("这道题已经有 ${ImageStore.MAX_IMAGES} 张图片")
-                return@launch
-            }
+            onDone(message)
+        }
+    }
+
+    private suspend fun appendQuestionImages(id: String, uris: List<Uri>): String {
+        val question = repository.getById(id) ?: return "题目不存在或已被删除"
+        val remaining = ImageStore.MAX_IMAGES - question.imagePaths.size
+        if (remaining <= 0) return "这道题已经有 ${ImageStore.MAX_IMAGES} 张图片"
+
+        val added = mutableListOf<String>()
+        var saved = false
+        try {
             var failed = 0
-            val added = mutableListOf<String>()
             for (uri in uris.take(remaining)) {
                 try {
-                    added += imageStore.importImage(uri).path
+                    // 记录落地路径后再响应取消，确保临时图片能在 finally 中清理。
+                    withContext(NonCancellable) { added += imageStore.importImage(uri).path }
+                    currentCoroutineContext().ensureActive()
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     failed++
                 }
             }
-            if (added.isNotEmpty()) {
-                try {
-                    repository.update(
-                        question.copy(
-                            imagePaths = question.imagePaths + added,
-                            inputRevision = question.inputRevision + 1
-                        )
-                    )
-                } catch (e: Exception) {
-                    imageStore.deleteAll(added)
-                    onDone("图片已读取，但保存到本地失败：${e.message ?: "存储空间可能不足"}，请重试")
-                    return@launch
-                }
+            if (added.isEmpty()) return "图片读取失败，请换一张或重新拍摄"
+            withContext(NonCancellable) {
+                saved = repository.updateImages(id, question.imagePaths + added, question.inputRevision)
             }
-            val message = when {
-                added.isEmpty() && failed > 0 -> "图片读取失败，请换一张或重新拍摄"
-                uris.size > remaining -> "已添加 ${added.size} 张；最多保留 ${ImageStore.MAX_IMAGES} 张，已忽略多余图片"
-                failed > 0 -> "已添加 ${added.size} 张，${failed} 张读取失败"
-                else -> "已添加 ${added.size} 张图片，可点击“重新解析”"
+            if (!saved) return "题目已修改或删除，图片未添加"
+            return buildString {
+                append("已添加 ${added.size} 张图片")
+                if (failed > 0) append("，${failed} 张读取失败")
+                if (uris.size > remaining) append("，已忽略超出上限的 ${uris.size - remaining} 张")
+                append("。可点击“重新解析”。")
             }
-            onDone(message)
+        } finally {
+            if (!saved && added.isNotEmpty()) {
+                withContext(NonCancellable + Dispatchers.IO) { imageStore.deleteAll(added) }
+            }
         }
     }
 
@@ -1291,7 +1312,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _followUpError.value = "请输入追问内容"
             return
         }
-        if (followUpJobs[questionId]?.isActive == true) return
+        questionEditConflict(questionId)?.let {
+            _followUpError.value = it
+            return
+        }
+        if (followUpJobs[questionId]?.isCompleted == false) return
         if (_isAnalyzing.value || _retryingIds.value.isNotEmpty()) {
             _followUpError.value = "解析正在生成，请等当前任务完成或先取消后再追问"
             return
@@ -1457,70 +1482,94 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteQuestion(id: String) {
-        val runningAnalysis = if (activeQuestionId == id) analysisJob else null
+        if (_isClearingHistory.value || !deletingQuestionIds.add(id)) return
+        val runningAnalysis = analysisJob.takeIf { activeQuestionId == id || id in _retryingIds.value }
         val runningFollowUp = followUpJobs[id]
         if (runningAnalysis != null) cancelAnalysis()
         runningFollowUp?.cancel()
         viewModelScope.launch {
-            // 等待正在取消的请求彻底释放图片引用后再删文件，避免后台仍读取已删除文件。
-            runningAnalysis?.join()
-            runningFollowUp?.join()
-            val question = repository.getById(id)
-            followUpRepository.deleteForQuestion(id)
-            repository.delete(id)
-            question?.imagePaths?.let(imageStore::deleteAll)
+            try {
+                val stopped = withTimeoutOrNull(HISTORY_STOP_TIMEOUT_MS) {
+                    runningAnalysis?.join()
+                    runningFollowUp?.join()
+                    true
+                } ?: false
+                if (!stopped) {
+                    _draftNotice.value = "题目任务仍在停止，请稍后重试删除"
+                    return@launch
+                }
+                withContext(NonCancellable + Dispatchers.IO) {
+                    val paths = database.withTransaction {
+                        val images = repository.getImagePaths(id)
+                        followUpRepository.deleteForQuestion(id)
+                        repository.delete(id)
+                        images
+                    }
+                    imageStore.deleteAll(paths)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _draftNotice.value = "题目删除失败，请稍后重试"
+            } finally {
+                deletingQuestionIds.remove(id)
+            }
         }
     }
 
     fun clearHistory() {
+        if (_isClearingHistory.value) return
+        // 新题入库与草稿交接完成前，数据库与草稿可能暂时引用同一批图片。
+        if (_isAnalyzing.value && activeQuestionId == null && _retryingIds.value.isEmpty()) {
+            _draftNotice.value = "新题正在保存，请稍候再清空历史"
+            return
+        }
+        _isClearingHistory.value = true
         viewModelScope.launch {
-            val runningAnalysis = analysisJob
-            if (runningAnalysis?.isActive == true) {
-                cancelRequested = true
-                _isCancelling.value = true
-                runningAnalysis.cancel()
+            try {
+                val runningAnalysis = analysisJob
+                val runningFollowUps = followUpJobs.values.toList()
+                cancelAnalysis()
+                runningFollowUps.forEach { it.cancel() }
                 val stopped = withTimeoutOrNull(HISTORY_STOP_TIMEOUT_MS) {
-                    runningAnalysis.join()
+                    runningAnalysis?.join()
+                    runningFollowUps.forEach { it.join() }
                     true
                 } ?: false
                 if (!stopped) {
-                    // 不能确认后台已停止读取图片：放弃删除，并解除界面上的加载态，避免永久 loading。
-                    _isAnalyzing.value = false
-                    _isCancelling.value = false
-                    _draftNotice.value = "解析任务未能及时停止，请稍后重试清空历史"
+                    _draftNotice.value = "题目任务仍在停止，请稍后重试清空历史"
                     return@launch
                 }
+                withContext(NonCancellable + Dispatchers.IO) {
+                    val paths = database.withTransaction {
+                        val images = repository.getAllImagePaths()
+                        followUpRepository.clearAll()
+                        repository.clearAll()
+                        images
+                    }
+                    imageStore.deleteAll(paths)
+                }
+                _draftNotice.value = "历史记录已清空"
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _draftNotice.value = "历史记录清空失败，请稍后重试"
+            } finally {
+                _isClearingHistory.value = false
             }
-            val runningFollowUps = followUpJobs.values.toList()
-            runningFollowUps.forEach { it.cancel() }
-            val followUpsStopped = runningFollowUps.all { job ->
-                withTimeoutOrNull(HISTORY_STOP_TIMEOUT_MS) {
-                    job.join()
-                    true
-                } ?: false
-            }
-            if (!followUpsStopped || _isAnalyzing.value || followUpJobs.values.any { it.isActive }) {
-                _draftNotice.value = "仍有追问未能停止，请稍后重试清空历史"
-                return@launch
-            }
-            val all = repository.getAll()
-            all.forEach { question -> imageStore.deleteAll(question.imagePaths) }
-            followUpRepository.clearAll()
-            repository.clearAll()
-            _draftNotice.value = "历史记录已清空"
         }
     }
 
     fun toggleFavorite(id: String) {
+        if (_isClearingHistory.value || id in deletingQuestionIds) return
         viewModelScope.launch {
-            val question = repository.getById(id) ?: return@launch
-            val nextFavorite = !question.isFavorite
-            repository.update(
-                question.copy(
-                    isFavorite = nextFavorite,
-                    isEphemeral = if (nextFavorite) false else question.isEphemeral
-                )
-            )
+            try {
+                repository.toggleFavorite(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _draftNotice.value = "收藏状态保存失败，请重试"
+            }
         }
     }
 
@@ -1538,10 +1587,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun saveApiKey(key: String, onDone: (String?) -> Unit) {
         settingsCoordinator.saveApiKey(key, onDone)
-    }
-
-    fun testSavedConnection(onDone: (String?) -> Unit) {
-        settingsCoordinator.testSavedConnection(onDone)
     }
 
     fun checkSavedConnection(onDone: (message: String, ok: Boolean) -> Unit) {

@@ -2,8 +2,6 @@
 
 面向医学课程复习的 Android 拍题与 AI 解析应用。支持拍照/相册导入、多图题目、自动识别题型、结构化解析、追问、历史记录和收藏。应用使用 DeepSeek 兼容的 Chat Completions API。Android 版 API Key 由 AndroidX Security 加密存储。
 
-> 项目状态：已完成真机反馈相关改造并通过 Android 自动检查（2026-10-29）。Android 真机流程、真实接口质量与速度验收未执行（本机无可用设备、无真实 API Key）。
->
 > 本项目仅用于个人学习与题目理解，不替代教材、临床指南或专业医疗建议。
 
 ## 功能
@@ -26,8 +24,8 @@
 - **追问**：结果页底部固定追问栏，围绕当前题目继续提问，可流式显示并停止；附加原图默认关闭，多轮上下文保存在本地。
 - **编辑重答**：修改题干或图片后重新分析；失败保留旧答案与追问。
 - **结果阅读**：答案卡片置顶，解析详情默认折叠，题目图片和追问按阅读顺序排列。
-- **历史与收藏**：搜索、收藏、删除、清空；可配置是否保存历史。
-- **隐私控制**：请勿上传可识别患者身份的信息；应用不要求逐题勾选隐私确认，Android 版 API Key 使用 AndroidX Security + Android Keystore 加密，。
+- **历史与收藏**：支持关键词搜索、收藏筛选和删除确认。关闭历史后题库只显示收藏，暂存在本机的题目可通过「清空历史」删除。
+- **隐私控制**：请勿上传可识别患者身份的信息。API Key 使用 AndroidX Security 和 Android Keystore 加密保存。
 - **深浅色主题**：Material 3 界面，适配手机竖屏。
 
 ## 技术栈
@@ -78,16 +76,6 @@ APK 输出：
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-本次交付的预构建副本位于 `dist/medical-question-ai-debug.apk`（versionCode 3 / versionName 1.2.0，21,475,118 bytes），SHA-256：
-
-```text
-6399fb0caed1a09c1bca4a082accab8e279cd88eaf485ff5e276bd991da8e64a
-```
-
-应用内更新首次安装引导包为 `dist/medical-question-ai-update-guide.apk`（同版本/同哈希）；本地候选更新包为 `dist/medical-question-ai-update-candidate.apk`（versionCode 4 / versionName 1.2.1-test.1，21,475,122 bytes，SHA-256 `62674c833cb97ddaccc7479122db501da160210c6649e8a5b957fa6086e6f67d`）。
-
-旧版 APK 保留在 `dist/archive/medical-question-ai-debug-v1.0.0-20261028.apk`，用于升级对照。
-
 安装到已连接设备：
 
 ```bash
@@ -110,10 +98,9 @@ API Key 仅写入应用私有的 `EncryptedSharedPreferences`，不会写入日�
 1. 首页选择题型（默认自动识别）。
 2. 拍照或从相册选图；可拖动排序、旋转、裁剪。
 3. 可选填写题干文字；图片和文字可以同时提交。
-4. 勾选「已确认图片不含患者姓名、住院号等身份信息」。
-5. 点击「开始解析」，等待结构化结果。
-6. 在结果页复制/分享答案、收藏、修改重答或继续追问。
-7. 历史页可搜索题目与答案，支持收藏筛选。
+4. 确认图片中的患者姓名、住院号等身份信息已移除，再点击「开始解析」。
+5. 在结果页复制或分享答案、收藏、修改题干、补图或继续追问。解析失败后也能查看原题、修改和重试。
+6. 题库可搜索题目与答案，并按收藏筛选。
 
 ## 项目结构
 

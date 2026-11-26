@@ -13,14 +13,11 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -54,11 +51,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.xjb.medicalquestionai.data.DraftImage
 import com.xjb.medicalquestionai.data.ImageCropResult
+import com.xjb.medicalquestionai.ui.components.FullScreenImageDialog
 import com.xjb.medicalquestionai.ui.components.formatBytes
 import com.xjb.medicalquestionai.ui.components.rememberFileImageRequest
 import kotlinx.coroutines.launch
@@ -122,18 +118,16 @@ internal fun ImageEditDialog(
         }
     }
 
-    Dialog(
-        onDismissRequest = {
+    FullScreenImageDialog(
+        onDismiss = {
             if (!cropSaving && !isProcessing) {
                 if (cropMode && !startInCropMode) leaveCropMode() else onDismiss()
             }
         },
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        containerColor = MaterialTheme.colorScheme.surface
     ) {
         Surface(modifier = Modifier.fillMaxSize()) {
-            BoxWithConstraints(
-                Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)
-            ) {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
                 val controlsMaxHeight = maxHeight * 0.6f
                 Column(Modifier.fillMaxSize().testTag("image-editor")) {
                     Row(

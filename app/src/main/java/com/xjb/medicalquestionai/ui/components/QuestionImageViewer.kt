@@ -1,6 +1,5 @@
 package com.xjb.medicalquestionai.ui.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -41,8 +40,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import coil.size.Size
@@ -54,8 +51,8 @@ import kotlin.math.roundToInt
 fun QuestionImageViewer(paths: List<String>, initialIndex: Int = 0, onDismiss: () -> Unit) {
     if (paths.isEmpty()) return
     var index by remember(paths, initialIndex) { mutableStateOf(initialIndex.coerceIn(paths.indices)) }
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(Modifier.fillMaxSize().background(Color(0xFF10151B))) {
+    FullScreenImageDialog(onDismiss = onDismiss, containerColor = Color(0xFF10151B)) {
+        Column(Modifier.fillMaxSize()) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
